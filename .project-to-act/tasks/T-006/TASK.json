@@ -1,0 +1,29 @@
+{
+  "taskId": "T-006",
+  "title": "部署与运维配置（健康检查、部署清单、运行手册）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户确认）",
+  "allowedPaths": [
+    "src/app/api/health/route.ts",
+    "docs/operations.md",
+    "README.md",
+    ".project-to-act/"
+  ],
+  "contract": "提供健康检查端点、部署前检查清单、部署流程、监控、回滚与备份运行手册。",
+  "dependencies": ["T-005"],
+  "invariants": [
+    "健康检查不依赖数据库连接，任何实例都能返回状态",
+    "文档不记录真实密钥",
+    "回滚与备份步骤可离线执行"
+  ],
+  "acceptance": [
+    "GET /api/health 返回 status/service/version/storage/timestamp",
+    "npm run build 通过且健康检查为动态路由",
+    "docs/operations.md 覆盖检查清单、部署、监控、回滚、备份、事故处理"
+  ],
+  "validation": [
+    "npm run build",
+    "PORT=3210 npm run start + curl /api/health"
+  ]
+}
