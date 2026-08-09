@@ -7,7 +7,7 @@
 - 本地质量门禁通过：`npm test`、`npm run lint`、`npm run build`、`npx tsc --noEmit`
 - Git 工作区已提交，版本号与 `package.json` 一致
 - 环境变量只从 `.env.example` 复制，密钥不写入 Git
-- Supabase 同步模式：已执行 `supabase/schema.sql`，且配置了 `NEXT_PUBLIC_SUPABASE_USER_ID`
+- Supabase 同步模式：已启用 Email Auth，并执行 `supabase/schema.sql`（RLS 按 `auth.uid()` 隔离）
 - 未配置 Supabase 时确认本地存储模式可用，界面显示“本地模式”
 
 ## 2. 部署流程
@@ -15,7 +15,7 @@
 ### Vercel
 
 1. 推送 `main` 分支到 Git 远端并导入 Vercel 项目
-2. 在项目设置中配置环境变量（`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`NEXT_PUBLIC_SUPABASE_USER_ID`）
+2. 在项目设置中配置环境变量（`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`）
 3. 部署后访问 `/api/health`，确认返回 `status: "ok"`
 4. 如需保留服务端日志，在 Vercel 打开 Logs 与错误监控
 
@@ -65,12 +65,12 @@ curl -s http://localhost:3000/api/health
 | 症状 | 处置 |
 |---|---|
 | `/api/health` 不可用 | 查部署日志；确认环境变量与端口；必要时回滚 |
-| 云同步失败 | 确认 Supabase URL/key/user_id 与表结构；本地数据仍在，可离线使用 |
+| 云同步失败 | 确认 Supabase 配置、登录状态与表结构；本地数据仍在，可离线使用 |
 | 数据丢失 | 先停止写入，从本地存储或 Supabase 备份恢复 |
-| 多人数据串用 | 检查每实例 `NEXT_PUBLIC_SUPABASE_USER_ID`；多租户部署必须启用 RLS |
+| 多人数据串用 | 检查是否每位用户独立登录；RLS 按 `auth.uid()` 隔离，禁止共享账号 |
 
 ## 7. 已知限制
 
-- 未接入 Supabase Auth 前，云同步是单用户边界，RLS 加固 SQL 已提供但未启用
+- 云同步依赖 Supabase Email Auth；未登录时仅本地模式，不读写云端数据
 - 本地模式没有服务端日志，故障排查依赖浏览器控制台
 - ICS 导出暂缓，不参与发布验收

@@ -27,5 +27,5 @@ npm run scan:secrets    # 密钥与危险 API 扫描，发现泄漏时退出码�
 ## 已知残余风险
 
 - 本地存储模式无服务端校验，数据可信边界为浏览器本地
-- Supabase 未接入 Auth 前是应用层 user_id 单用户边界，多租户需启用 RLS（见 `supabase/schema.sql`）
+- Supabase 云同步依赖 Email Auth 登录；RLS 已按 `auth.uid()` 启用，未登录客户端无法访问云端数据
 - NLP 拒答规则已评测（见 T-010）：无意义输入不再生成默认时间块，QuickAdd 显示明确拒绝原因

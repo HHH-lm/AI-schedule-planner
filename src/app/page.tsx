@@ -10,9 +10,12 @@ import {
   ClipboardList,
   Cloud,
   CloudOff,
+  LogIn,
+  LogOut,
   Redo2,
   Settings,
   Undo2,
+  User,
 } from "lucide-react";
 import type {
   AppData,
@@ -33,9 +36,12 @@ import {
   uid,
 } from "@/lib/storage";
 import {
+  getSession,
   isSupabaseConfigured,
   loadRemoteData,
+  onAuthStateChange,
   saveRemoteData,
+  signOutUser,
 } from "@/lib/supabase";
 import { logInfo } from "@/lib/logger";
 import { makeSampleData } from "@/lib/sample";
@@ -47,6 +53,7 @@ import TaskBoard from "@/components/TaskBoard";
 import TaskModal from "@/components/TaskModal";
 import StatsView from "@/components/StatsView";
 import SettingsModal from "@/components/SettingsModal";
+import AuthModal from "@/components/AuthModal";
 import { buildObsidianUrl } from "@/lib/obsidian";
 import {
   commitHistoryState,
@@ -77,6 +84,8 @@ export default function Home() {
   const [syncState, setSyncState] = useState<"loading" | "local" | "supabase">(
     "loading"
   );
+  const [user, setUser] = useState<{ id: string; email: string } | null>(null);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
   const [editingBlock, setEditingBlock] = useState<TimeBlock | null>(null);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [newBlockTime, setNewBlockTime] = useState<{
@@ -92,6 +101,11 @@ export default function Home() {
     end: number;
   } | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dataRef = useRef<AppData | null>(null);
+
+  useEffect(() => {
+    dataRef.current = data;
+  }, [data]);
 
   useEffect(
     () => () => {
@@ -105,11 +119,19 @@ export default function Home() {
     (async () => {
       let loaded = loadLocalData();
       if (isSupabaseConfigured()) {
-        const remote = await loadRemoteData();
-        if (!cancelled && remote) loaded = remote;
-        if (!cancelled) {
-          setSyncState("supabase");
-          logInfo("app_hydrated", { storage: "supabase" });
+        const { data: sessionData } = await getSession();
+        if (sessionData.session) {
+          const session = sessionData.session;
+          setUser({ id: session.user.id, email: session.user.email ?? "" });
+          const remote = await loadRemoteData();
+          if (!cancelled && remote) loaded = remote;
+          if (!cancelled) {
+            setSyncState("supabase");
+            logInfo("app_hydrated", { storage: "supabase" });
+          }
+        } else if (!cancelled) {
+          setSyncState("local");
+          logInfo("app_hydrated", { storage: "local" });
         }
       } else if (!cancelled) {
         setSyncState("local");
@@ -124,6 +146,34 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    const { unsubscribe } = onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN") {
+        const nextUser = session?.user
+          ? { id: session.user.id, email: session.user.email ?? "" }
+          : null;
+        setUser(nextUser);
+        setSyncState("supabase");
+        if (nextUser) {
+          void (async () => {
+            const remote = await loadRemoteData();
+            if (remote) {
+              setHistoryState((state) =>
+                state ? createHistoryState(remote) : state
+              );
+            } else if (dataRef.current) {
+              await saveRemoteData(dataRef.current);
+            }
+          })();
+        }
+      } else if (event === "SIGNED_OUT") {
+        setUser(null);
+        setSyncState("local");
+      }
+    });
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -585,6 +635,31 @@ export default function Home() {
           >
             <Settings size={14} />
           </button>
+          {isSupabaseConfigured() &&
+            (user ? (
+              <div className="inline-flex max-w-44 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 shadow-sm">
+                <User size={12} className="shrink-0" />
+                <span className="truncate">{user.email}</span>
+                <button
+                  type="button"
+                  onClick={() => signOutUser()}
+                  title="退出登录"
+                  className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <LogOut size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAuthModalOpen(true)}
+                title="登录以启用云同步"
+                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+              >
+                <LogIn size={12} />
+                登录
+              </button>
+            ))}
           <span
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
               syncState === "supabase"
@@ -723,6 +798,8 @@ export default function Home() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+
+      {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} />}
 
       {taskModalOpen && (
         <TaskModal
