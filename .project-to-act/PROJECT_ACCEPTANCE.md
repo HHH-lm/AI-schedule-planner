@@ -32,6 +32,7 @@
 | E-T005-001 | 2026-08-09T17:32:41Z | npm test、npx tsc --noEmit、shasum | 0 | 关键文件 SHA-256 见证据文件 | Supabase 云同步按 user_id 隔离，未配置用户 ID 时禁用；RLS 加固 SQL 与文档就绪 | `.project-to-act/tasks/T-005/evidence/E-T005-001.md` | 2026-08-16 |
 | E-T006-001 | 2026-08-09T17:37:16Z | npm run build、npm run start、curl、shasum | 0 | 关键文件 SHA-256 见证据文件 | 健康检查端点返回 ok；部署、监控、回滚、备份运行手册就绪 | `.project-to-act/tasks/T-006/evidence/E-T006-001.md` | 2026-08-16 |
 | E-T007-001 | 2026-08-09T17:39:46Z | npm test、npm run lint、npx tsc --noEmit、npm run build、shasum | 0 | 关键文件 SHA-256 见证据文件 | 结构化日志、错误边界与初始化/NLP/Supabase 事件就绪 | `.project-to-act/tasks/T-007/evidence/E-T007-001.md` | 2026-08-16 |
+| E-T008-001 | 2026-08-09T17:42:27Z | npm test、npm run lint、npx tsc --noEmit、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件 | 危险输入样本 74 个测试通过，密钥扫描 5 项全部 PASS | `.project-to-act/tasks/T-008/evidence/E-T008-001.md` | 2026-08-16 |
 
 ## Gate 记录
 
@@ -44,6 +45,7 @@
 
 按时间倒序追加：日期、检查范围、证据 ID、结果、遗留问题和结论。失败、跳过与过期证据也必须如实记录。
 
+- 2026-08-10：阶段 6 安全评测检查，E-T008-001，结果：12 个测试文件 74 个测试、lint/tsc 通过，密钥扫描 5 项全部 PASS。遗留问题：扫描模式需随凭据格式补充。结论：T-008 通过，继续阶段 6。
 - 2026-08-10：阶段 6 可观测性检查，E-T007-001，结果：11 个测试文件 65 个测试、lint/tsc/build 全部通过，关键事件日志与错误边界就绪。遗留问题：未接外部日志平台。结论：T-007 通过，继续阶段 6。
 - 2026-08-10：阶段 6 部署运维检查，E-T006-001，结果：生产构建通过，`/api/health` 本地探测返回 `status: ok`，运行手册覆盖部署/监控/回滚/备份。遗留问题：外部 uptime 探测需公网地址。结论：T-006 通过，继续阶段 6。
 - 2026-08-10：阶段 6 数据隔离检查，E-T005-001，结果：`npm test` 63 个测试、`npx tsc --noEmit` 通过，user_id 隔离与单用户边界文档就绪。遗留问题：真正多租户需接入 Auth + RLS。结论：T-005 通过，继续阶段 6。

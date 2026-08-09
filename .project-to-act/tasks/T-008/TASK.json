@@ -1,0 +1,32 @@
+{
+  "taskId": "T-008",
+  "title": "安全评测：注入/危险输入样本与密钥扫描",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户确认）",
+  "allowedPaths": [
+    "src/lib/security.test.ts",
+    "scripts/scan-secrets.sh",
+    "docs/security.md",
+    "package.json",
+    ".project-to-act/"
+  ],
+  "contract": "补充危险输入评测样本与密钥扫描脚本，形成可重复执行的安全基线。",
+  "dependencies": ["T-005", "T-007"],
+  "invariants": [
+    "扫描脚本不读取或输出真实密钥",
+    "危险输入样本只验证数据流安全性，不锁定当前 NLP 业务行为",
+    "真实 .env 文件不得被 Git 跟踪"
+  ],
+  "acceptance": [
+    "security.test.ts 覆盖注入、超长、控制字符与 Obsidian 协议/编码样本",
+    "npm run scan:secrets 全部 PASS",
+    "docs/security.md 记录评测范围、运行方式与残余风险"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run scan:secrets"
+  ]
+}

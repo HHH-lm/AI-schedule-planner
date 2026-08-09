@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "ledger": ".project-to-act/AGENT_LIFECYCLE.json",
+  "currentStage": "6",
+  "stageStatus": "in_progress",
+  "intentSource": "用户 P1 清单：无安全评测",
+  "contextFreshness": "2026-08-10，T-007 可观测性完成后追加",
+  "modificationIntent": "只读评测与扫描，不引入运行时依赖"
+}
