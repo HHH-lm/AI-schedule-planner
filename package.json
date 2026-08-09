@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
+    "scan:secrets": "bash scripts/scan-secrets.sh",
     "clean": "rm -rf .next"
   },
   "dependencies": {

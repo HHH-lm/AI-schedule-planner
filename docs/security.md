@@ -1,0 +1,31 @@
+# 安全评测与防护基线
+
+> 适用范围：AI 日程管理系统 v0.1.0。本文件记录输入安全评测方法、运行方式与当前结论。
+
+## 评测范围
+
+- 注入样本：HTML/script 标签、事件属性、SQL 片段、危险协议字符串
+- 边界输入：超长文本、控制字符、纯符号
+- 渲染安全：React 默认转义，项目内未使用 `dangerouslySetInnerHTML`、`document.write`、`eval`
+- 链接协议：Obsidian 跳转只接受 `obsidian://`，参数使用 `encodeURIComponent`
+- 密钥泄漏：扫描已跟踪文件中的 API key、高熵 token、私钥块与带值环境变量
+
+## 运行方式
+
+```bash
+npm test                # 单元测试，含 src/lib/security.test.ts 危险输入样本
+npm run scan:secrets    # 密钥与危险 API 扫描，发现泄漏时退出码非 0
+```
+
+## 当前结论
+
+- 危险输入不会让 NLP 解析器崩溃或执行，均按纯文本数据流处理
+- Obsidian 协议白名单与 URL 编码生效
+- 密钥扫描未发现已跟踪文件中的凭据；真实 `.env` 文件未被 Git 跟踪
+- 渲染路径未发现危险 API
+
+## 已知残余风险
+
+- 本地存储模式无服务端校验，数据可信边界为浏览器本地
+- Supabase 未接入 Auth 前是应用层 user_id 单用户边界，多租户需启用 RLS（见 `supabase/schema.sql`）
+- NLP 对无意义输入当前仍可能生成默认块，拒答规则单独评测（见 T-009）
