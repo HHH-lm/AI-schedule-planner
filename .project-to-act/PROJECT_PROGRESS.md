@@ -35,6 +35,7 @@
 
 按时间倒序追加：日期、完成事项、证据 ID、遗留问题、下一步和确认来源。不要覆盖旧记录。
 
+- 2026-08-10：T-011 修订：登录入口改为始终显示，未配置 Supabase 时点击弹窗提示配置环境变量；87 个测试、lint/tsc/build 通过。证据 E-T011-002。遗留问题：真实 Auth/RLS 待部署环境验收。来源：用户反馈（顶部未看到登录入口）。
 - 2026-08-10：完成 T-011 Supabase Auth 登录式多租户隔离：AuthModal 登录/注册/登出、`user_id` 取 `auth.uid()`、schema.sql 启用 RLS、未登录保持本地模式；`npm test` 87 个测试、lint/tsc/build/scan 全部通过。证据 E-T011-001。遗留问题：真实 Email Auth 与 RLS 需部署环境人工验收，旧 text user_id 表需迁移。下一步：人工验收与阶段 7 发布准备。来源：用户确认升级（每人登录、每人一库）。
 - 2026-08-10：完成 T-010 NLP 拒答规则与评测：纯函数 `detectRejectReason`/`hasMeaningfulName`，拒绝 empty/garbage/invalid_weekday/missing_action/detached_location；QuickAdd 显示具体原因；`npm test` 86 个测试、lint/tsc/build 通过。证据 E-T010-001。遗留问题：名称有效性不识别纯数字/emoji。下一步：人工验收与阶段 7 发布准备。来源：用户 P2 清单。
 - 2026-08-10：完成 T-009 账本一致性：dev 脚本防多实例变更补录任务与证据，`bash -n`、两次 `npm run dev` 实例复用验证通过；全量关键文件哈希刷新，E-T001-001 标记过期。证据 E-T009-001。遗留问题：无。下一步：NLP 拒答。来源：用户 P1 清单 + agentops 健康检查。

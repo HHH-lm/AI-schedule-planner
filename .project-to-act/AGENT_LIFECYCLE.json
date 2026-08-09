@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "projectId": "ai-schedule-system",
   "projectName": "AI 日程管理系统",
-  "revision": 13,
+  "revision": 14,
   "projectStatus": "active",
   "currentStage": "6",
-  "updatedAt": "2026-08-09T18:10:58Z",
+  "updatedAt": "2026-08-09T18:16:52Z",
   "historicalLimitations": [
     "采用既有实现：核心功能代码已存在（18 个源文件，package.json v0.1.0），但无自动测试、无 Git 提交、无 Gate 文档；阶段 0-4 标记 legacy_unverified，不能追溯为已通过。"
   ],
@@ -143,12 +143,13 @@
         "E-T008-001",
         "E-T009-001",
         "E-T010-001",
-        "E-T011-001"
+        "E-T011-001",
+        "E-T011-002"
       ],
       "artifacts": [],
       "decisions": [],
       "startedAt": "2026-08-09T17:28:23Z",
-      "updatedAt": "2026-08-09T18:10:58Z"
+      "updatedAt": "2026-08-09T18:16:52Z"
     },
     {
       "id": "7",
