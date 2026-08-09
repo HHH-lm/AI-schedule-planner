@@ -635,31 +635,30 @@ export default function Home() {
           >
             <Settings size={14} />
           </button>
-          {isSupabaseConfigured() &&
-            (user ? (
-              <div className="inline-flex max-w-44 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 shadow-sm">
-                <User size={12} className="shrink-0" />
-                <span className="truncate">{user.email}</span>
-                <button
-                  type="button"
-                  onClick={() => signOutUser()}
-                  title="退出登录"
-                  className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                >
-                  <LogOut size={12} />
-                </button>
-              </div>
-            ) : (
+          {user ? (
+            <div className="inline-flex max-w-44 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 shadow-sm">
+              <User size={12} className="shrink-0" />
+              <span className="truncate">{user.email}</span>
               <button
                 type="button"
-                onClick={() => setAuthModalOpen(true)}
-                title="登录以启用云同步"
-                className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+                onClick={() => signOutUser()}
+                title="退出登录"
+                className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               >
-                <LogIn size={12} />
-                登录
+                <LogOut size={12} />
               </button>
-            ))}
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAuthModalOpen(true)}
+              title="登录以启用云同步"
+              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+            >
+              <LogIn size={12} />
+              登录
+            </button>
+          )}
           <span
             className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
               syncState === "supabase"

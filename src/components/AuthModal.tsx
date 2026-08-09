@@ -6,6 +6,7 @@ import {
   isValidEmail,
   signInWithPassword,
   signUp,
+  isSupabaseConfigured,
 } from "@/lib/supabase";
 
 interface Props {
@@ -15,6 +16,7 @@ interface Props {
 type AuthMode = "signin" | "signup";
 
 export default function AuthModal({ onClose }: Props) {
+  const configured = isSupabaseConfigured();
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -82,67 +84,81 @@ export default function AuthModal({ onClose }: Props) {
         </div>
 
         <div className="space-y-3 px-4 py-4">
-          <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-100 p-1">
-            <button
-              type="button"
-              onClick={() => switchMode("signin")}
-              className={`rounded px-2 py-1.5 text-xs font-medium ${
-                mode === "signin"
-                  ? "bg-white text-slate-800 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              登录
-            </button>
-            <button
-              type="button"
-              onClick={() => switchMode("signup")}
-              className={`rounded px-2 py-1.5 text-xs font-medium ${
-                mode === "signup"
-                  ? "bg-white text-slate-800 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              注册
-            </button>
-          </div>
+          {configured ? (
+            <>
+              <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-100 p-1">
+                <button
+                  type="button"
+                  onClick={() => switchMode("signin")}
+                  className={`rounded px-2 py-1.5 text-xs font-medium ${
+                    mode === "signin"
+                      ? "bg-white text-slate-800 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  登录
+                </button>
+                <button
+                  type="button"
+                  onClick={() => switchMode("signup")}
+                  className={`rounded px-2 py-1.5 text-xs font-medium ${
+                    mode === "signup"
+                      ? "bg-white text-slate-800 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  注册
+                </button>
+              </div>
 
-          <div>
-            <div className="mb-1 flex items-center gap-1.5">
-              <Mail size={13} className="text-slate-400" />
-              <span className={labelClass}>邮箱</span>
-            </div>
-            <input
-              type="email"
-              className={inputClass}
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              autoComplete="email"
-              placeholder="you@example.com"
-            />
-          </div>
+              <div>
+                <div className="mb-1 flex items-center gap-1.5">
+                  <Mail size={13} className="text-slate-400" />
+                  <span className={labelClass}>邮箱</span>
+                </div>
+                <input
+                  type="email"
+                  className={inputClass}
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  autoComplete="email"
+                  placeholder="you@example.com"
+                />
+              </div>
 
-          <div>
-            <div className="mb-1 flex items-center gap-1.5">
-              <KeyRound size={13} className="text-slate-400" />
-              <span className={labelClass}>密码</span>
-            </div>
-            <input
-              type="password"
-              className={inputClass}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              placeholder="至少 6 位"
-              onKeyDown={(event) => {
-                if (event.key === "Enter") handleSubmit();
-              }}
-            />
-          </div>
+              <div>
+                <div className="mb-1 flex items-center gap-1.5">
+                  <KeyRound size={13} className="text-slate-400" />
+                  <span className={labelClass}>密码</span>
+                </div>
+                <input
+                  type="password"
+                  className={inputClass}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete={
+                    mode === "signin" ? "current-password" : "new-password"
+                  }
+                  placeholder="至少 6 位"
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") handleSubmit();
+                  }}
+                />
+              </div>
 
-          {error && (
-            <div className="rounded-md bg-rose-50 px-2.5 py-1.5 text-xs text-rose-600">
-              {error}
+              {error && (
+                <div className="rounded-md bg-rose-50 px-2.5 py-1.5 text-xs text-rose-600">
+                  {error}
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="rounded-md bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-700">
+              尚未配置云同步。请在 <code className="font-mono">.env.local</code>{" "}
+              中填写 <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code>{" "}
+              与{" "}
+              <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code>
+              ，然后重启开发服务器。
             </div>
           )}
         </div>
@@ -150,12 +166,24 @@ export default function AuthModal({ onClose }: Props) {
         <div className="flex items-center justify-end border-t border-slate-200 px-4 py-3">
           <button
             type="button"
-            onClick={handleSubmit}
-            disabled={loading}
+            onClick={configured ? handleSubmit : onClose}
+            disabled={configured && loading}
             className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
           >
-            {mode === "signin" ? <LogIn size={14} /> : <UserPlus size={14} />}
-            {loading ? "处理中..." : mode === "signin" ? "登录" : "注册"}
+            {configured ? (
+              mode === "signin" ? (
+                <LogIn size={14} />
+              ) : (
+                <UserPlus size={14} />
+              )
+            ) : null}
+            {configured
+              ? loading
+                ? "处理中..."
+                : mode === "signin"
+                  ? "登录"
+                  : "注册"
+              : "知道了"}
           </button>
         </div>
       </div>
