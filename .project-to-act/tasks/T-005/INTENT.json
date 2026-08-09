@@ -1,0 +1,12 @@
+{
+  "intent": "消除 Supabase 云同步全局 singleton 行带来的多实例数据串用风险，采用显式 user_id 隔离并明确单用户边界。",
+  "conflicts": "无：应用未接入 Supabase Auth，本任务不引入登录流程。",
+  "assumptions": [
+    "当前仍为单用户或每实例独立 user_id 部署",
+    "真正多租户需要后续接入 Supabase Auth 并启用 RLS"
+  ],
+  "risks": [
+    "现有用户若已创建旧表结构需要重新执行 schema.sql",
+    "未配置 USER_ID 时云同步不可用，界面显示本地模式"
+  ]
+}

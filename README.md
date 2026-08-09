@@ -97,13 +97,15 @@ npm run build   # Next.js 构建
 
 ### Supabase 云同步
 
-不配置时使用 localStorage。启用同步需要先创建 `schedule_state` 表：
+不配置时使用 localStorage。启用同步需要先在 Supabase SQL Editor 执行 [supabase/schema.sql](supabase/schema.sql) 创建 `schedule_state` 表（主键为 `(user_id, id)`）：
 
 ```sql
-CREATE TABLE schedule_state (
-  id text PRIMARY KEY DEFAULT 'singleton',
-  data jsonb NOT NULL,
-  updated_at timestamptz DEFAULT now()
+create table schedule_state (
+  user_id text not null,
+  id text not null default 'singleton',
+  data jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, id)
 );
 ```
 
@@ -112,7 +114,12 @@ CREATE TABLE schedule_state (
 ```text
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
+NEXT_PUBLIC_SUPABASE_USER_ID=alice
 ```
+
+### 单用户边界
+
+当前版本未接入 Supabase Auth，云同步采用显式单用户边界：只有同时配置 URL、anon key 和 `NEXT_PUBLIC_SUPABASE_USER_ID` 才会启用同步，读写都按 `user_id` 隔离，不再使用全局 singleton 行。多人部署时每个实例必须配置不同的用户 ID；若需真正的多租户隔离，请先接入 Supabase Auth，再执行 `supabase/schema.sql` 中注释的 RLS 加固 SQL。
 
 ### OpenAI API（预留）
 

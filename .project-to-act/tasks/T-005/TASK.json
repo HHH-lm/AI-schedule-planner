@@ -1,0 +1,31 @@
+{
+  "taskId": "T-005",
+  "title": "Supabase 云同步数据隔离（user_id 单用户边界）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户确认边界决策）",
+  "allowedPaths": [
+    "src/lib/supabase.ts",
+    "src/lib/supabase.test.ts",
+    "supabase/schema.sql",
+    ".env.example",
+    "README.md",
+    ".project-to-act/"
+  ],
+  "contract": "云同步从全局 singleton 行改为按 user_id 隔离；未显式配置用户 ID 时禁用同步；提供 RLS 加固 SQL 与单用户边界文档。",
+  "dependencies": [],
+  "invariants": [
+    "不引入登录流程，保持本地优先",
+    "未配置 NEXT_PUBLIC_SUPABASE_USER_ID 时不得启用云同步",
+    "读写查询必须携带 user_id"
+  ],
+  "acceptance": [
+    "supabase.test.ts 覆盖启用/禁用边界",
+    "npm test 通过",
+    "README/schema.sql 明确单用户边界与 RLS 升级路径"
+  ],
+  "validation": [
+    "npm test",
+    "npx tsc --noEmit"
+  ]
+}
