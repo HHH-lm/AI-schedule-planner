@@ -1,0 +1,17 @@
+{
+  "name": "AI 日程管理系统",
+  "short_name": "AI 日程",
+  "description": "AI 拆解宏观计划，双视图落地微观执行",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f7f9",
+  "theme_color": "#f6f7f9",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
