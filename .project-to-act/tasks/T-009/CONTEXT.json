@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "ledger": ".project-to-act/AGENT_LIFECYCLE.json",
+  "currentStage": "6",
+  "stageStatus": "in_progress",
+  "intentSource": "用户 P1 清单 + agentops 健康检查 2026-08-10",
+  "contextFreshness": "2026-08-10，T-008 安全评测完成后追加",
+  "modificationIntent": "只补录账本与证据，不改动 dev 脚本业务逻辑"
+}

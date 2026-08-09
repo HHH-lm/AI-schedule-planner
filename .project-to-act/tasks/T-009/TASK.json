@@ -1,0 +1,30 @@
+{
+  "taskId": "T-009",
+  "title": "账本一致性：dev 脚本变更入账与哈希有效期刷新",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户确认）",
+  "allowedPaths": [
+    "scripts/dev.sh",
+    "package.json",
+    "README.md",
+    ".project-to-act/"
+  ],
+  "contract": "将 scripts/dev.sh 防多实例变更补入任务与证据，重新收集关键文件哈希并更新旧证据有效期。",
+  "dependencies": ["T-001"],
+  "invariants": [
+    "不覆盖既有历史证据文件",
+    "旧证据有效期在索引中如实标记过期",
+    "新证据记录当前真实文件哈希"
+  ],
+  "acceptance": [
+    "T-009 任务与 E-T009-001 证据入账",
+    "E-T001-001 标记哈希过期并指向 E-T009-001",
+    "bash -n 与两次 npm run dev 行为验证通过"
+  ],
+  "validation": [
+    "bash -n scripts/dev.sh",
+    "npm run dev（实例复用检测）",
+    "shasum -a 256"
+  ]
+}

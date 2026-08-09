@@ -24,7 +24,7 @@
 | 证据 ID | 时间 | 方法或命令 | 退出状态 | 版本或文件哈希 | 结果摘要 | 证据位置 | 有效期 |
 |---|---|---|---|---|---|---|---|
 | E-ADOPT-001 | 2026-08-08T10:51:25Z | Project-to-Act check/validate、manage_lifecycle init/adopt、find、git log、shasum | 0 | package.json v0.1.0，关键文件 SHA-256 见证据文件 | 既有项目采用，阶段 5 ready，阶段 0-4 legacy_unverified | `.project-to-act/tasks/T-ADOPT-001/evidence/E-ADOPT-001.md` | 2026-08-15 |
-| E-T001-001 | 2026-08-08T21:08:19Z | npm test、npm run lint、npm run build、shasum | 0 | 关键文件 SHA-256 见证据文件 | 8 个测试文件 55 个测试通过，lint/build 通过，测试基线建立 | `.project-to-act/tasks/T-001/evidence/E-T001-001.md` | 2026-08-16 |
+| E-T001-001 | 2026-08-08T21:08:19Z | npm test、npm run lint、npm run build、shasum | 0 | 关键文件 SHA-256 见证据文件（哈希已过期） | 8 个测试文件 55 个测试通过，lint/build 通过，测试基线建立 | `.project-to-act/tasks/T-001/evidence/E-T001-001.md` | 已过期，2026-08-10 由 E-T009-001 刷新 |
 | E-T002-001 | 2026-08-08T21:08:19Z | npm test、npm run lint、npm run build、shasum | 0 | 关键文件 SHA-256 见证据文件 | 周几解析从当前时间起算，回归测试通过 | `.project-to-act/tasks/T-002/evidence/E-T002-001.md` | 2026-08-16 |
 | E-T003-001 | 2026-08-08T21:16:59Z | npm test、npm run lint、npm run build、shasum | 0 | 关键文件 SHA-256 见证据文件 | 生成后自动切换周并滚动聚焦新时间块，9 个测试文件 60 个测试通过 | `.project-to-act/tasks/T-003/evidence/E-T003-001.md` | 2026-08-16 |
 | E-T004-001 | 2026-08-08T21:16:56Z | npm test、npx tsc --noEmit、shasum | 0 | 关键文件 SHA-256 见证据文件 | 阶段 5 功能迭代：9 个测试文件 60 个测试通过，类型检查通过 | `.project-to-act/tasks/T-004/evidence/E-T004-001.md` | 2026-08-16 |
@@ -33,6 +33,7 @@
 | E-T006-001 | 2026-08-09T17:37:16Z | npm run build、npm run start、curl、shasum | 0 | 关键文件 SHA-256 见证据文件 | 健康检查端点返回 ok；部署、监控、回滚、备份运行手册就绪 | `.project-to-act/tasks/T-006/evidence/E-T006-001.md` | 2026-08-16 |
 | E-T007-001 | 2026-08-09T17:39:46Z | npm test、npm run lint、npx tsc --noEmit、npm run build、shasum | 0 | 关键文件 SHA-256 见证据文件 | 结构化日志、错误边界与初始化/NLP/Supabase 事件就绪 | `.project-to-act/tasks/T-007/evidence/E-T007-001.md` | 2026-08-16 |
 | E-T008-001 | 2026-08-09T17:42:27Z | npm test、npm run lint、npx tsc --noEmit、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件 | 危险输入样本 74 个测试通过，密钥扫描 5 项全部 PASS | `.project-to-act/tasks/T-008/evidence/E-T008-001.md` | 2026-08-16 |
+| E-T009-001 | 2026-08-09T17:44:02Z | bash -n、npm run dev（实例复用）、shasum | 0 | 关键文件 SHA-256 见证据文件（2026-08-10 刷新基线） | dev 脚本防多实例变更入账；旧证据哈希刷新并标记过期 | `.project-to-act/tasks/T-009/evidence/E-T009-001.md` | 2026-08-16 |
 
 ## Gate 记录
 
@@ -45,6 +46,7 @@
 
 按时间倒序追加：日期、检查范围、证据 ID、结果、遗留问题和结论。失败、跳过与过期证据也必须如实记录。
 
+- 2026-08-10：阶段 6 账本一致性检查，E-T009-001，结果：`bash -n` 与 dev 实例复用行为验证通过，全量关键文件哈希刷新，E-T001-001 标记过期。遗留问题：无。结论：T-009 通过，继续阶段 6。
 - 2026-08-10：阶段 6 安全评测检查，E-T008-001，结果：12 个测试文件 74 个测试、lint/tsc 通过，密钥扫描 5 项全部 PASS。遗留问题：扫描模式需随凭据格式补充。结论：T-008 通过，继续阶段 6。
 - 2026-08-10：阶段 6 可观测性检查，E-T007-001，结果：11 个测试文件 65 个测试、lint/tsc/build 全部通过，关键事件日志与错误边界就绪。遗留问题：未接外部日志平台。结论：T-007 通过，继续阶段 6。
 - 2026-08-10：阶段 6 部署运维检查，E-T006-001，结果：生产构建通过，`/api/health` 本地探测返回 `status: ok`，运行手册覆盖部署/监控/回滚/备份。遗留问题：外部 uptime 探测需公网地址。结论：T-006 通过，继续阶段 6。
