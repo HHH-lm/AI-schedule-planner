@@ -37,6 +37,7 @@ import {
   loadRemoteData,
   saveRemoteData,
 } from "@/lib/supabase";
+import { logInfo } from "@/lib/logger";
 import { makeSampleData } from "@/lib/sample";
 // import { buildWeekICS } from "@/lib/ics"; // 苹果日历导出暂未启用
 import WeekTimeline from "@/components/WeekTimeline";
@@ -106,9 +107,13 @@ export default function Home() {
       if (isSupabaseConfigured()) {
         const remote = await loadRemoteData();
         if (!cancelled && remote) loaded = remote;
-        if (!cancelled) setSyncState("supabase");
+        if (!cancelled) {
+          setSyncState("supabase");
+          logInfo("app_hydrated", { storage: "supabase" });
+        }
       } else if (!cancelled) {
         setSyncState("local");
+        logInfo("app_hydrated", { storage: "local" });
       }
       if (!cancelled) {
         const initial = loaded ?? makeSampleData();
