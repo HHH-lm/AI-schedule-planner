@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "projectId": "ai-schedule-system",
   "projectName": "AI 日程管理系统",
-  "revision": 5,
+  "revision": 6,
   "projectStatus": "active",
-  "currentStage": "5",
-  "updatedAt": "2026-08-08T21:30:31Z",
+  "currentStage": "6",
+  "updatedAt": "2026-08-09T17:28:23Z",
   "historicalLimitations": [
     "采用既有实现：核心功能代码已存在（18 个源文件，package.json v0.1.0），但无自动测试、无 Git 提交、无 Gate 文档；阶段 0-4 标记 legacy_unverified，不能追溯为已通过。"
   ],
@@ -93,7 +93,7 @@
     {
       "id": "5",
       "name": "具体功能与纵向切片开发",
-      "status": "in_progress",
+      "status": "completed",
       "expectedArtifacts": [
         "Task Contract",
         "纵向切片",
@@ -110,17 +110,18 @@
         "E-T001-001",
         "E-T002-001",
         "E-T003-001",
-        "E-T004-001"
+        "E-T004-001",
+        "E-T004-003"
       ],
       "artifacts": [],
       "decisions": [],
       "startedAt": "2026-08-08T13:57:00.981Z",
-      "updatedAt": "2026-08-08T21:30:31Z"
+      "updatedAt": "2026-08-09T17:28:23Z"
     },
     {
       "id": "6",
       "name": "评测、安全测试与调优",
-      "status": "pending",
+      "status": "in_progress",
       "expectedArtifacts": [
         "分切片评测",
         "红队报告",
@@ -130,8 +131,8 @@
       "evidenceIds": [],
       "artifacts": [],
       "decisions": [],
-      "startedAt": null,
-      "updatedAt": null
+      "startedAt": "2026-08-09T17:28:23Z",
+      "updatedAt": "2026-08-09T17:28:23Z"
     },
     {
       "id": "7",
@@ -242,6 +243,22 @@
       "artifacts": [],
       "summary": "启动 T-004：阶段 5 功能迭代（NLP 解析、Obsidian 关联、待排期拖拽、撤销重做、点击空白新建）",
       "revision": 5
+    },
+    {
+      "at": "2026-08-09T17:28:23Z",
+      "action": "gate",
+      "fromStage": "5",
+      "toStage": "6",
+      "fromStatus": "in_progress",
+      "toStatus": "in_progress",
+      "taskId": "T-004",
+      "decision": "passed",
+      "evidenceIds": [
+        "E-T004-003"
+      ],
+      "artifacts": [],
+      "summary": "阶段 5 Gate 通过：Git 基线 2e1ad62 建立后 test/lint/build/tsc 全部通过；进入阶段 6（评测、安全测试与调优）",
+      "revision": 6
     }
   ]
 }
