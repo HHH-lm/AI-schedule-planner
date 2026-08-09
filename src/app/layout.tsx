@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import AppErrorBoundary from "@/components/AppErrorBoundary";
 
 export const metadata: Metadata = {
   title: "AI 日程管理系统",
@@ -26,7 +27,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <AppErrorBoundary>{children}</AppErrorBoundary>
+      </body>
     </html>
   );
 }

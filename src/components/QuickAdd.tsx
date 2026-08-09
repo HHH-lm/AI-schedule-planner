@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CheckCircle2, Sparkles } from "lucide-react";
 import type { ParsedSchedule } from "@/lib/types";
 import { parseScheduleText } from "@/lib/nlp";
+import { logInfo, logWarn } from "@/lib/logger";
 
 interface Props {
   onAddParsed: (parsed: ParsedSchedule[]) => void;
@@ -19,13 +20,19 @@ export default function QuickAdd({ onAddParsed }: Props) {
   };
 
   const handleGenerate = () => {
-    const parsed = parseScheduleText(text);
+    const input = text.trim();
+    const parsed = parseScheduleText(input);
     if (parsed.length === 0) {
+      logWarn("nlp_no_schedule", {
+        inputLength: input.length,
+        preview: input.slice(0, 80),
+      });
       showFeedback("没有识别到时间安排，试试包含时间和事项的句子");
       return;
     }
     onAddParsed(parsed);
     setText("");
+    logInfo("nlp_generated", { count: parsed.length });
     showFeedback(`已生成 ${parsed.length} 个时间块`);
   };
 

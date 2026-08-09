@@ -1,0 +1,35 @@
+{
+  "taskId": "T-007",
+  "title": "可观测性：最小结构化日志、错误边界与关键事件",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户确认）",
+  "allowedPaths": [
+    "src/lib/logger.ts",
+    "src/lib/logger.test.ts",
+    "src/components/AppErrorBoundary.tsx",
+    "src/app/layout.tsx",
+    "src/app/page.tsx",
+    "src/components/QuickAdd.tsx",
+    "src/lib/supabase.ts",
+    ".project-to-act/"
+  ],
+  "contract": "提供轻量 JSON 日志工具，覆盖渲染错误、初始化存储模式、NLP 生成结果与云同步失败等关键事件。",
+  "dependencies": ["T-005", "T-006"],
+  "invariants": [
+    "不引入外部日志服务依赖",
+    "日志不得包含完整密钥或环境变量值",
+    "错误边界不阻塞正常功能路径"
+  ],
+  "acceptance": [
+    "logger.test.ts 覆盖 info/warn/error 输出",
+    "AppErrorBoundary 记录渲染错误并显示降级 UI",
+    "npm test 与 npm run build 通过"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build"
+  ]
+}

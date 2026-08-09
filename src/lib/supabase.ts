@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AppData } from "./types";
+import { logError } from "./logger";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -52,6 +53,7 @@ export async function loadRemoteData(): Promise<AppData | null> {
     if (error || !data) return null;
     return (data as { data: AppData }).data ?? null;
   } catch {
+    logError("supabase_load_failed", { userId: scope.userId });
     return null;
   }
 }
@@ -69,6 +71,7 @@ export async function saveRemoteData(data: AppData): Promise<void> {
       { onConflict: "user_id,id" }
     );
   } catch {
+    logError("supabase_save_failed", { userId: scope.userId });
     // 网络异常时保留本地副本，下次写入重试
   }
 }
