@@ -95,31 +95,20 @@ npm run build   # Next.js 构建
 
 复制 `.env.example` 为 `.env.local` 后按需填写。
 
-### Supabase 云同步
+### Supabase 云同步（登录式多租户）
 
-不配置时使用 localStorage。启用同步需要先在 Supabase SQL Editor 执行 [supabase/schema.sql](supabase/schema.sql) 创建 `schedule_state` 表（主键为 `(user_id, id)`）：
+不配置时使用 localStorage。启用云同步需要：
 
-```sql
-create table schedule_state (
-  user_id text not null,
-  id text not null default 'singleton',
-  data jsonb not null,
-  updated_at timestamptz not null default now(),
-  primary key (user_id, id)
-);
-```
-
-然后在 `.env.local` 中填写：
+1. 在 Supabase Authentication 中启用 Email provider（可开启密码确认邮件）。
+2. 在 SQL Editor 执行 [supabase/schema.sql](supabase/schema.sql)，创建按 `auth.uid()` 隔离的表并启用 RLS。
+3. 在 `.env.local` 中填写：
 
 ```text
 NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
-NEXT_PUBLIC_SUPABASE_USER_ID=alice
 ```
 
-### 单用户边界
-
-当前版本未接入 Supabase Auth，云同步采用显式单用户边界：只有同时配置 URL、anon key 和 `NEXT_PUBLIC_SUPABASE_USER_ID` 才会启用同步，读写都按 `user_id` 隔离，不再使用全局 singleton 行。多人部署时每个实例必须配置不同的用户 ID；若需真正的多租户隔离，请先接入 Supabase Auth，再执行 `supabase/schema.sql` 中注释的 RLS 加固 SQL。
+应用顶栏会显示登录入口。每位用户注册/登录后，`user_id` 取 `auth.uid()`，只能读写自己的数据行；未登录时保持本地模式，不读写云端数据。
 
 ### OpenAI API（预留）
 

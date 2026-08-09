@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "ledger": ".project-to-act/AGENT_LIFECYCLE.json",
+  "currentStage": "6",
+  "stageStatus": "in_progress",
+  "intentSource": "用户确认升级：每人登录、每人一库式隔离",
+  "contextFreshness": "2026-08-10，T-010 NLP 拒答完成后追加",
+  "modificationIntent": "保留本地优先与可选云同步，将 user_id 改为登录会话 auth.uid() 并启用 RLS"
+}

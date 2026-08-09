@@ -35,6 +35,7 @@
 | E-T008-001 | 2026-08-09T17:42:27Z | npm test、npm run lint、npx tsc --noEmit、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件 | 危险输入样本 74 个测试通过，密钥扫描 5 项全部 PASS | `.project-to-act/tasks/T-008/evidence/E-T008-001.md` | 2026-08-16 |
 | E-T009-001 | 2026-08-09T17:44:02Z | bash -n、npm run dev（实例复用）、shasum | 0 | 关键文件 SHA-256 见证据文件（2026-08-10 刷新基线） | dev 脚本防多实例变更入账；旧证据哈希刷新并标记过期 | `.project-to-act/tasks/T-009/evidence/E-T009-001.md` | 2026-08-16 |
 | E-T010-001 | 2026-08-09T17:53:56Z | npm test、npm run lint、npx tsc --noEmit、npm run build、shasum | 0 | 关键文件 SHA-256 见证据文件 | NLP 拒答规则与评测：86 个测试通过，QuickAdd 明确反馈 | `.project-to-act/tasks/T-010/evidence/E-T010-001.md` | 2026-08-16 |
+| E-T011-001 | 2026-08-09T18:10:58Z | npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件 | Auth 登录式多租户：87 个测试通过，auth.uid() + RLS 就绪 | `.project-to-act/tasks/T-011/evidence/E-T011-001.md` | 2026-08-16 |
 
 ## Gate 记录
 
@@ -47,6 +48,7 @@
 
 按时间倒序追加：日期、检查范围、证据 ID、结果、遗留问题和结论。失败、跳过与过期证据也必须如实记录。
 
+- 2026-08-10：阶段 6 Auth 多租户隔离检查，E-T011-001，结果：13 个测试文件 87 个测试、lint/tsc/build/scan 全部通过，登录/注册/登出与 auth.uid() 读写就绪。遗留问题：真实 Email Auth/RLS 需部署环境人工验收，旧表需迁移。结论：T-011 通过；等待人工验收与阶段 7 发布准备。
 - 2026-08-10：阶段 6 NLP 拒答检查，E-T010-001，结果：13 个测试文件 86 个测试、lint/tsc/build 通过，无意义输入不再生成默认块，QuickAdd 显示具体原因。遗留问题：名称有效性不识别纯数字/emoji。结论：T-010 通过；用户 P0/P1/P2 清单全部完成，等待人工验收。
 - 2026-08-10：阶段 6 账本一致性检查，E-T009-001，结果：`bash -n` 与 dev 实例复用行为验证通过，全量关键文件哈希刷新，E-T001-001 标记过期。遗留问题：无。结论：T-009 通过，继续阶段 6。
 - 2026-08-10：阶段 6 安全评测检查，E-T008-001，结果：12 个测试文件 74 个测试、lint/tsc 通过，密钥扫描 5 项全部 PASS。遗留问题：扫描模式需随凭据格式补充。结论：T-008 通过，继续阶段 6。

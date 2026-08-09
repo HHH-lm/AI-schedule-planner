@@ -1,0 +1,42 @@
+{
+  "taskId": "T-011",
+  "title": "Supabase Auth 登录式多租户隔离（auth.uid() + RLS）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户确认）",
+  "allowedPaths": [
+    "src/lib/supabase.ts",
+    "src/lib/supabase.test.ts",
+    "src/components/AuthModal.tsx",
+    "src/app/page.tsx",
+    "supabase/schema.sql",
+    ".env.example",
+    "README.md",
+    "docs/security.md",
+    "docs/operations.md",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "云同步从显式 user_id 环境变量升级为 Supabase Auth 登录式隔离：user_id 取 auth.uid()，表启用 RLS，未登录保持本地模式。",
+  "dependencies": ["T-005", "T-007", "T-008"],
+  "invariants": [
+    "未登录时不得读写云端数据",
+    "RLS 策略基于 auth.uid() 隔离，禁止跨用户读写",
+    "日志不得记录密码",
+    "退出登录后切回本地模式"
+  ],
+  "acceptance": [
+    "AuthModal 支持登录、注册与错误提示",
+    "读写使用登录会话 auth.uid() 作为 user_id",
+    "supabase/schema.sql 默认启用 RLS 并提供四类策略",
+    "supabase.test.ts 覆盖错误映射与邮箱校验",
+    "npm test、lint、tsc、build、scan:secrets 全部通过"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build",
+    "npm run scan:secrets"
+  ]
+}

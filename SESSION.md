@@ -16,15 +16,15 @@
 ## Git 状态
 
 - 当前分支 `main`，最近提交 `b72c79f`（T-009 账本一致性）。
-- T-010 改动与账本更新已完成验证（86 个测试、lint、tsc、build 通过），等待用户批准后提交。
+- T-011 Supabase Auth 多租户隔离已完成验证（87 个测试、lint、tsc、build、scan 通过），T-011 证据与账本已同步，等待用户批准后提交。
 
 ## 决策
 
-- 拒答规则实现为 `detectRejectReason` / `hasMeaningfulName` 纯函数。
-- `parseScheduleText` 保持原 API；新增 `parseScheduleWithFeedback` 返回拒绝原因供 UI 使用。
-- 拒绝类别：`empty`、`garbage`、`invalid_weekday`、`missing_action`、`detached_location`。
+- Supabase 云同步从显式 user_id 升级为登录式多租户：`user_id` 取 `auth.uid()`，schema.sql 启用 RLS。
+- 新增 AuthModal（登录/注册/登出）；未登录保持本地模式。
+- 旧 text user_id 表需按 schema.sql 注释迁移为 uuid。
 
 ## 验证计划
 
-- 已完成：`npm test`（13 文件 86 测试）、`npm run lint`、`npx tsc --noEmit`、`npm run build` 全部通过。
-- 已生成 T-010 证据并同步 `.project-to-act/`；提交前请用户批准。
+- 已完成：`npm test`（13 文件 87 测试）、`npm run lint`、`npx tsc --noEmit`、`npm run build`、`npm run scan:secrets` 全部通过。
+- 已生成 T-011 证据并同步 `.project-to-act/`；提交前请用户批准。

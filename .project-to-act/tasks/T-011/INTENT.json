@@ -1,0 +1,14 @@
+{
+  "intent": "将 Supabase 云同步升级为每人登录、每人一库式隔离：注册/登录入口、auth.uid() 数据边界与 RLS 强制隔离。",
+  "conflicts": "取代 T-005 的显式 NEXT_PUBLIC_SUPABASE_USER_ID 单用户边界方案。",
+  "assumptions": [
+    "Supabase 项目启用 Email provider（邮箱登录）",
+    "部署时执行新版 supabase/schema.sql 或完成旧表升级",
+    "真实 Auth/RLS 端到端验证需在部署环境手动完成"
+  ],
+  "risks": [
+    "旧表 user_id 为 text，升级为 uuid 需要数据迁移",
+    "邮箱确认未开启时注册后直接可用；开启时需先确认邮件",
+    "无法在无真实 Supabase 凭据环境做端到端登录测试"
+  ]
+}
