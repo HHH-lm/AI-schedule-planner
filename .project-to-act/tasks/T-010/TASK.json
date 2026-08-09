@@ -1,0 +1,35 @@
+{
+  "taskId": "T-010",
+  "title": "NLP 拒答规则与评测",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户确认）",
+  "allowedPaths": [
+    "src/lib/nlp.ts",
+    "src/lib/nlp-reject.test.ts",
+    "src/lib/__fixtures__/nlp-samples.ts",
+    "src/components/QuickAdd.tsx",
+    "docs/security.md",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "无意义输入不再生成默认时间块；拒答规则为可测试纯函数；QuickAdd 显示明确拒绝原因。",
+  "dependencies": ["T-004", "T-008"],
+  "invariants": [
+    "parseScheduleText 保持原 API 兼容",
+    "无时间但有意义名称仍生成默认 9:00-10:00 块",
+    "安全评测样本不得因拒答抛异常"
+  ],
+  "acceptance": [
+    "detectRejectReason/hasMeaningfulName 纯函数有单元测试",
+    "纯符号、无效星期、只有日期/时间无事项名均被拒绝",
+    "QuickAdd 使用 parseScheduleWithFeedback 展示具体拒绝原因",
+    "npm test、lint、tsc、build 全部通过"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build"
+  ]
+}

@@ -99,6 +99,76 @@ function cleanName(segment: string): string {
   return cleaned || "未命名事项";
 }
 
+export type RejectCode =
+  | "empty"
+  | "garbage"
+  | "invalid_weekday"
+  | "missing_action"
+  | "detached_location";
+
+export interface RejectReason {
+  code: RejectCode;
+  message: string;
+}
+
+export interface ParseOutcome {
+  schedules: ParsedSchedule[];
+  rejected: RejectReason | null;
+}
+
+const MEANINGFUL_CHAR_RE = /[\p{L}]/u;
+
+export function hasMeaningfulName(name: string): boolean {
+  return MEANINGFUL_CHAR_RE.test(name);
+}
+
+export function detectRejectReason(
+  rawSegment: string,
+  anchor: Date
+): RejectReason | null {
+  const segment = rawSegment.trim();
+  if (!segment) {
+    return { code: "empty", message: "输入为空，请输入包含时间和事项的句子" };
+  }
+  if (/(?:周|星期)[^一二三四五六日天\d]/.test(segment)) {
+    return {
+      code: "invalid_weekday",
+      message: "星期格式不正确，请使用“周一”到“周日”",
+    };
+  }
+
+  const normalizedSegment = normalizeTimeNotation(segment);
+  const range =
+    matchTimeRange(normalizedSegment) ?? matchSingleTime(normalizedSegment);
+  const dateInfo = findDate(segment, anchor);
+
+  let remaining = normalizedSegment;
+  if (range) remaining = remaining.replace(range.raw, "");
+  if (dateInfo) remaining = remaining.replace(dateInfo.raw, "");
+
+  const location = findLocation(remaining);
+  if (location) {
+    remaining = remaining.replace(
+      new RegExp(`(?:地点[:：]?|在|去)${location}$`),
+      ""
+    );
+  }
+
+  const name = cleanName(remaining);
+  if (name === "未命名事项" || !hasMeaningfulName(name)) {
+    return range
+      ? {
+          code: "missing_action",
+          message: "识别到了时间，但缺少事项名称，例如：下午2点到4点健身",
+        }
+      : {
+          code: "garbage",
+          message: "没有识别到有效的时间安排，请输入包含时间和事项的句子",
+        };
+  }
+  return null;
+}
+
 export function splitSentences(text: string): string[] {
   return text
     .split(/[，,。；;\n]+/)
@@ -106,21 +176,58 @@ export function splitSentences(text: string): string[] {
     .filter(Boolean);
 }
 
-export function parseScheduleText(text: string, anchor = new Date()): ParsedSchedule[] {
-  const result: ParsedSchedule[] = [];
+export function parseScheduleWithFeedback(
+  text: string,
+  anchor = new Date()
+): ParseOutcome {
+  const schedules: ParsedSchedule[] = [];
+  const rejections: RejectReason[] = [];
+  if (!text.trim()) {
+    return {
+      schedules,
+      rejected: {
+        code: "empty",
+        message: "输入为空，请输入包含时间和事项的句子",
+      },
+    };
+  }
+
   for (const rawSegment of splitSentences(text)) {
     const location = extractDetachedLocation(rawSegment);
     if (location) {
-      const previous = result[result.length - 1];
+      const previous = schedules[schedules.length - 1];
       if (previous) {
         previous.location = previous.location ?? location;
+      } else {
+        rejections.push({
+          code: "detached_location",
+          message: "地点前面缺少活动，请把地点跟在活动后面，例如：周二下午2点在深圳湾写代码",
+        });
       }
       continue;
     }
+
+    const rejected = detectRejectReason(rawSegment, anchor);
+    if (rejected) {
+      rejections.push(rejected);
+      continue;
+    }
+
     const parsed = parseSegment(rawSegment, anchor);
-    if (parsed) result.push(parsed);
+    if (parsed) schedules.push(parsed);
   }
-  return result;
+  return {
+    schedules,
+    rejected:
+      schedules.length === 0 && rejections.length > 0 ? rejections[0] : null,
+  };
+}
+
+export function parseScheduleText(
+  text: string,
+  anchor = new Date()
+): ParsedSchedule[] {
+  return parseScheduleWithFeedback(text, anchor).schedules;
 }
 
 function parseSegment(rawSegment: string, anchor: Date): ParsedSchedule | null {

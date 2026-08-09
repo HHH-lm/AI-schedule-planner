@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "ledger": ".project-to-act/AGENT_LIFECYCLE.json",
+  "currentStage": "6",
+  "stageStatus": "in_progress",
+  "intentSource": "用户 P2 清单：规则 NLP 无法拒答",
+  "contextFreshness": "2026-08-10，T-009 账本一致性完成后追加",
+  "modificationIntent": "保持 parseScheduleText API，新增带反馈解析入口供 UI 使用"
+}
