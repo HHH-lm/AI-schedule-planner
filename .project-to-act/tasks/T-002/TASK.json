@@ -1,0 +1,35 @@
+{
+  "taskId": "T-002",
+  "title": "周时间轴自然语言周几语义修复",
+  "status": "completed",
+  "stage": 5,
+  "owner": "Codex（建议项目负责人确认）",
+  "allowedPaths": [
+    "src/lib/nlp.ts",
+    "src/lib/nlp.test.ts",
+    "src/lib/__fixtures__/nlp-samples.ts",
+    "src/components/QuickAdd.tsx",
+    "src/app/page.tsx",
+    ".project-to-act/"
+  ],
+  "contract": "修改自然语言解析：周几从当前时间起算下一个指定星期几（含当天），不再绑定当前展示周；今天周日输入“周二”应解析到下周二；补充回归测试。",
+  "dependencies": ["T-001"],
+  "invariants": [
+    "不伪造测试结果",
+    "周几解析不依赖展示周",
+    "今天/明天相对词语义保持不变"
+  ],
+  "acceptance": [
+    "周日输入“周二下午2点到4点健身，地点健身房”解析到下一周的周二",
+    "nlp.test.ts 新增相对周几回归用例",
+    "npm test、npm run lint、npm run build 通过",
+    "证据 E-T002-001 记录命令、退出状态与文件哈希"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npm run build",
+    "python3 <develop-ai-agents>/scripts/manage_lifecycle.py validate",
+    "python3 <project-to-act>/scripts/init_project_management.py --validate"
+  ]
+}

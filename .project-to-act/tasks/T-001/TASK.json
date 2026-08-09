@@ -1,0 +1,32 @@
+{
+  "taskId": "T-001",
+  "title": "建立确定性逻辑单元测试基线",
+  "status": "in_progress",
+  "stage": 5,
+  "owner": "Codex（建议项目负责人确认）",
+  "allowedPaths": [
+    "src/lib/",
+    "package.json",
+    "package-lock.json",
+    ".project-to-act/"
+  ],
+  "contract": "为 nlp.ts、date.ts、storage.ts、report.ts、ics.ts 建立单元测试与 nlp 评测样本集，增加 test 脚本，运行测试并记录证据。",
+  "dependencies": ["T-ADOPT-001"],
+  "invariants": [
+    "不修改 src/lib 之外的业务源码",
+    "不伪造测试结果",
+    "测试必须稳定运行，不依赖当天日期"
+  ],
+  "acceptance": [
+    "npm test 通过且覆盖 nlp/date/storage/report/ics",
+    "评测样本覆盖正常、边界、拒绝场景",
+    "package.json 有 test 脚本",
+    "证据 E-T001-001 记录命令、退出状态、结果与文件哈希"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npm run build",
+    "python3 <develop-ai-agents>/scripts/manage_lifecycle.py validate"
+  ]
+}

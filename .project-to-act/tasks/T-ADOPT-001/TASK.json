@@ -1,0 +1,29 @@
+{
+  "taskId": "T-ADOPT-001",
+  "title": "采用既有项目进入 Agent 生命周期账本",
+  "status": "completed",
+  "stage": 5,
+  "owner": "未指定（建议项目负责人）",
+  "allowedPaths": [
+    ".project-to-act/",
+    "src/",
+    "package.json",
+    "README.md"
+  ],
+  "contract": "初始化 AGENT_LIFECYCLE.json，将阶段 0-4 标记为 legacy_unverified，把真实当前阶段采用为阶段 5 ready，并保留历史限制。",
+  "dependencies": [],
+  "invariants": [
+    "不伪造任何 Gate 通过结论",
+    "不覆盖既有治理文件",
+    "历史限制必须保留在账本中"
+  ],
+  "acceptance": [
+    "AGENT_LIFECYCLE.json 存在且 manage_lifecycle.py validate 通过",
+    "阶段 0-4 状态为 legacy_unverified",
+    "阶段 5 状态为 ready"
+  ],
+  "validation": [
+    "python3 <develop-ai-agents>/scripts/manage_lifecycle.py validate",
+    "python3 <project-to-act>/scripts/init_project_management.py --validate"
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "taskId": "T-004",
+  "title": "阶段 5 功能迭代（NLP 解析、Obsidian 关联、待排期拖拽、撤销重做、点击空白新建）",
+  "status": "completed",
+  "stage": 5,
+  "owner": "Codex（建议项目负责人确认）",
+  "allowedPaths": [
+    "src/lib/nlp.ts",
+    "src/lib/nlp.test.ts",
+    "src/lib/__fixtures__/nlp-samples.ts",
+    "src/lib/obsidian.ts",
+    "src/lib/obsidian.test.ts",
+    "src/lib/history.ts",
+    "src/lib/history.test.ts",
+    "src/lib/grid.ts",
+    "src/lib/grid.test.ts",
+    "src/lib/types.ts",
+    "src/components/WeekTimeline.tsx",
+    "src/components/BlockModal.tsx",
+    "src/components/SettingsModal.tsx",
+    "src/components/QuickAdd.tsx",
+    "src/components/TaskBoard.tsx",
+    "src/app/page.tsx",
+    ".project-to-act/"
+  ],
+  "contract": "完成用户要求的交互与解析改进：独立地点片段合并前块、带空格时间解析、Obsidian 关联与跳转、待排期拖拽、撤销/重做、点击空白新建，并移除冗余手动入口。",
+  "dependencies": ["T-002", "T-003"],
+  "invariants": [
+    "不伪造测试结果",
+    "不覆盖已有账本记录（T-003 自动聚焦由另一工作流维护）",
+    "新增逻辑均有单元测试覆盖",
+    "Obsidian 链接使用 encodeURIComponent 编码"
+  ],
+  "acceptance": [
+    "npm test 60 个测试通过",
+    "npx tsc --noEmit 通过",
+    "nlp 回归样本覆盖独立地点与带空格时间",
+    "obsidian/history/grid 单元测试覆盖新逻辑",
+    "证据 E-T004-001 记录命令、退出状态与文件哈希"
+  ],
+  "validation": [
+    "npm test",
+    "npx tsc --noEmit",
+    "python3 <project-to-act>/scripts/init_project_management.py --validate"
+  ]
+}

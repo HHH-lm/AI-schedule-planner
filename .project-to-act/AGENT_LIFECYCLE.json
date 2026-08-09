@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "projectId": "ai-schedule-system",
+  "projectName": "AI 日程管理系统",
+  "revision": 5,
+  "projectStatus": "active",
+  "currentStage": "5",
+  "updatedAt": "2026-08-08T21:30:31Z",
+  "historicalLimitations": [
+    "采用既有实现：核心功能代码已存在（18 个源文件，package.json v0.1.0），但无自动测试、无 Git 提交、无 Gate 文档；阶段 0-4 标记 legacy_unverified，不能追溯为已通过。"
+  ],
+  "stages": [
+    {
+      "id": "0",
+      "name": "立项与风险分级",
+      "status": "legacy_unverified",
+      "expectedArtifacts": [
+        "项目简报",
+        "风险等级",
+        "责任人与停止条件"
+      ],
+      "taskIds": [],
+      "evidenceIds": [],
+      "artifacts": [],
+      "decisions": [],
+      "startedAt": null,
+      "updatedAt": "2026-08-08T10:51:25.483Z"
+    },
+    {
+      "id": "1",
+      "name": "需求调研与问题定义",
+      "status": "legacy_unverified",
+      "expectedArtifacts": [
+        "用户旅程",
+        "任务样本",
+        "现状基线与成功指标"
+      ],
+      "taskIds": [],
+      "evidenceIds": [],
+      "artifacts": [],
+      "decisions": [],
+      "startedAt": null,
+      "updatedAt": "2026-08-08T10:51:25.483Z"
+    },
+    {
+      "id": "2",
+      "name": "AI 能力边界与成功标准",
+      "status": "legacy_unverified",
+      "expectedArtifacts": [
+        "能力边界矩阵",
+        "权限表",
+        "评测计划"
+      ],
+      "taskIds": [],
+      "evidenceIds": [],
+      "artifacts": [],
+      "decisions": [],
+      "startedAt": null,
+      "updatedAt": "2026-08-08T10:51:25.483Z"
+    },
+    {
+      "id": "3",
+      "name": "技术栈选型与可行性试验",
+      "status": "legacy_unverified",
+      "expectedArtifacts": [
+        "技术尖峰",
+        "候选对比",
+        "最小可行原型"
+      ],
+      "taskIds": [],
+      "evidenceIds": [],
+      "artifacts": [],
+      "decisions": [],
+      "startedAt": null,
+      "updatedAt": "2026-08-08T10:51:25.483Z"
+    },
+    {
+      "id": "4",
+      "name": "架构与契约设计",
+      "status": "legacy_unverified",
+      "expectedArtifacts": [
+        "架构与数据流",
+        "Schema 与状态机",
+        "威胁模型与 ADR"
+      ],
+      "taskIds": [],
+      "evidenceIds": [],
+      "artifacts": [],
+      "decisions": [],
+      "startedAt": null,
+      "updatedAt": "2026-08-08T10:51:25.483Z"
+    },
+    {
+      "id": "5",
+      "name": "具体功能与纵向切片开发",
+      "status": "in_progress",
+      "expectedArtifacts": [
+        "Task Contract",
+        "纵向切片",
+        "自动测试与运行手册"
+      ],
+      "taskIds": [
+        "T-ADOPT-001",
+        "T-001",
+        "T-002",
+        "T-003",
+        "T-004"
+      ],
+      "evidenceIds": [
+        "E-T001-001",
+        "E-T002-001",
+        "E-T003-001",
+        "E-T004-001"
+      ],
+      "artifacts": [],
+      "decisions": [],
+      "startedAt": "2026-08-08T13:57:00.981Z",
+      "updatedAt": "2026-08-08T21:30:31Z"
+    },
+    {
+      "id": "6",
+      "name": "评测、安全测试与调优",
+      "status": "pending",
+      "expectedArtifacts": [
+        "分切片评测",
+        "红队报告",
+        "错误分类与回归集"
+      ],
+      "taskIds": [],
+      "evidenceIds": [],
+      "artifacts": [],
+      "decisions": [],
+      "startedAt": null,
+      "updatedAt": null
+    },
+    {
+      "id": "7",
+      "name": "定型发布与产品化",
+      "status": "pending",
+      "expectedArtifacts": [
+        "版本与发布清单",
+        "SLO 与监控",
+        "灰度、停止和回滚方案"
+      ],
+      "taskIds": [],
+      "evidenceIds": [],
+      "artifacts": [],
+      "decisions": [],
+      "startedAt": null,
+      "updatedAt": null
+    },
+    {
+      "id": "8",
+      "name": "运营、学习与退役",
+      "status": "pending",
+      "expectedArtifacts": [
+        "线上健康与漂移报告",
+        "失败回灌与迭代队列",
+        "迁移或退役计划"
+      ],
+      "taskIds": [],
+      "evidenceIds": [],
+      "artifacts": [],
+      "decisions": [],
+      "startedAt": null,
+      "updatedAt": null
+    }
+  ],
+  "transitions": [
+    {
+      "at": "2026-08-08T10:51:25.483Z",
+      "action": "adopt",
+      "fromStage": "legacy",
+      "toStage": "5",
+      "taskId": "T-ADOPT-001",
+      "decision": "legacy_unverified",
+      "evidenceIds": [
+        "E-ADOPT-001"
+      ],
+      "artifacts": [],
+      "summary": "采用既有实现：核心功能代码已存在（18 个源文件，package.json v0.1.0），但无自动测试、无 Git 提交、无 Gate 文档；阶段 0-4 标记 legacy_unverified，不能追溯为已通过。",
+      "revision": 1
+    },
+    {
+      "at": "2026-08-08T13:57:00.981Z",
+      "action": "start",
+      "fromStage": "5",
+      "toStage": "5",
+      "fromStatus": "ready",
+      "toStatus": "in_progress",
+      "taskId": "T-001",
+      "decision": null,
+      "evidenceIds": [],
+      "artifacts": [],
+      "summary": "启动阶段 5：建立确定性逻辑单元测试基线",
+      "revision": 2
+    },
+    {
+      "at": "2026-08-08T21:08:19Z",
+      "action": "start",
+      "fromStage": "5",
+      "toStage": "5",
+      "fromStatus": "in_progress",
+      "toStatus": "in_progress",
+      "taskId": "T-002",
+      "decision": null,
+      "evidenceIds": [
+        "E-T002-001"
+      ],
+      "artifacts": [],
+      "summary": "启动 T-002：周时间轴自然语言周几语义修复",
+      "revision": 3
+    },
+    {
+      "at": "2026-08-08T21:16:59Z",
+      "action": "start",
+      "fromStage": "5",
+      "toStage": "5",
+      "fromStatus": "in_progress",
+      "toStatus": "in_progress",
+      "taskId": "T-003",
+      "decision": null,
+      "evidenceIds": [
+        "E-T003-001"
+      ],
+      "artifacts": [],
+      "summary": "启动 T-003：生成后自动聚焦新时间块区域",
+      "revision": 4
+    },
+    {
+      "at": "2026-08-08T21:30:31Z",
+      "action": "start",
+      "fromStage": "5",
+      "toStage": "5",
+      "fromStatus": "in_progress",
+      "toStatus": "in_progress",
+      "taskId": "T-004",
+      "decision": null,
+      "evidenceIds": [
+        "E-T004-001"
+      ],
+      "artifacts": [],
+      "summary": "启动 T-004：阶段 5 功能迭代（NLP 解析、Obsidian 关联、待排期拖拽、撤销重做、点击空白新建）",
+      "revision": 5
+    }
+  ]
+}

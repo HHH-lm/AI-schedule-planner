@@ -1,0 +1,13 @@
+{
+  "intent": "为既有 AI 日程管理系统建立 Agent 生命周期事实源，并诚实采用真实当前阶段。",
+  "conflicts": "无：用户已初始化 project-to-act，并要求使用 develop-ai-agents 读取阶段、阻塞和证据。",
+  "assumptions": [
+    "用户同意项目 ID 使用 ai-schedule-system",
+    "用户同意当前真实阶段为阶段 5：代码已存在但未验收",
+    "README 描述与 src/ 代码事实一致"
+  ],
+  "risks": [
+    "阶段 0-4 无追溯证据，只能作为 legacy_unverified，不能当作已通过 Gate",
+    "Git 仓库无提交，当前没有可复核的版本基线"
+  ]
+}

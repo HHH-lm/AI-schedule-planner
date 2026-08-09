@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "ledger": ".project-to-act/AGENT_LIFECYCLE.json",
+  "currentStage": "5",
+  "stageStatus": "in_progress",
+  "intentSource": "用户反馈：生成时间块后显示区域应定位到刚生成的块，而不是停留在原页面",
+  "contextFreshness": "2026-08-09，T-002 周几语义修复完成后新增",
+  "modificationIntent": "生成后自动切换周并滚动聚焦新时间块，不改变解析规则"
+}

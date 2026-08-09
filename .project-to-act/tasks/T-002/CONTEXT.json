@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "ledger": ".project-to-act/AGENT_LIFECYCLE.json",
+  "currentStage": "5",
+  "stageStatus": "in_progress",
+  "intentSource": "用户反馈：周时间轴自然语言输入应解析到当前时间往后的那一周",
+  "contextFreshness": "2026-08-09，T-001 测试基线通过后新增",
+  "modificationIntent": "修改 nlp 周几解析与 QuickAdd 调用，不改变其他业务行为"
+}

@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "ledger": ".project-to-act/AGENT_LIFECYCLE.json",
+  "currentStage": "5",
+  "stageStatus": "in_progress",
+  "intentSource": "用户多轮反馈：Obsidian 跳转、撤销回滚、待排期拖拽、点击空白新建、NLP 解析修正",
+  "contextFreshness": "2026-08-09，T-003 自动聚焦完成后追加",
+  "modificationIntent": "在既有代码上叠加功能迭代，保留 T-003 自动聚焦行为"
+}

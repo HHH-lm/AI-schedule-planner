@@ -1,0 +1,37 @@
+{
+  "taskId": "T-003",
+  "title": "生成后自动聚焦新时间块区域",
+  "status": "completed",
+  "stage": 5,
+  "owner": "Codex（建议项目负责人确认）",
+  "allowedPaths": [
+    "src/components/WeekTimeline.tsx",
+    "src/app/page.tsx",
+    "src/lib/date.ts",
+    "src/lib/date.test.ts",
+    "src/lib/timeline.ts",
+    "src/lib/timeline.test.ts",
+    ".project-to-act/"
+  ],
+  "contract": "使用自然语言生成时间块后，周时间轴自动切换到新块所在周，并把视图滚动到该块所在日期与时段，短暂高亮新块。",
+  "dependencies": ["T-002"],
+  "invariants": [
+    "不伪造测试结果",
+    "不改变时间解析结果",
+    "滚动定位逻辑以纯函数覆盖测试"
+  ],
+  "acceptance": [
+    "生成后 weekOffset 自动切到新块所在周",
+    "WeekTimeline 接收 focusTarget 并滚动到该块",
+    "timeline.test.ts 覆盖滚动坐标计算",
+    "npm test、npm run lint、npm run build 通过",
+    "证据 E-T003-001 记录命令、退出状态与文件哈希"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npm run build",
+    "python3 <develop-ai-agents>/scripts/manage_lifecycle.py validate",
+    "python3 <project-to-act>/scripts/init_project_management.py --validate"
+  ]
+}
