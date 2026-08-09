@@ -37,6 +37,7 @@
 | E-T010-001 | 2026-08-09T17:53:56Z | npm test、npm run lint、npx tsc --noEmit、npm run build、shasum | 0 | 关键文件 SHA-256 见证据文件 | NLP 拒答规则与评测：86 个测试通过，QuickAdd 明确反馈 | `.project-to-act/tasks/T-010/evidence/E-T010-001.md` | 2026-08-16 |
 | E-T011-001 | 2026-08-09T18:10:58Z | npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件（哈希已过期） | Auth 登录式多租户：87 个测试通过，auth.uid() + RLS 就绪 | `.project-to-act/tasks/T-011/evidence/E-T011-001.md` | 已过期，2026-08-10 修订见 E-T011-002 |
 | E-T011-002 | 2026-08-09T18:16:52Z | npm test、npm run lint、npx tsc --noEmit、npm run build、shasum | 0 | 修订后 SHA-256 见证据文件 | 登录入口始终可见，未配置 Supabase 时弹窗提示配置 | `.project-to-act/tasks/T-011/evidence/E-T011-002.md` | 2026-08-16 |
+| E-T011-003 | 2026-08-09T19:25:55Z | npm test、npm run lint、npx tsc --noEmit、npm run build、shasum | 0 | 修订后 SHA-256 见证据文件 | Auth 错误提示完善：密码策略/泄露/常见密码映射中文原因，未知错误展示原文 | `.project-to-act/tasks/T-011/evidence/E-T011-003.md` | 2026-08-16 |
 
 ## Gate 记录
 
@@ -49,6 +50,7 @@
 
 按时间倒序追加：日期、检查范围、证据 ID、结果、遗留问题和结论。失败、跳过与过期证据也必须如实记录。
 
+- 2026-08-10：阶段 6 Auth 错误提示完善检查，E-T011-003，结果：87 个测试、lint/tsc/build 通过；密码策略、泄露密码、常见密码映射为中文原因，未知错误展示原文。遗留问题：真实 Auth/RLS 仍待部署环境验收。结论：修订通过。
 - 2026-08-10：阶段 6 Auth 登录入口修订检查，E-T011-002，结果：登录按钮始终显示，未配置 Supabase 时弹窗提示配置；87 个测试、lint/tsc/build 通过。遗留问题：真实 Auth/RLS 仍待部署环境验收。结论：修订通过。
 - 2026-08-10：阶段 6 Auth 多租户隔离检查，E-T011-001，结果：13 个测试文件 87 个测试、lint/tsc/build/scan 全部通过，登录/注册/登出与 auth.uid() 读写就绪。遗留问题：真实 Email Auth/RLS 需部署环境人工验收，旧表需迁移。结论：T-011 通过；等待人工验收与阶段 7 发布准备。
 - 2026-08-10：阶段 6 NLP 拒答检查，E-T010-001，结果：13 个测试文件 86 个测试、lint/tsc/build 通过，无意义输入不再生成默认块，QuickAdd 显示具体原因。遗留问题：名称有效性不识别纯数字/emoji。结论：T-010 通过；用户 P0/P1/P2 清单全部完成，等待人工验收。
