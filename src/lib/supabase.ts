@@ -31,9 +31,23 @@ export function mapAuthErrorMessage(
   if (/invalid login credentials/i.test(message)) return "邮箱或密码不正确";
   if (/already registered/i.test(message)) return "该邮箱已注册";
   if (/at least 6 characters/i.test(message)) return "密码至少需要 6 位";
+  if (/at least 8 characters/i.test(message)) return "密码至少需要 8 位";
+  if (/between 8 and 72/i.test(message)) return "密码长度需在 8 到 72 位之间";
+  if (/at least one number/i.test(message)) return "密码必须包含至少一个数字";
+  if (/at least one letter/i.test(message)) return "密码必须包含至少一个字母";
+  if (/at least one symbol/i.test(message)) return "密码必须包含至少一个特殊符号";
+  if (/at least one uppercase/i.test(message))
+    return "密码必须包含至少一个大写字母";
+  if (/at least one lowercase/i.test(message))
+    return "密码必须包含至少一个小写字母";
+  if (/have i been pwned|data breach|leaked/i.test(message))
+    return "该密码已在公开泄露数据库中出现，请更换更安全的密码";
+  if (/same as (the )?email/i.test(message)) return "密码不能与邮箱相同";
+  if (/parts of the email/i.test(message)) return "密码不能包含邮箱中的内容";
+  if (/common passwords/i.test(message)) return "该密码过于常见，请更换更安全的密码";
   if (/invalid format/i.test(message)) return "邮箱格式不正确";
   if (/email not confirmed/i.test(message)) return "邮箱尚未确认，请先查收确认邮件";
-  return "操作失败，请稍后重试";
+  return message ? `操作失败：${message}` : "操作失败，请稍后重试";
 }
 
 export interface AuthResult {
