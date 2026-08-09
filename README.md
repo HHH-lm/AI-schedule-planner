@@ -127,7 +127,7 @@ NEXT_PUBLIC_SUPABASE_USER_ID=alice
 
 ## 部署
 
-本项目为标准的 Next.js 应用，可部署到任意支持 Node.js 的平台（如 Vercel）。本地存储模式下无需额外配置；启用 Supabase 同步时配置对应环境变量即可。
+本项目为标准的 Next.js 应用，可部署到任意支持 Node.js 的平台（如 Vercel）。部署前检查、健康检查、监控、回滚与备份请阅读 [docs/operations.md](docs/operations.md)。部署后可用 `GET /api/health` 验证实例状态。
 
 ## 目录结构
 
