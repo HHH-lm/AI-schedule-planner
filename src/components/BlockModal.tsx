@@ -96,34 +96,35 @@ export default function BlockModal({
   };
 
   const inputClass =
-    "w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
-  const labelClass = "mb-1 block text-xs font-medium text-slate-600";
+    "input-rect";
+  const labelClass = "field-label";
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4"
+      className="modal-backdrop"
       onMouseDown={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-lg bg-white shadow-2xl"
+        className="modal-card modal-card-scroll max-w-lg"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h3 className="text-sm font-semibold">
+        <div className="modal-header">
+          <h3 className="modal-title">
             {block ? "编辑时间块" : "新建时间块"}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="icon-btn-plain"
+            aria-label="关闭"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="space-y-3 px-4 py-4">
+        <div className="modal-body space-y-4">
           {block?.status === "pending" && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+            <div className="status-note-amber">
               这是一个待排期时间块，设置起止时间后会自动进入周时间轴。
             </div>
           )}
@@ -131,7 +132,7 @@ export default function BlockModal({
           <div>
             <label className={labelClass}>事项</label>
             <div className="flex items-center gap-2">
-              <Tag size={15} className="shrink-0 text-slate-400" />
+              <Tag size={15} className="shrink-0 text-ink-muted-48" />
               <input
                 className={inputClass}
                 value={name}
@@ -172,7 +173,7 @@ export default function BlockModal({
             <div>
               <label className={labelClass}>开始时间</label>
               <div className="flex items-center gap-2">
-                <Clock size={15} className="shrink-0 text-slate-400" />
+                <Clock size={15} className="shrink-0 text-ink-muted-48" />
                 <input
                   type="time"
                   className={inputClass}
@@ -184,7 +185,7 @@ export default function BlockModal({
             <div>
               <label className={labelClass}>结束时间</label>
               <div className="flex items-center gap-2">
-                <Clock size={15} className="shrink-0 text-slate-400" />
+                <Clock size={15} className="shrink-0 text-ink-muted-48" />
                 <input
                   type="time"
                   className={inputClass}
@@ -199,7 +200,7 @@ export default function BlockModal({
             <div>
               <label className={labelClass}>地点</label>
               <div className="flex items-center gap-2">
-                <MapPin size={15} className="shrink-0 text-slate-400" />
+                <MapPin size={15} className="shrink-0 text-ink-muted-48" />
                 <input
                   className={inputClass}
                   value={location}
@@ -226,11 +227,11 @@ export default function BlockModal({
           </div>
 
           <div>
-            <div className="mb-1 flex items-center gap-1.5">
-              <BookMarked size={13} className="text-slate-400" />
-              <span className={labelClass}>Obsidian 关联</span>
+            <div className="field-hint">
+              <BookMarked size={13} />
+              <span>Obsidian 关联</span>
             </div>
-            <div className="mb-3">
+            <div className="mb-4">
               <label className={labelClass}>Obsidian 链接</label>
               <input
                 className={inputClass}
@@ -267,18 +268,17 @@ export default function BlockModal({
             </div>
           </div>
 
-          <label className="flex items-center gap-2 text-sm text-slate-700">
+          <label className="checkbox-control">
             <input
               type="checkbox"
               checked={done}
               onChange={(event) => setDone(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 accent-emerald-600"
             />
             标记为完成
           </label>
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+        <div className="modal-footer">
           {block ? (
             <button
               type="button"
@@ -286,7 +286,7 @@ export default function BlockModal({
                 onDelete(block.id);
                 onClose();
               }}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50"
+              className="btn-ghost !border-[rgba(190,40,60,0.3)] !text-[#b3261e] hover:!bg-[rgba(190,40,60,0.06)]"
             >
               <Trash2 size={14} />
               删除
@@ -297,7 +297,7 @@ export default function BlockModal({
           <button
             type="button"
             onClick={handleSave}
-            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            className="btn-primary-pill"
           >
             保存
           </button>

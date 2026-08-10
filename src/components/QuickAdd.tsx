@@ -13,9 +13,11 @@ interface Props {
 export default function QuickAdd({ onAddParsed }: Props) {
   const [text, setText] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<"ok" | "warn">("ok");
 
-  const showFeedback = (message: string) => {
+  const showFeedback = (message: string, tone: "ok" | "warn" = "ok") => {
     setFeedback(message);
+    setFeedbackTone(tone);
     window.setTimeout(() => setFeedback(null), 3000);
   };
 
@@ -29,7 +31,8 @@ export default function QuickAdd({ onAddParsed }: Props) {
         preview: input.slice(0, 80),
       });
       showFeedback(
-        rejected?.message ?? "没有识别到时间安排，试试包含时间和事项的句子"
+        rejected?.message ?? "没有识别到时间安排，试试包含时间和事项的句子",
+        "warn"
       );
       return;
     }
@@ -40,12 +43,12 @@ export default function QuickAdd({ onAddParsed }: Props) {
   };
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <div className="flex flex-1 items-center gap-2">
-          <Sparkles size={18} className="shrink-0 text-blue-600" />
+    <div className="tool-panel">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Sparkles size={18} className="shrink-0 text-primary" />
           <input
-            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            className="input-pill"
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
@@ -54,11 +57,11 @@ export default function QuickAdd({ onAddParsed }: Props) {
             placeholder="自然语言生成：周二下午2点到5点写代码，地点深圳湾；周三上午10点健身"
           />
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <button
             type="button"
             onClick={handleGenerate}
-            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="btn-primary-pill"
           >
             <Sparkles size={14} />
             生成
@@ -67,7 +70,11 @@ export default function QuickAdd({ onAddParsed }: Props) {
       </div>
 
       {feedback && (
-        <div className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700">
+        <div
+          className={`${
+            feedbackTone === "ok" ? "status-note-ok" : "status-note-amber"
+          } mt-3 inline-flex items-center gap-1.5 !py-1.5 text-xs`}
+        >
           <CheckCircle2 size={13} />
           {feedback}
         </div>

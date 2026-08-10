@@ -12,6 +12,7 @@ import {
   CloudOff,
   LogIn,
   LogOut,
+  Plus,
   Redo2,
   Settings,
   Undo2,
@@ -564,57 +565,61 @@ export default function Home() {
 
   if (!data || !hydrated) {
     return (
-      <main className="flex min-h-screen items-center justify-center text-sm text-slate-400">
-        加载中...
-      </main>
+      <div className="loading-screen">
+        <div className="flex items-center gap-2">
+          <CalendarRange size={18} className="text-primary" />
+          <span className="type-caption">加载中...</span>
+        </div>
+      </div>
     );
   }
 
+  const currentTab = TABS.find((tab) => tab.key === view);
+  const subTitle =
+    view === "week"
+      ? "周时间轴"
+      : currentTab?.label ?? "AI 日程";
+  const subMeta =
+    view === "week" || view === "stats"
+      ? formatWeekRange(weekOffset)
+      : "宏观拆解 · 拖拽排期";
+
   return (
-    <main className="mx-auto flex min-h-screen max-w-[1480px] flex-col px-3 py-3 sm:px-5">
-      <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-blue-600 text-white">
-            <CalendarRange size={17} />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold leading-tight text-slate-800">
-              AI 日程
-            </h1>
-            <p className="text-[10px] leading-tight text-slate-400">
-              宏观拆解 · 微观执行
-            </p>
-          </div>
+    <div className="app-shell">
+      <header className="global-nav">
+        <div className="nav-brand">
+          <span className="nav-brand-mark">
+            <CalendarRange size={15} />
+          </span>
+          <span>AI 日程</span>
         </div>
 
-        <div className="flex rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
+        <nav className="nav-links">
           {TABS.map((tab) => {
             const Icon = tab.icon;
+            const active = view === tab.key;
             return (
               <button
                 key={tab.key}
                 type="button"
                 onClick={() => setView(tab.key)}
-                className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-xs font-medium transition ${
-                  view === tab.key
-                    ? "bg-slate-800 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-100"
-                }`}
+                className={`nav-link ${active ? "nav-link-active" : ""}`}
+                aria-current={active ? "page" : undefined}
               >
-                <Icon size={14} />
-                <span className="hidden sm:inline">{tab.label}</span>
+                <Icon size={13} />
+                <span className="nav-link-label">{tab.label}</span>
               </button>
             );
           })}
-        </div>
+        </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="nav-actions">
           <button
             type="button"
             onClick={undo}
             disabled={!historyState || historyState.past.length === 0}
             title="撤销 (⌘Z)"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="nav-icon-btn"
           >
             <Undo2 size={14} />
           </button>
@@ -623,7 +628,7 @@ export default function Home() {
             onClick={redo}
             disabled={!historyState || historyState.future.length === 0}
             title="重做 (⇧⌘Z)"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            className="nav-icon-btn"
           >
             <Redo2 size={14} />
           </button>
@@ -631,19 +636,19 @@ export default function Home() {
             type="button"
             onClick={() => setSettingsOpen(true)}
             title="设置"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm hover:bg-slate-50"
+            className="nav-icon-btn"
           >
             <Settings size={14} />
           </button>
           {user ? (
-            <div className="inline-flex max-w-44 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 shadow-sm">
-              <User size={12} className="shrink-0" />
-              <span className="truncate">{user.email}</span>
+            <div className="nav-user">
+              <User size={12} />
+              <span>{user.email}</span>
               <button
                 type="button"
                 onClick={() => signOutUser()}
                 title="退出登录"
-                className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                className="icon-btn-plain !h-6 !w-6 text-white/70 hover:bg-white/10 hover:text-white"
               >
                 <LogOut size={12} />
               </button>
@@ -653,17 +658,15 @@ export default function Home() {
               type="button"
               onClick={() => setAuthModalOpen(true)}
               title="登录以启用云同步"
-              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+              className="btn-dark-utility"
             >
-              <LogIn size={12} />
+              <LogIn size={14} />
               登录
             </button>
           )}
           <span
-            className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium ${
-              syncState === "supabase"
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-slate-100 text-slate-500"
+            className={`nav-sync ${
+              syncState === "supabase" ? "nav-sync-on" : "nav-sync-off"
             }`}
           >
             {syncState === "supabase" ? (
@@ -680,69 +683,107 @@ export default function Home() {
         </div>
       </header>
 
-      {view === "week" && (
-        <div className="flex h-[calc(100vh-170px)] min-h-[560px] flex-1 flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
+      <section className="sub-nav">
+        <div className="sub-nav-left">
+          <span className="sub-nav-title">{subTitle}</span>
+          <span className="sub-nav-meta">{subMeta}</span>
+        </div>
+        <div className="sub-nav-actions">
+          {view === "week" && (
+            <>
               <button
                 type="button"
                 onClick={() => setWeekOffset((offset) => offset - 1)}
-                className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 shadow-sm hover:bg-slate-50"
+                className="chip-btn"
                 title="上一周"
               >
-                <ChevronLeft size={15} />
-              </button>
-              <span className="min-w-44 text-center text-sm font-semibold text-slate-700">
-                {formatWeekRange(weekOffset)}
-              </span>
-              <button
-                type="button"
-                onClick={() => setWeekOffset((offset) => offset + 1)}
-                className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 shadow-sm hover:bg-slate-50"
-                title="下一周"
-              >
-                <ChevronRight size={15} />
+                <ChevronLeft size={14} />
+                上周
               </button>
               <button
                 type="button"
                 onClick={() => setWeekOffset(0)}
-                className="ml-1 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+                className={`chip-btn ${weekOffset === 0 ? "chip-btn-active" : ""}`}
               >
                 本周
               </button>
-            </div>
-            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setWeekOffset((offset) => offset + 1)}
+                className="chip-btn"
+                title="下一周"
+              >
+                下周
+                <ChevronRight size={14} />
+              </button>
               <button
                 type="button"
                 disabled
-                className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-400 shadow-sm disabled:cursor-not-allowed"
+                className="btn-ghost hide-on-mobile"
                 title="导出功能暂未启用"
               >
                 <CalendarPlus size={14} />
                 导出日历
               </button>
-            </div>
-          </div>
-
-          <QuickAdd onAddParsed={addParsedBlocks} />
-
-          <WeekTimeline
-            days={getWeekDays(weekOffset)}
-            blocks={data.timeBlocks}
-            obsidianVault={data.settings?.obsidianVault}
-            focusTarget={focusTarget}
-            onFocusHandled={() => setFocusTarget(null)}
-            onUpdateBlock={updateBlock}
-            onToggleDone={toggleBlockDone}
-            onAddAt={openNewBlockAt}
-            onOpenObsidian={handleOpenObsidian}
-            onEditBlock={(block) => {
-              setEditingBlock(block);
-              setBlockModalOpen(true);
-            }}
-          />
+              <button
+                type="button"
+                onClick={() =>
+                  openNewBlockAt(
+                    todayKey(),
+                    new Date().getHours() * 60
+                  )
+                }
+                className="btn-primary-pill"
+              >
+                <CalendarPlus size={16} />
+                新建时间块
+              </button>
+            </>
+          )}
+          {view === "board" && (
+            <button
+              type="button"
+              onClick={() => {
+                setEditingTask(null);
+                setTaskModalOpen(true);
+              }}
+              className="btn-primary-pill"
+            >
+              <Plus size={16} />
+              新建任务
+            </button>
+          )}
+          {view === "stats" && (
+            <button type="button" disabled className="btn-primary-pill">
+              <CalendarPlus size={16} />
+              导出 Markdown
+            </button>
+          )}
         </div>
-      )}
+      </section>
+
+      <main className="content-shell">
+        {view === "week" && (
+          <div className="flex h-[calc(100vh-236px)] min-h-[520px] flex-col gap-4">
+            <QuickAdd onAddParsed={addParsedBlocks} />
+
+            <WeekTimeline
+              days={getWeekDays(weekOffset)}
+              blocks={data.timeBlocks}
+              obsidianVault={data.settings?.obsidianVault}
+              focusTarget={focusTarget}
+              onFocusHandled={() => setFocusTarget(null)}
+              onUpdateBlock={updateBlock}
+              onToggleDone={toggleBlockDone}
+              onAddAt={openNewBlockAt}
+              onOpenObsidian={handleOpenObsidian}
+              onEditBlock={(block) => {
+                setEditingBlock(block);
+                setBlockModalOpen(true);
+              }}
+            />
+          </div>
+        )}
 
       {view === "board" && (
         <TaskBoard
@@ -773,6 +814,108 @@ export default function Home() {
       )}
 
       {view === "stats" && <StatsView data={data} days={days} />}
+      </main>
+
+      <footer className="site-footer">
+        <div className="site-footer-inner">
+          <div className="site-footer-cols">
+            <div>
+              <div className="site-footer-heading">视图</div>
+              <button
+                type="button"
+                onClick={() => setView("week")}
+                className="site-footer-link"
+              >
+                周时间轴
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("board")}
+                className="site-footer-link"
+              >
+                任务看板
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("stats")}
+                className="site-footer-link"
+              >
+                统计周报
+              </button>
+            </div>
+            <div>
+              <div className="site-footer-heading">工具</div>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className="site-footer-link"
+              >
+                Obsidian 知识库
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("board")}
+                className="site-footer-link"
+              >
+                宏观任务拆解
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("stats")}
+                className="site-footer-link"
+              >
+                周报导出
+              </button>
+            </div>
+            <div>
+              <div className="site-footer-heading">数据</div>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className="site-footer-link"
+              >
+                本地存储
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthModalOpen(true)}
+                className="site-footer-link"
+              >
+                云同步
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className="site-footer-link"
+              >
+                撤销历史
+              </button>
+            </div>
+            <div>
+              <div className="site-footer-heading">关于</div>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className="site-footer-link"
+              >
+                设置
+              </button>
+              <button
+                type="button"
+                onClick={() => setAuthModalOpen(true)}
+                className="site-footer-link"
+              >
+                账号
+              </button>
+              <span className="site-footer-link">版本 0.1.0</span>
+            </div>
+          </div>
+          <div className="site-footer-legal">
+            © 2026 AI 日程管理系统 · 数据默认保存在本地浏览器，可选 Supabase
+            云同步。
+          </div>
+        </div>
+      </footer>
 
       {blockModalOpen && (
         <BlockModal
@@ -809,6 +952,6 @@ export default function Home() {
           onClose={() => setTaskModalOpen(false)}
         />
       )}
-    </main>
+    </div>
   );
 }
