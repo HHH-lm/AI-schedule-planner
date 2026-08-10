@@ -57,43 +57,43 @@ export default function AuthModal({ onClose }: Props) {
   };
 
   const inputClass =
-    "w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
-  const labelClass = "mb-1 block text-xs font-medium text-slate-600";
+    "input-rect";
+  const labelClass = "field-label";
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4"
+      className="modal-backdrop"
       onMouseDown={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-lg bg-white shadow-2xl"
+        className="modal-card max-w-sm"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h3 className="text-sm font-semibold">
+        <div className="modal-header">
+          <h3 className="modal-title">
             {mode === "signin" ? "登录云同步" : "注册账号"}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="icon-btn-plain"
             aria-label="关闭"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="space-y-3 px-4 py-4">
+        <div className="modal-body space-y-4">
           {configured ? (
             <>
-              <div className="grid grid-cols-2 gap-1 rounded-md bg-slate-100 p-1">
+              <div className="flex gap-1 rounded-full bg-[#f0f0f0] p-1">
                 <button
                   type="button"
                   onClick={() => switchMode("signin")}
-                  className={`rounded px-2 py-1.5 text-xs font-medium ${
+                  className={`chip-btn flex-1 !border-0 !py-1.5 ${
                     mode === "signin"
-                      ? "bg-white text-slate-800 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
+                      ? "chip-btn-active"
+                      : "!bg-transparent"
                   }`}
                 >
                   登录
@@ -101,10 +101,10 @@ export default function AuthModal({ onClose }: Props) {
                 <button
                   type="button"
                   onClick={() => switchMode("signup")}
-                  className={`rounded px-2 py-1.5 text-xs font-medium ${
+                  className={`chip-btn flex-1 !border-0 !py-1.5 ${
                     mode === "signup"
-                      ? "bg-white text-slate-800 shadow-sm"
-                      : "text-slate-500 hover:text-slate-700"
+                      ? "chip-btn-active"
+                      : "!bg-transparent"
                   }`}
                 >
                   注册
@@ -112,9 +112,9 @@ export default function AuthModal({ onClose }: Props) {
               </div>
 
               <div>
-                <div className="mb-1 flex items-center gap-1.5">
-                  <Mail size={13} className="text-slate-400" />
-                  <span className={labelClass}>邮箱</span>
+                <div className="field-hint">
+                  <Mail size={13} />
+                  <span>邮箱</span>
                 </div>
                 <input
                   type="email"
@@ -127,9 +127,9 @@ export default function AuthModal({ onClose }: Props) {
               </div>
 
               <div>
-                <div className="mb-1 flex items-center gap-1.5">
-                  <KeyRound size={13} className="text-slate-400" />
-                  <span className={labelClass}>密码</span>
+                <div className="field-hint">
+                  <KeyRound size={13} />
+                  <span>密码</span>
                 </div>
                 <input
                   type="password"
@@ -147,13 +147,11 @@ export default function AuthModal({ onClose }: Props) {
               </div>
 
               {error && (
-                <div className="rounded-md bg-rose-50 px-2.5 py-1.5 text-xs text-rose-600">
-                  {error}
-                </div>
+                <div className="status-note-rose !py-1.5 text-xs">{error}</div>
               )}
             </>
           ) : (
-            <div className="rounded-md bg-amber-50 px-3 py-2.5 text-xs leading-relaxed text-amber-700">
+            <div className="status-note-amber text-xs leading-relaxed">
               尚未配置云同步。请在 <code className="font-mono">.env.local</code>{" "}
               中填写 <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code>{" "}
               与{" "}
@@ -163,12 +161,12 @@ export default function AuthModal({ onClose }: Props) {
           )}
         </div>
 
-        <div className="flex items-center justify-end border-t border-slate-200 px-4 py-3">
+        <div className="modal-footer !justify-end">
           <button
             type="button"
             onClick={configured ? handleSubmit : onClose}
             disabled={configured && loading}
-            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+            className="btn-primary-pill"
           >
             {configured ? (
               mode === "signin" ? (

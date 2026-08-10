@@ -222,7 +222,7 @@ export default function TaskBoard({
       key={block.id}
       type="button"
       onClick={() => onEditBlock(block)}
-      className="inline-flex max-w-full items-center gap-1 truncate rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700 hover:bg-amber-100"
+      className="pending-chip !py-1 text-[10px]"
       title="待排期，点击分配时间"
     >
       <Sparkles size={10} />
@@ -250,27 +250,27 @@ export default function TaskBoard({
             onEditBlock(block);
           }
         }}
-        className={`w-full cursor-pointer rounded-md border-l-4 ${
+        className={`w-full cursor-pointer rounded-[8px] border-l-4 ${
           block.done ? "opacity-55" : ""
         } ${meta.bg} ${meta.border}`}
         title={title}
       >
         <div className="flex min-w-0 items-start justify-between gap-1 px-1.5 py-1">
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-medium tabular-nums leading-tight text-slate-500">
+            <div className="text-[10px] font-medium tabular-nums leading-tight text-ink-muted-48">
               {compact
                 ? `${block.date.slice(5).replace("-", "/")} ${minutesToHHMM(block.start)}`
                 : `${minutesToHHMM(block.start)}-${minutesToHHMM(block.end)}`}
             </div>
             <div
-              className={`truncate font-semibold leading-tight ${
+              className={`truncate font-semibold leading-tight text-ink ${
                 compact ? "text-[11px]" : "text-xs"
               }`}
             >
               {block.name}
             </div>
             {!compact && block.location && (
-              <div className="mt-0.5 flex items-center gap-0.5 text-[10px] leading-tight text-slate-500">
+              <div className="mt-0.5 flex items-center gap-0.5 text-[10px] leading-tight text-ink-muted-48">
                 <MapPin size={10} className="shrink-0" />
                 <span className="truncate">{block.location}</span>
               </div>
@@ -285,9 +285,9 @@ export default function TaskBoard({
                   event.stopPropagation();
                   onOpenObsidian?.(block);
                 }}
-                className="rounded p-0.5 hover:bg-white/70"
+                className="icon-btn-plain !h-6 !w-6"
               >
-                <BookMarked size={13} className="text-slate-500" />
+                <BookMarked size={13} className="text-ink-muted-48" />
               </button>
             )}
             <button
@@ -297,12 +297,12 @@ export default function TaskBoard({
                 event.stopPropagation();
                 onToggleBlockDone(block.id);
               }}
-              className="shrink-0 rounded p-0.5 hover:bg-white/70"
+              className="icon-btn-plain !h-6 !w-6"
             >
               {block.done ? (
-                <CheckCircle2 size={15} className="text-emerald-600" />
+                <CheckCircle2 size={15} className="text-primary" />
               ) : (
-                <Circle size={15} className="text-slate-400" />
+                <Circle size={15} className="text-ink-muted-48" />
               )}
             </button>
           </div>
@@ -323,15 +323,14 @@ export default function TaskBoard({
           event.dataTransfer.dropEffect = "move";
         }}
         onDrop={(event) => handleDrop(event, day.key)}
-        className={`group relative shrink-0 border-r border-slate-100 p-1.5 ${
-          day.isToday ? "bg-blue-50/30" : ""
+        className={`board-day-cell group ${
+          day.isToday ? "today" : ""
         }`}
-        style={{ width: DAY_W }}
       >
         <div className="flex min-h-[68px] flex-col gap-1">
           {scheduledBlocks.length === 0 && pendingBlocks.length === 0 && (
             <div className="flex h-full items-center justify-center">
-              <span className="text-[10px] text-slate-300 opacity-0 transition group-hover:opacity-100">
+              <span className="text-[10px] text-ink-muted-48 opacity-0 transition group-hover:opacity-100">
                 拖入排期
               </span>
             </div>
@@ -361,13 +360,12 @@ export default function TaskBoard({
           event.dataTransfer.dropEffect = "move";
         }}
         onDrop={(event) => handleDrop(event, week.key)}
-        className="group relative shrink-0 border-r border-slate-100 p-1.5"
-        style={{ width: DAY_W }}
+        className="board-day-cell group"
       >
         <div className="flex min-h-[68px] flex-col gap-1">
           {scheduledBlocks.length === 0 && pendingBlocks.length === 0 && (
             <div className="flex h-full items-center justify-center">
-              <span className="text-[10px] text-slate-300 opacity-0 transition group-hover:opacity-100">
+              <span className="text-[10px] text-ink-muted-48 opacity-0 transition group-hover:opacity-100">
                 拖入本周
               </span>
             </div>
@@ -381,45 +379,47 @@ export default function TaskBoard({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <div className="mb-3 flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:flex-row">
-        <div className="flex flex-1 items-center gap-2">
-          <Sparkles size={18} className="shrink-0 text-blue-600" />
-          <textarea
-            rows={1}
-            className="w-full resize-none rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            value={macroText}
-            onChange={(event) => setMacroText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                handleMacro();
-              }
-            }}
-            placeholder="输入项目计划，一行一个任务：做一期视频；写AI应用文章"
-          />
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <button
-            type="button"
-            onClick={handleMacro}
-            className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-blue-700"
-          >
-            <Sparkles size={14} />
-            拆解
-          </button>
-          <button
-            type="button"
-            onClick={onNewTask}
-            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Plus size={14} />
-            新建
-          </button>
+      <div className="tool-panel mb-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Sparkles size={18} className="shrink-0 text-primary" />
+            <textarea
+              rows={1}
+              className="input-rect w-full resize-none"
+              value={macroText}
+              onChange={(event) => setMacroText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  handleMacro();
+                }
+              }}
+              placeholder="输入项目计划，一行一个任务：做一期视频；写AI应用文章"
+            />
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={handleMacro}
+              className="btn-primary-pill"
+            >
+              <Sparkles size={14} />
+              拆解
+            </button>
+            <button
+              type="button"
+              onClick={onNewTask}
+              className="btn-secondary-pill"
+            >
+              <Plus size={14} />
+              新建
+            </button>
+          </div>
         </div>
       </div>
 
       {feedback && (
-        <div className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 text-xs text-emerald-700">
+        <div className="status-note-ok mb-3 inline-flex w-fit items-center gap-1.5 !py-1.5 text-xs">
           <CheckCircle2 size={13} />
           {feedback}
         </div>
@@ -428,13 +428,13 @@ export default function TaskBoard({
       <div
         ref={scrollRef}
         onScroll={handleBoardScroll}
-        className="flex-1 overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm thin-scroll"
+        className="board-shell board-scrollbar"
       >
         <div className="min-w-max">
-          <div className="sticky top-0 z-20 flex border-b border-slate-200 bg-white">
-            <div className="sticky left-0 z-30 flex w-72 shrink-0 flex-col justify-center gap-0.5 border-r border-slate-200 bg-white px-3 py-2">
-              <span className="text-xs font-semibold text-slate-600">任务</span>
-              <span className="text-[10px] text-slate-400">
+          <div className="board-header">
+            <div className="board-task-col">
+              <span className="type-caption-strong text-ink">任务</span>
+              <span className="text-[10px] text-ink-muted-48">
                 左右排期 · 上下排序
               </span>
             </div>
@@ -448,31 +448,31 @@ export default function TaskBoard({
               return (
                 <div
                   key={week.key}
-                  className="flex shrink-0 flex-col border-r border-slate-100"
+                  className="board-week-header"
                   style={{ width: collapsed ? DAY_W : DAY_W * 7 }}
                 >
                   <button
                     type="button"
                     onClick={() => toggleWeekCollapse(week.key)}
-                    className="flex w-full items-center gap-1 px-2 py-1.5 text-left hover:bg-slate-50"
+                    className="flex w-full items-center gap-1 px-2 py-1.5 text-left hover:bg-canvas-parchment"
                     title={collapsed ? "展开本周" : "折叠本周"}
                   >
                     {collapsed ? (
                       <ChevronRight
                         size={13}
-                        className="shrink-0 text-slate-400"
+                        className="shrink-0 text-ink-muted-48"
                       />
                     ) : (
                       <ChevronDown
                         size={13}
-                        className="shrink-0 text-slate-400"
+                        className="shrink-0 text-ink-muted-48"
                       />
                     )}
-                    <span className="truncate text-[10px] font-semibold text-slate-600">
+                    <span className="truncate text-[10px] font-semibold text-ink-muted-80">
                       {formatWeekLabel(week)}
                     </span>
                     {weekBlocks.length > 0 && (
-                      <span className="ml-auto rounded bg-blue-50 px-1 py-px text-[10px] text-blue-600">
+                      <span className="ml-auto rounded-full bg-[rgba(0,102,204,0.1)] px-1.5 py-px text-[10px] text-primary">
                         {weekBlocks.length}
                       </span>
                     )}
@@ -482,17 +482,16 @@ export default function TaskBoard({
                       {week.days.map((day) => (
                         <div
                           key={day.key}
-                          className="flex shrink-0 flex-col items-center justify-center border-r border-slate-100 px-2 py-2"
-                          style={{ width: DAY_W }}
+                          className="board-day-head"
                         >
                           <span
                             className={`text-xs font-semibold ${
-                              day.isToday ? "text-blue-700" : "text-slate-600"
+                              day.isToday ? "text-primary" : "text-ink-muted-80"
                             }`}
                           >
                             {weekdayName(day.date)}
                           </span>
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-[10px] text-ink-muted-48">
                             {day.date.getMonth() + 1}/{day.date.getDate()}
                           </span>
                         </div>
@@ -505,7 +504,7 @@ export default function TaskBoard({
             <button
               type="button"
               onClick={extendWeek}
-              className="flex shrink-0 items-center gap-1 border-r border-slate-100 px-2.5 text-[11px] font-medium text-slate-500 hover:bg-slate-50"
+              className="flex shrink-0 items-center gap-1 border-r border-[#f0f0f0] px-2.5 text-[11px] font-medium text-ink-muted-48 hover:bg-canvas-parchment"
               title="追加一周"
             >
               <Plus size={13} />
@@ -514,7 +513,7 @@ export default function TaskBoard({
           </div>
 
           {data.tasks.length === 0 && (
-            <div className="flex items-center justify-center py-12 text-sm text-slate-400">
+            <div className="flex items-center justify-center py-12 text-sm text-ink-muted-48">
               暂无任务，在上方输入项目计划
             </div>
           )}
@@ -526,12 +525,12 @@ export default function TaskBoard({
             return (
               <div
                 key={task.id}
-                className={`relative flex border-b border-slate-100 transition hover:bg-slate-50/50 ${
+                className={`board-task-row ${
                   dragTaskId === task.id ? "opacity-50" : ""
                 }`}
               >
                 <div
-                  className="sticky left-0 z-10 flex w-72 shrink-0 flex-col gap-1.5 border-r border-slate-100 bg-white px-3 py-2.5"
+                  className="board-task-name-col"
                   onDragOver={(event) => handleTaskRowDragOver(event, task)}
                   onDrop={(event) => handleTaskRowDrop(event, task)}
                 >
@@ -553,7 +552,7 @@ export default function TaskBoard({
                         setDragTaskId(null);
                         clearReorder();
                       }}
-                      className="cursor-grab text-slate-300 hover:text-slate-500"
+                      className="cursor-grab text-ink-muted-48 hover:text-ink-muted-80"
                       title="左右拖拽排期，上下拖动排序"
                     >
                       <GripVertical size={14} />
@@ -563,7 +562,7 @@ export default function TaskBoard({
                       onClick={() => onEditTask(task)}
                       className="min-w-0 flex-1 text-left"
                     >
-                      <span className="text-sm font-medium text-slate-800">
+                      <span className="text-sm font-medium text-ink">
                         {task.name}
                       </span>
                     </button>
@@ -571,10 +570,8 @@ export default function TaskBoard({
                       type="button"
                       onClick={() => onToggleTaskPinned(task.id)}
                       title={task.pinned ? "取消置顶" : "置顶任务"}
-                      className={`shrink-0 rounded p-0.5 transition ${
-                        task.pinned
-                          ? "text-amber-500"
-                          : "text-slate-300 hover:text-slate-500"
+                      className={`icon-btn-plain !h-6 !w-6 ${
+                        task.pinned ? "text-primary" : "text-ink-muted-48"
                       }`}
                     >
                       <Pin
@@ -585,10 +582,10 @@ export default function TaskBoard({
                     {task.status === "done" ? (
                       <CheckCircle2
                         size={15}
-                        className="shrink-0 text-emerald-600"
+                        className="shrink-0 text-primary"
                       />
                     ) : (
-                      <Circle size={15} className="shrink-0 text-slate-300" />
+                      <Circle size={15} className="shrink-0 text-ink-muted-48" />
                     )}
                   </div>
 
@@ -613,7 +610,7 @@ export default function TaskBoard({
                               setDragSubtaskId(sub.id);
                             }}
                             onDragEnd={() => setDragSubtaskId(null)}
-                            className={`flex cursor-grab items-center gap-1.5 rounded px-1 py-0.5 text-[11px] transition hover:bg-slate-100 ${
+                            className={`flex cursor-grab items-center gap-1.5 rounded px-1 py-0.5 text-[11px] transition hover:bg-canvas-parchment ${
                               dragSubtaskId === sub.id ? "opacity-50" : ""
                             }`}
                             title="拖拽子任务到右侧日期列排期"
@@ -631,33 +628,33 @@ export default function TaskBoard({
                               {sub.done ? (
                                 <CheckCircle2
                                   size={12}
-                                  className="text-emerald-500"
+                                  className="text-primary"
                                 />
                               ) : (
                                 <Circle
                                   size={12}
-                                  className="text-slate-300 hover:text-slate-500"
+                                  className="text-ink-muted-48 hover:text-ink"
                                 />
                               )}
                             </button>
                             <span
                               className={`truncate ${
                                 sub.done
-                                  ? "text-slate-400 line-through"
-                                  : "text-slate-600"
+                                  ? "text-ink-muted-48 line-through"
+                                  : "text-ink-muted-80"
                               }`}
                             >
                               {sub.name}
                             </span>
-                            {matchedBlock &&
-                              matchedBlock.status === "scheduled" && (
-                                <span className="ml-auto shrink-0 text-[10px] text-slate-400">
+                              {matchedBlock &&
+                                matchedBlock.status === "scheduled" && (
+                                <span className="ml-auto shrink-0 text-[10px] text-ink-muted-48">
                                   {matchedBlock.date.slice(5).replace("-", "/")}{" "}
                                   {minutesToHHMM(matchedBlock.start)}
                                 </span>
                               )}
                             {!matchedBlock && (
-                              <span className="ml-auto shrink-0 rounded bg-amber-50 px-1 py-px text-[10px] text-amber-600">
+                              <span className="ml-auto shrink-0 rounded-full bg-[rgba(201,110,18,0.1)] px-1.5 py-px text-[10px] text-[#9a5b12]">
                                 未排期
                               </span>
                             )}
@@ -667,7 +664,7 @@ export default function TaskBoard({
                     </div>
                   )}
                   {task.subtasks.length === 0 && (
-                    <div className="ml-5 text-[11px] text-slate-400">
+                    <div className="ml-5 text-[11px] text-ink-muted-48">
                       无子任务，点击编辑添加
                     </div>
                   )}
@@ -683,7 +680,7 @@ export default function TaskBoard({
                 })}
                 {reorderTarget && reorderTarget.taskId === task.id && (
                   <div
-                    className={`pointer-events-none absolute left-0 right-0 z-10 h-0.5 bg-blue-500 ${
+                    className={`pointer-events-none absolute left-0 right-0 z-10 h-0.5 bg-primary ${
                       reorderTarget.position === "before" ? "top-0" : "bottom-0"
                     }`}
                   />

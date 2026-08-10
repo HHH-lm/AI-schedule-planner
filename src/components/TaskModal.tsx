@@ -47,32 +47,33 @@ export default function TaskModal({
   };
 
   const inputClass =
-    "w-full rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100";
-  const labelClass = "mb-1 block text-xs font-medium text-slate-600";
+    "input-rect";
+  const labelClass = "field-label";
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4"
+      className="modal-backdrop"
       onMouseDown={onClose}
     >
       <div
-        className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white shadow-2xl thin-scroll"
+        className="modal-card modal-card-scroll max-w-lg thin-scroll"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h3 className="text-sm font-semibold">
+        <div className="modal-header">
+          <h3 className="modal-title">
             {task ? "任务详情" : "新建任务"}
           </h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+            className="icon-btn-plain"
+            aria-label="关闭"
           >
             <X size={16} />
           </button>
         </div>
 
-        <div className="space-y-3 px-4 py-4">
+        <div className="modal-body space-y-4">
           <div>
             <label className={labelClass}>任务名称</label>
             <input
@@ -103,15 +104,15 @@ export default function TaskModal({
                 }
                 className={`flex w-full items-center justify-between rounded-md border px-2.5 py-1.5 text-sm ${
                   status === "done"
-                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                    : "border-slate-300 bg-white text-slate-700"
+                    ? "status-note-ok"
+                    : "btn-ghost w-full"
                 }`}
               >
                 <span>{status === "done" ? "已完成" : "进行中"}</span>
                 {status === "done" ? (
-                  <CheckCircle2 size={15} className="text-emerald-600" />
+                  <CheckCircle2 size={15} className="text-[#146b46]" />
                 ) : (
-                  <Circle size={15} className="text-slate-300" />
+                  <Circle size={15} className="text-ink-muted-48" />
                 )}
               </button>
             </div>
@@ -123,7 +124,7 @@ export default function TaskModal({
               {subtasks.map((subtask) => (
                 <div
                   key={subtask.id}
-                  className="flex items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5"
+                  className="flex items-center gap-2 rounded-[8px] border border-hairline bg-surface-pearl px-2 py-1.5"
                 >
                   <button
                     type="button"
@@ -139,9 +140,9 @@ export default function TaskModal({
                     className="shrink-0"
                   >
                     {subtask.done ? (
-                      <CheckCircle2 size={15} className="text-emerald-600" />
+                      <CheckCircle2 size={15} className="text-primary" />
                     ) : (
-                      <Circle size={15} className="text-slate-300" />
+                      <Circle size={15} className="text-ink-muted-48" />
                     )}
                   </button>
                   <input
@@ -164,7 +165,7 @@ export default function TaskModal({
                         prev.filter((item) => item.id !== subtask.id)
                       )
                     }
-                    className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-rose-600"
+                    className="icon-btn-plain !h-7 !w-7 hover:!text-[#b3261e]"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -187,7 +188,7 @@ export default function TaskModal({
               <button
                 type="button"
                 onClick={addSubtask}
-                className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-300 px-3 text-sm text-slate-700 hover:bg-slate-50"
+                className="btn-ghost shrink-0"
               >
                 <Plus size={14} />
                 添加
@@ -196,7 +197,7 @@ export default function TaskModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+        <div className="modal-footer">
           {task ? (
             <button
               type="button"
@@ -204,7 +205,7 @@ export default function TaskModal({
                 onDelete(task.id);
                 onClose();
               }}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-rose-600 hover:bg-rose-50"
+              className="btn-ghost !border-[rgba(190,40,60,0.3)] !text-[#b3261e] hover:!bg-[rgba(190,40,60,0.06)]"
             >
               <Trash2 size={14} />
               删除
@@ -215,7 +216,7 @@ export default function TaskModal({
           <button
             type="button"
             onClick={handleSave}
-            className="rounded-md bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+            className="btn-primary-pill"
           >
             保存
           </button>
