@@ -19,8 +19,10 @@ import {
   User,
 } from "lucide-react";
 import type {
+  AiProviderSetting,
   AppData,
   ParsedSchedule,
+  Subtask,
   Task,
   TimeBlock,
   ViewMode,
@@ -36,6 +38,7 @@ import {
   saveLocalData,
   uid,
 } from "@/lib/storage";
+import { apiPost } from "@/lib/api";
 import {
   getSession,
   isSupabaseConfigured,
@@ -55,6 +58,9 @@ import TaskModal from "@/components/TaskModal";
 import StatsView from "@/components/StatsView";
 import SettingsModal from "@/components/SettingsModal";
 import AuthModal from "@/components/AuthModal";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import ConflictModal from "@/components/ConflictModal";
+import AccountModal from "@/components/AccountModal";
 import { buildObsidianUrl } from "@/lib/obsidian";
 import {
   commitHistoryState,
@@ -69,7 +75,7 @@ const TABS: Array<{
   label: string;
   icon: typeof CalendarRange;
 }> = [
-  { key: "week", label: "周时间轴", icon: CalendarRange },
+  { key: "week", label: "周计划", icon: CalendarRange },
   { key: "board", label: "任务看板", icon: ClipboardList },
   { key: "stats", label: "统计周报", icon: BarChart3 },
 ];
@@ -87,6 +93,8 @@ export default function Home() {
   );
   const [user, setUser] = useState<{ id: string; email: string } | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [accountModalOpen, setAccountModalOpen] = useState(false);
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
   const [editingBlock, setEditingBlock] = useState<TimeBlock | null>(null);
   const [blockModalOpen, setBlockModalOpen] = useState(false);
   const [newBlockTime, setNewBlockTime] = useState<{
@@ -94,6 +102,8 @@ export default function Home() {
     start: number;
   } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [conflicts, setConflicts] = useState<ParsedSchedule[]>([]);
+  const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [focusTarget, setFocusTarget] = useState<{
@@ -107,6 +117,17 @@ export default function Home() {
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+
+  useEffect(() => {
+    if (!hydrated || view !== "week") return;
+    setWeekOffset(0);
+    const now = new Date();
+    setFocusTarget({
+      date: todayKey(),
+      start: now.getHours() * 60 + now.getMinutes(),
+      end: now.getHours() * 60 + now.getMinutes() + 60,
+    });
+  }, [hydrated, view]);
 
   useEffect(
     () => () => {
@@ -307,24 +328,53 @@ export default function Home() {
     [commitData]
   );
 
-  const addParsedBlocks = useCallback((parsed: ParsedSchedule[]) => {
-    commitData((prev) =>
-      prev
-        ? {
-            ...prev,
-            timeBlocks: [
-              ...prev.timeBlocks,
-              ...parsed.map<ParsedSchedule & TimeBlock>((item) => ({
-                ...item,
-                id: uid(),
-                done: false,
-                status: "scheduled",
-              })),
-            ],
-          }
-        : prev
-    );
-    const first = parsed[0];
+  const addParsedBlocks = useCallback(
+    async (parsed: ParsedSchedule[]): Promise<number> => {
+    const current = dataRef.current;
+    if (!current) return 0;
+    let accepted = parsed;
+    let blocked: ParsedSchedule[] = [];
+    try {
+      const result = await apiPost<{
+        accepted: ParsedSchedule[];
+        blocked: ParsedSchedule[];
+      }>("/conflicts/check", {
+        schedules: parsed,
+        existing_blocks: current.timeBlocks.map((block) => ({
+          date: block.date,
+          start: block.start,
+          end: block.end,
+          status: block.status,
+        })),
+      });
+      accepted = result.accepted;
+      blocked = result.blocked;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error("冲突检测失败");
+    }
+    if (accepted.length > 0) {
+      commitData((prev) =>
+        prev
+          ? {
+              ...prev,
+              timeBlocks: [
+                ...prev.timeBlocks,
+                ...accepted.map<ParsedSchedule & TimeBlock>((item) => ({
+                  ...item,
+                  id: uid(),
+                  done: false,
+                  status: "scheduled",
+                })),
+              ],
+            }
+          : prev
+      );
+    }
+    if (blocked.length > 0) {
+      setConflicts(blocked);
+      setConflictModalOpen(true);
+    }
+    const first = accepted[0];
     if (first) {
       setWeekOffset(weekOffsetForDate(first.date));
       setFocusTarget({
@@ -335,21 +385,53 @@ export default function Home() {
       if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
       focusTimerRef.current = setTimeout(() => setFocusTarget(null), 2000);
     }
-  }, [commitData]);
+    return accepted.length;
+  },
+  [commitData]
+  );
 
-  const saveObsidianVault = useCallback((obsidianVault: string) => {
-    commitData((prev) =>
-      prev
-        ? {
-            ...prev,
-            settings: {
-              ...prev.settings,
-              obsidianVault: obsidianVault || undefined,
-            },
-          }
-        : prev
-    );
-  }, [commitData]);
+  const saveSettings = useCallback(
+    (settings: { obsidianVault: string; aiProvider: AiProviderSetting }) => {
+      commitData((prev) =>
+        prev
+          ? {
+              ...prev,
+              settings: {
+                ...prev.settings,
+                obsidianVault: settings.obsidianVault || undefined,
+                aiProvider: settings.aiProvider,
+              },
+            }
+          : prev
+      );
+    },
+    [commitData]
+  );
+
+  const toggleHiddenBoardWeek = useCallback(
+    (weekKey: string) => {
+      commitData((prev) => {
+        if (!prev) return prev;
+        const current = prev.settings?.hiddenBoardWeeks ?? [];
+        const hidden = current.includes(weekKey);
+        return {
+          ...prev,
+          settings: {
+            ...prev.settings,
+            hiddenBoardWeeks: hidden
+              ? current.filter((key) => key !== weekKey)
+              : [...current, weekKey],
+          },
+        };
+      });
+    },
+    [commitData]
+  );
+
+  const openAccount = useCallback(() => {
+    if (user) setAccountModalOpen(true);
+    else setAuthModalOpen(true);
+  }, [user]);
 
   const handleOpenObsidian = useCallback(
     (block: TimeBlock) => {
@@ -369,26 +451,39 @@ export default function Home() {
     setBlockModalOpen(true);
   }, []);
 
-  const addTasks = useCallback((names: string[]) => {
-    commitData((prev) =>
-      prev
-        ? {
-            ...prev,
-            tasks: [
-              ...prev.tasks,
-              ...names.map<Task>((name) => ({
-                id: uid(),
-                name,
-                date: null,
-                status: "todo",
-                subtasks: [],
-                pinned: false,
-              })),
-            ],
-          }
-        : prev
-    );
-  }, [commitData]);
+  const addTasks = useCallback(
+    (seeds: Array<{ name: string; subtasks?: string[] } | string>) => {
+      commitData((prev) =>
+        prev
+          ? {
+              ...prev,
+              tasks: [
+                ...prev.tasks,
+                ...seeds.map<Task>((seed) => {
+                  const name = typeof seed === "string" ? seed : seed.name;
+                  const subtaskNames =
+                    typeof seed === "string" ? [] : (seed.subtasks ?? []);
+                  const subtasks: Subtask[] = subtaskNames.map((subtask) => ({
+                    id: uid(),
+                    name: subtask,
+                    done: false,
+                  }));
+                  return {
+                    id: uid(),
+                    name,
+                    date: null,
+                    status: "todo" as const,
+                    subtasks,
+                    pinned: false,
+                  };
+                }),
+              ],
+            }
+          : prev
+      );
+    },
+    [commitData]
+  );
 
   const saveTask = useCallback((draft: Partial<Task>, id?: string) => {
     commitData((prev) => {
@@ -545,6 +640,68 @@ export default function Home() {
     [commitData]
   );
 
+  const planTasks = useCallback(
+    async (
+      tasks: Task[]
+    ): Promise<{
+      added: number;
+      blockedCount: number;
+      message?: string | null;
+    }> => {
+      const current = dataRef.current;
+      if (!current) return { added: 0, blockedCount: 0 };
+      const result = await apiPost<{
+        source: "openai" | "deepseek" | "local" | "none";
+        blocks: ParsedSchedule[];
+        blocked: ParsedSchedule[];
+        message?: string | null;
+      }>("/plan", {
+        tasks: tasks.map((task) => ({
+          name: task.name,
+          date: task.date,
+          subtasks: task.subtasks.map((subtask) => subtask.name),
+        })),
+        existing_blocks: current.timeBlocks.map((block) => ({
+          date: block.date,
+          start: block.start,
+          end: block.end,
+          status: block.status,
+        })),
+        start_date: todayKey(),
+        horizon_days: 14,
+        provider: current.settings?.aiProvider ?? "auto",
+        today: todayKey(),
+      });
+      if (result.source === "none") {
+        throw new Error(result.message ?? "AI 规划失败，请稍后重试");
+      }
+      if (result.blocks.length > 0) {
+        commitData((prev) =>
+          prev
+            ? {
+                ...prev,
+                timeBlocks: [
+                  ...prev.timeBlocks,
+                  ...result.blocks.map<ParsedSchedule & TimeBlock>((block) => ({
+                    ...block,
+                    id: uid(),
+                    done: false,
+                    status: "scheduled" as const,
+                  })),
+                ],
+              }
+            : prev
+        );
+      }
+      return {
+        added: result.blocks.length,
+        blockedCount: result.blocked.length,
+        message: result.message,
+      };
+    },
+    [commitData]
+  );
+
   const days = getWeekDays(weekOffset);
 
   /* 苹果日历导出暂未启用
@@ -577,7 +734,7 @@ export default function Home() {
   const currentTab = TABS.find((tab) => tab.key === view);
   const subTitle =
     view === "week"
-      ? "周时间轴"
+      ? "周计划"
       : currentTab?.label ?? "AI 日程";
   const subMeta =
     view === "week" || view === "stats"
@@ -646,7 +803,7 @@ export default function Home() {
               <span>{user.email}</span>
               <button
                 type="button"
-                onClick={() => signOutUser()}
+                onClick={() => setSignOutConfirmOpen(true)}
                 title="退出登录"
                 className="icon-btn-plain !h-6 !w-6 text-white/70 hover:bg-white/10 hover:text-white"
               >
@@ -764,8 +921,11 @@ export default function Home() {
 
       <main className="content-shell">
         {view === "week" && (
-          <div className="flex h-[calc(100vh-236px)] min-h-[520px] flex-col gap-4">
-            <QuickAdd onAddParsed={addParsedBlocks} />
+          <div className="flex h-[calc(150vh-354px)] min-h-[780px] flex-col gap-4">
+            <QuickAdd
+              onAddParsed={addParsedBlocks}
+              aiProvider={data.settings?.aiProvider ?? "auto"}
+            />
 
             <WeekTimeline
               days={getWeekDays(weekOffset)}
@@ -790,6 +950,8 @@ export default function Home() {
           data={data}
           days={getWeekDays(weekOffset)}
           obsidianVault={data.settings?.obsidianVault}
+          hiddenWeeks={data.settings?.hiddenBoardWeeks ?? []}
+          onToggleHiddenWeek={toggleHiddenBoardWeek}
           onMoveTask={moveTask}
           onEditTask={(task) => {
             setEditingTask(task);
@@ -810,6 +972,7 @@ export default function Home() {
           }}
           onToggleBlockDone={toggleBlockDone}
           onOpenObsidian={handleOpenObsidian}
+          onPlanTasks={planTasks}
         />
       )}
 
@@ -826,7 +989,7 @@ export default function Home() {
                 onClick={() => setView("week")}
                 className="site-footer-link"
               >
-                周时间轴
+                周计划
               </button>
               <button
                 type="button"
@@ -878,7 +1041,7 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={() => setAuthModalOpen(true)}
+                onClick={openAccount}
                 className="site-footer-link"
               >
                 云同步
@@ -902,7 +1065,7 @@ export default function Home() {
               </button>
               <button
                 type="button"
-                onClick={() => setAuthModalOpen(true)}
+                onClick={openAccount}
                 className="site-footer-link"
               >
                 账号
@@ -936,12 +1099,41 @@ export default function Home() {
       {settingsOpen && (
         <SettingsModal
           obsidianVault={data.settings?.obsidianVault ?? ""}
-          onSave={saveObsidianVault}
+          aiProvider={data.settings?.aiProvider ?? "auto"}
+          onSave={saveSettings}
           onClose={() => setSettingsOpen(false)}
         />
       )}
 
       {authModalOpen && <AuthModal onClose={() => setAuthModalOpen(false)} />}
+
+      {accountModalOpen && user && (
+        <AccountModal
+          email={user.email}
+          onLogout={() => {
+            setAccountModalOpen(false);
+            setSignOutConfirmOpen(true);
+          }}
+          onClose={() => setAccountModalOpen(false)}
+        />
+      )}
+
+      {conflictModalOpen && conflicts.length > 0 && (
+        <ConflictModal
+          conflicts={conflicts}
+          onClose={() => setConflictModalOpen(false)}
+        />
+      )}
+
+      {signOutConfirmOpen && (
+        <ConfirmDialog
+          title="退出登录"
+          description="确定要退出当前账号吗？退出后将停止云端同步，本地数据仍会保留。"
+          confirmLabel="确认退出"
+          onConfirm={signOutUser}
+          onClose={() => setSignOutConfirmOpen(false)}
+        />
+      )}
 
       {taskModalOpen && (
         <TaskModal

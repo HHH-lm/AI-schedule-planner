@@ -1,0 +1,21 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends
+
+from app.config import Settings, get_settings
+from app.schemas import HealthResponse
+
+
+router = APIRouter()
+
+
+@router.get("/health", response_model=HealthResponse)
+def health(settings: Settings = Depends(get_settings)) -> HealthResponse:
+    return HealthResponse(
+        status="ok",
+        service=settings.service_name,
+        version=settings.version,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+    )

@@ -31,10 +31,10 @@ scan_tracked "密钥/高熵 token 模式" \
   'sk_(live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
 
 scan_tracked "带值的密钥环境变量" \
-  '(NEXT_PUBLIC_SUPABASE_ANON_KEY|OPENAI_API_KEY|SUPABASE_SERVICE_ROLE_KEY)\s*=\s*[^[:space:]]'
+  '(NEXT_PUBLIC_SUPABASE_ANON_KEY|OPENAI_API_KEY|DEEPSEEK_API_KEY|SUPABASE_SERVICE_ROLE_KEY)\s*=\s*["'\'']?[^[:space:]"'\'']'
 
 scan_tracked "明显凭据赋值" \
-  '(password|secret|api[_-]?key)\s*=\s*[^[:space:]]'
+  '(password|secret|api[_-]?key)\s*=\s*["'\'']?[^[:space:]"'\'']'
 
 tracked_env="$(git ls-files | rg '(^|/)\.env($|\.local$|\.prod$|\.staging$)' || true)"
 if [ -n "$tracked_env" ]; then

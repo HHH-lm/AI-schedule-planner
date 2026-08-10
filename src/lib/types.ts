@@ -1,6 +1,7 @@
 export type Category = "work" | "study" | "fitness" | "life" | "rest";
 export type BlockStatus = "scheduled" | "pending";
 export type ViewMode = "week" | "board" | "stats";
+export type AiProviderSetting = "auto" | "openai" | "deepseek" | "local";
 
 export interface Subtask {
   id: string;
@@ -34,6 +35,8 @@ export interface TimeBlock {
 
 export interface AppSettings {
   obsidianVault?: string;
+  aiProvider?: AiProviderSetting;
+  hiddenBoardWeeks?: string[];
 }
 
 export interface AppData {

@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# 防止同一项目出现多个 next dev 实例共享 .next 缓存（曾导致 3000 端口 500）。
+# 同时启动 FastAPI 后端（8000）与 Next.js 前端（3000）。
+# 防多实例逻辑沿用既有实现，避免共享 .next 缓存导致端口 500。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 BIN="$ROOT/node_modules/.bin/next"
 PORT="${PORT:-3000}"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
 DEFAULT_PORTS=(3000 3001 3002 3003 3004 3005)
 
 find_pid_on_port() {
@@ -19,7 +21,8 @@ cwd_of() {
 
 http_code_on() {
   local port="$1"
-  curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$port" 2>/dev/null || true
+  local path="${2:-/}"
+  curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}${path}" 2>/dev/null || true
 }
 
 same_project_running() {
@@ -36,17 +39,82 @@ same_project_running() {
   return 1
 }
 
+backend_started=0
+
+ensure_backend() {
+  local venv_py="$ROOT/backend/.venv/bin/python"
+  if [ ! -x "$venv_py" ]; then
+    echo "未找到 backend/.venv，请先运行：uv sync --project backend --extra dev"
+    exit 1
+  fi
+
+  if [ -f "$ROOT/.backend.pid" ]; then
+    local saved_pid
+    saved_pid="$(cat "$ROOT/.backend.pid" 2>/dev/null || true)"
+    if [ -n "$saved_pid" ] && kill -0 "$saved_pid" 2>/dev/null; then
+      echo "FastAPI 后端已在运行：http://localhost:${BACKEND_PORT}"
+      return 0
+    fi
+  fi
+
+  local existing_pid
+  existing_pid="$(find_pid_on_port "$BACKEND_PORT")"
+  if [ -n "$existing_pid" ]; then
+    local existing_cwd
+    existing_cwd="$(cwd_of "$existing_pid")"
+    if [ "$existing_cwd" = "$ROOT" ]; then
+      echo "$existing_pid" > "$ROOT/.backend.pid"
+      echo "FastAPI 后端已在运行：http://localhost:${BACKEND_PORT}"
+      return 0
+    fi
+    echo "端口 $BACKEND_PORT 已被其他进程占用（PID $existing_pid），请先释放端口，或使用 BACKEND_PORT 环境变量指定其他端口。"
+    exit 1
+  fi
+
+  (
+    cd "$ROOT/backend"
+    exec "$venv_py" -m uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT"
+  ) >"$ROOT/.backend.log" 2>&1 &
+  backend_pid=$!
+  echo "$backend_pid" > "$ROOT/.backend.pid"
+  backend_started=1
+  for _ in {1..40}; do
+    if [ "$(http_code_on "$BACKEND_PORT" /api/v1/health)" = "200" ]; then
+      echo "FastAPI 后端已启动：http://localhost:${BACKEND_PORT}"
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "FastAPI 后端启动失败，日志见 .backend.log："
+  tail -n 20 "$ROOT/.backend.log" 2>/dev/null || true
+  exit 1
+}
+
+next_pid=""
+cleanup() {
+  if [ -n "$next_pid" ]; then
+    kill "$next_pid" 2>/dev/null || true
+  fi
+  if [ "$backend_started" = "1" ] && [ -n "${backend_pid:-}" ]; then
+    kill "$backend_pid" 2>/dev/null || true
+    rm -f "$ROOT/.backend.pid"
+  fi
+}
+trap cleanup EXIT
+
+ensure_backend
+
 existing="$(same_project_running || true)"
 if [ -n "$existing" ]; then
   existing_port="${existing%% *}"
   existing_pid="${existing##* }"
-  if [[ "$(http_code_on "$existing_port")" =~ ^2 ]]; then
-    echo "AI 日程 dev server 已在运行：http://localhost:$existing_port"
+  if [[ "$(http_code_on "${existing_port}")" =~ ^2 ]]; then
+    echo "AI 日程 dev server 已在运行：http://localhost:${existing_port}"
     exit 0
   fi
-  echo "检测到本项目实例异常（PID $existing_pid，端口 $existing_port），正在停止并清理缓存后重启..."
-  parent="$(ps -o ppid= -p "$existing_pid" 2>/dev/null | tr -d ' ' || true)"
-  kill "$existing_pid" "$parent" 2>/dev/null || true
+  echo "检测到本项目实例异常（PID ${existing_pid}，端口 ${existing_port}），正在停止并清理缓存后重启..."
+  parent="$(ps -o ppid= -p "${existing_pid}" 2>/dev/null | tr -d ' ' || true)"
+  kill "${existing_pid}" "$parent" 2>/dev/null || true
   sleep 1
   rm -rf "$ROOT/.next"
 fi
@@ -60,4 +128,6 @@ if [ -n "$blocking_pid" ]; then
   fi
 fi
 
-exec "$BIN" dev -p "$PORT"
+"$BIN" dev -p "$PORT" &
+next_pid=$!
+wait "$next_pid"
