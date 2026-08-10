@@ -1,0 +1,44 @@
+{
+  "taskId": "T-012",
+  "title": "AI API 解析服务（OpenAI / DeepSeek 双提供商与本地回退）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "src/lib/ai-parse.ts",
+    "src/lib/ai-parse.test.ts",
+    "src/app/api/parse/route.ts",
+    "src/components/QuickAdd.tsx",
+    "src/components/SettingsModal.tsx",
+    "src/lib/types.ts",
+    "src/app/page.tsx",
+    ".env.example",
+    "README.md",
+    "docs/security.md",
+    "docs/operations.md",
+    "scripts/scan-secrets.sh",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "自然语言解析改为服务端 `POST /api/parse`，支持 OpenAI 与 DeepSeek；设置页可选解析服务；未配置 Key 或接口失败时 QuickAdd 回退本地 NLP 规则。",
+  "dependencies": ["F-002", "F-010", "F-012"],
+  "invariants": [
+    "API Key 不得写入客户端代码或浏览器",
+    "模型输出必须经类目/日期/时间白名单清洗",
+    "未配置 Key 或接口失败时生成流程不可中断",
+    "日志不得记录完整用户输入与 API Key"
+  ],
+  "acceptance": [
+    "POST /api/parse 支持 OpenAI 与 DeepSeek 两种提供商",
+    "设置页可切换 auto / openai / deepseek / local",
+    "ai-parse.test.ts 覆盖提供商选择、请求构造、输出清洗与失败回退",
+    "npm test、lint、tsc、build、scan:secrets 全部通过"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build",
+    "npm run scan:secrets"
+  ]
+}

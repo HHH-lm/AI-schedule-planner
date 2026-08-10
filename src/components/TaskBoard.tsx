@@ -1,13 +1,15 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   BookMarked,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
+  Eye,
   GripVertical,
+  Loader2,
   MapPin,
   Pin,
   Plus,
@@ -16,7 +18,11 @@ import {
 import type { AppData, Task, TimeBlock } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
 import { addDays, minutesToHHMM, toDateKey, weekdayName } from "@/lib/date";
+import { getBoardStart } from "@/lib/board";
 import { CATEGORIES } from "@/lib/categories";
+import { apiPost } from "@/lib/api";
+import ConfirmDialog from "@/components/ConfirmDialog";
+import RestoreWeeksModal from "@/components/RestoreWeeksModal";
 
 const DAY_W = 112;
 const INITIAL_WEEKS = 4;
@@ -38,10 +44,12 @@ interface Props {
   data: AppData;
   days: WeekDay[];
   obsidianVault?: string;
+  hiddenWeeks: string[];
+  onToggleHiddenWeek: (weekKey: string) => void;
   onMoveTask: (taskId: string, dateKey: string) => void;
   onEditTask: (task: Task) => void;
   onNewTask: () => void;
-  onAddTasks: (names: string[]) => void;
+  onAddTasks: (names: Array<{ name: string; subtasks?: string[] } | string>) => void;
   onToggleSubtask: (taskId: string, subtaskId: string) => void;
   onAddSubtaskBlock: (taskId: string, subtaskName: string, dateKey: string) => void;
   onReorderTask: (fromTaskId: string, toTaskId: string, before: boolean) => void;
@@ -49,12 +57,17 @@ interface Props {
   onEditBlock: (block: TimeBlock) => void;
   onToggleBlockDone: (blockId: string) => void;
   onOpenObsidian?: (block: TimeBlock) => void;
+  onPlanTasks: (
+    tasks: Task[]
+  ) => Promise<{ added: number; blockedCount: number; message?: string | null }>;
 }
 
 export default function TaskBoard({
   data,
   days,
   obsidianVault,
+  hiddenWeeks,
+  onToggleHiddenWeek,
   onMoveTask,
   onEditTask,
   onNewTask,
@@ -66,6 +79,7 @@ export default function TaskBoard({
   onEditBlock,
   onToggleBlockDone,
   onOpenObsidian,
+  onPlanTasks,
 }: Props) {
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragSubtaskId, setDragSubtaskId] = useState<string | null>(null);
@@ -76,11 +90,25 @@ export default function TaskBoard({
   } | null>(null);
   const [macroText, setMacroText] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [breakdownBusy, setBreakdownBusy] = useState(false);
+  const [planBusy, setPlanBusy] = useState(false);
   const [weekCount, setWeekCount] = useState(INITIAL_WEEKS);
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(
     () => new Set()
   );
+  const [hideConfirmWeek, setHideConfirmWeek] = useState<BoardWeek | null>(
+    null
+  );
+  const [restoreModalOpen, setRestoreModalOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const longPressRef = useRef<{
+    timer: number | null;
+    fired: boolean;
+  }>({ timer: null, fired: false });
+
+  useEffect(() => {
+    if (hiddenWeeks.length === 0) setRestoreModalOpen(false);
+  }, [hiddenWeeks]);
 
   const orderedTasks = useMemo(
     () =>
@@ -90,10 +118,26 @@ export default function TaskBoard({
     [data.tasks]
   );
 
+  const earliestDateKey = useMemo(() => {
+    const keys: string[] = [];
+    for (const task of data.tasks) {
+      if (task.date) keys.push(task.date);
+    }
+    for (const block of data.timeBlocks) {
+      keys.push(block.date);
+    }
+    return keys.sort()[0];
+  }, [data.tasks, data.timeBlocks]);
+
+  const boardStart = useMemo(
+    () => getBoardStart(days[0].date, earliestDateKey),
+    [days, earliestDateKey]
+  );
+
   const todayKeyValue = toDateKey(new Date());
   const weeks = useMemo<BoardWeek[]>(() => {
     return Array.from({ length: weekCount }, (_, index) => {
-      const start = addDays(days[0].date, index * 7);
+      const start = addDays(boardStart, index * 7);
       return {
         key: toDateKey(start),
         start,
@@ -107,7 +151,12 @@ export default function TaskBoard({
         }),
       };
     });
-  }, [days, weekCount, todayKeyValue]);
+  }, [boardStart, weekCount, todayKeyValue]);
+
+  const visibleWeeks = useMemo(
+    () => weeks.filter((week) => !hiddenWeeks.includes(week.key)),
+    [weeks, hiddenWeeks]
+  );
 
   const extendWeek = () => {
     setWeekCount((count) => count + 1);
@@ -130,24 +179,96 @@ export default function TaskBoard({
     });
   };
 
+  const clearLongPress = () => {
+    if (longPressRef.current.timer) clearTimeout(longPressRef.current.timer);
+    longPressRef.current.timer = null;
+  };
+
+  const handleWeekPointerDown = (week: BoardWeek) => {
+    clearLongPress();
+    longPressRef.current.fired = false;
+    longPressRef.current.timer = window.setTimeout(() => {
+      longPressRef.current.fired = true;
+      setHideConfirmWeek(week);
+    }, 600);
+  };
+
+  const handleWeekClick = (week: BoardWeek) => {
+    if (longPressRef.current.fired) {
+      longPressRef.current.fired = false;
+      return;
+    }
+    toggleWeekCollapse(week.key);
+  };
+
   const formatWeekLabel = (week: BoardWeek) => {
     const end = addDays(week.start, 6);
     return `${week.start.getMonth() + 1}/${week.start.getDate()} - ${end.getMonth() + 1}/${end.getDate()}`;
   };
 
-  const handleMacro = () => {
-    const names = macroText
-      .split(/\n|、|，|,/)
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (names.length === 0) {
-      setFeedback("请输入至少一个任务");
+  const handleMacro = async () => {
+    const plan = macroText.trim();
+    if (!plan || breakdownBusy) return;
+    setBreakdownBusy(true);
+    try {
+      const result = await apiPost<{
+        source: "openai" | "deepseek" | "local" | "none";
+        tasks: Array<{ name: string; subtasks: string[] }>;
+        message?: string;
+      }>("/breakdown", {
+        plan,
+        provider: "auto",
+        today: toDateKey(new Date()),
+      });
+      if (result.source === "none") {
+        setFeedback(result.message ?? "AI 拆解失败，请稍后重试");
+        return;
+      }
+      if (result.tasks.length === 0) {
+        setFeedback("没有拆解出任务，请检查输入");
+        return;
+      }
+      onAddTasks(
+        result.tasks.map((task) => ({
+          name: task.name,
+          subtasks: task.subtasks,
+        }))
+      );
+      setMacroText("");
+      setFeedback(`已拆解出 ${result.tasks.length} 个任务`);
+    } catch (error) {
+      setFeedback(
+        error instanceof Error ? error.message : "AI 拆解失败，请稍后重试"
+      );
+    } finally {
+      setBreakdownBusy(false);
+      window.setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
+  const handlePlan = async () => {
+    if (planBusy || data.tasks.length === 0) {
+      if (data.tasks.length === 0) setFeedback("请先添加任务，再使用 AI 规划");
       return;
     }
-    onAddTasks(names);
-    setMacroText("");
-    setFeedback(`已拆解出 ${names.length} 个任务`);
-    window.setTimeout(() => setFeedback(null), 3000);
+    setPlanBusy(true);
+    try {
+      const result = await onPlanTasks(data.tasks);
+      const message =
+        result.added > 0
+          ? `AI 规划完成：新增 ${result.added} 个时间块${
+              result.blockedCount > 0 ? `，跳过 ${result.blockedCount} 个冲突` : ""
+            }`
+          : "AI 没有生成新的时间块，请调整任务或已有安排后重试";
+      setFeedback(message);
+    } catch (error) {
+      setFeedback(
+        error instanceof Error ? error.message : "AI 规划失败，请稍后重试"
+      );
+    } finally {
+      setPlanBusy(false);
+      window.setTimeout(() => setFeedback(null), 4000);
+    }
   };
 
   const handleDrop = (event: React.DragEvent, dayKey: string) => {
@@ -401,10 +522,29 @@ export default function TaskBoard({
             <button
               type="button"
               onClick={handleMacro}
+              disabled={breakdownBusy}
               className="btn-primary-pill"
             >
-              <Sparkles size={14} />
-              拆解
+              {breakdownBusy ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}
+              {breakdownBusy ? "拆解中" : "拆解"}
+            </button>
+            <button
+              type="button"
+              onClick={handlePlan}
+              disabled={planBusy || data.tasks.length === 0}
+              className="btn-secondary-pill"
+              title="为当前任务自动生成时间块"
+            >
+              {planBusy ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Sparkles size={14} />
+              )}
+              {planBusy ? "规划中" : "AI 规划"}
             </button>
             <button
               type="button"
@@ -438,7 +578,7 @@ export default function TaskBoard({
                 左右排期 · 上下排序
               </span>
             </div>
-            {weeks.map((week) => {
+            {visibleWeeks.map((week) => {
               const collapsed = collapsedWeeks.has(week.key);
               const weekBlocks = data.timeBlocks.filter(
                 (b) =>
@@ -453,9 +593,17 @@ export default function TaskBoard({
                 >
                   <button
                     type="button"
-                    onClick={() => toggleWeekCollapse(week.key)}
+                    onClick={() => handleWeekClick(week)}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      setHideConfirmWeek(week);
+                    }}
+                    onPointerDown={() => handleWeekPointerDown(week)}
+                    onPointerUp={clearLongPress}
+                    onPointerLeave={clearLongPress}
+                    onPointerCancel={clearLongPress}
                     className="flex w-full items-center gap-1 px-2 py-1.5 text-left hover:bg-canvas-parchment"
-                    title={collapsed ? "展开本周" : "折叠本周"}
+                    title={collapsed ? "展开本周" : "折叠本周；右键或长按隐藏本周显示"}
                   >
                     {collapsed ? (
                       <ChevronRight
@@ -501,6 +649,17 @@ export default function TaskBoard({
                 </div>
               );
             })}
+            {hiddenWeeks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setRestoreModalOpen(true)}
+                className="flex shrink-0 items-center gap-1 border-r border-[#f0f0f0] px-2.5 text-[11px] font-medium text-ink-muted-48 hover:bg-canvas-parchment"
+                title="恢复隐藏周显示"
+              >
+                <Eye size={13} />
+                隐藏 {hiddenWeeks.length} 周
+              </button>
+            )}
             <button
               type="button"
               onClick={extendWeek}
@@ -670,7 +829,7 @@ export default function TaskBoard({
                   )}
                 </div>
 
-                {weeks.map((week) => {
+                {visibleWeeks.map((week) => {
                   const collapsed = collapsedWeeks.has(week.key);
                   return collapsed
                     ? renderCollapsedWeekCell(taskBlocks, week)
@@ -690,6 +849,24 @@ export default function TaskBoard({
           })}
         </div>
       </div>
+
+      {hideConfirmWeek && (
+        <ConfirmDialog
+          title="删除本周安排显示"
+          description={`确定要隐藏 ${formatWeekLabel(hideConfirmWeek)} 的安排显示吗？只影响任务看板显示，不会删除任何数据。`}
+          confirmLabel="确认隐藏"
+          onConfirm={() => onToggleHiddenWeek(hideConfirmWeek.key)}
+          onClose={() => setHideConfirmWeek(null)}
+        />
+      )}
+
+      {restoreModalOpen && (
+        <RestoreWeeksModal
+          hiddenWeeks={hiddenWeeks}
+          onRestore={onToggleHiddenWeek}
+          onClose={() => setRestoreModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

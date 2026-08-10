@@ -38,6 +38,9 @@
 | E-T011-001 | 2026-08-09T18:10:58Z | npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件（哈希已过期） | Auth 登录式多租户：87 个测试通过，auth.uid() + RLS 就绪 | `.project-to-act/tasks/T-011/evidence/E-T011-001.md` | 已过期，2026-08-10 修订见 E-T011-002 |
 | E-T011-002 | 2026-08-09T18:16:52Z | npm test、npm run lint、npx tsc --noEmit、npm run build、shasum | 0 | 修订后 SHA-256 见证据文件 | 登录入口始终可见，未配置 Supabase 时弹窗提示配置 | `.project-to-act/tasks/T-011/evidence/E-T011-002.md` | 2026-08-16 |
 | E-T011-003 | 2026-08-09T19:25:55Z | npm test、npm run lint、npx tsc --noEmit、npm run build、shasum | 0 | 修订后 SHA-256 见证据文件 | Auth 错误提示完善：密码策略/泄露/常见密码映射中文原因，未知错误展示原文 | `.project-to-act/tasks/T-011/evidence/E-T011-003.md` | 2026-08-16 |
+| E-T012-001 | 2026-08-10T08:55:00Z | npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件 | AI API 解析：OpenAI / DeepSeek 双提供商、服务端 Key、本地回退；14 个文件 103 个测试通过 | `.project-to-act/tasks/T-012/evidence/E-T012-001.md` | 2026-08-17 |
+| E-T012-002 | 2026-08-10T09:45:00Z | npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件 | AI 解析超时优化：默认 15 秒超时、max_tokens 限制、明确失败提示；14 个文件 105 个测试通过 | `.project-to-act/tasks/T-012/evidence/E-T012-002.md` | 2026-08-17 |
+| E-T013-001 | 2026-08-10T12:10:00Z | backend pytest、npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、curl | 0 | v0.1.0，FastAPI/Python 后端重构 | FastAPI 后端重构：pytest 22 个、Vitest 52 个测试通过，lint/tsc/build/scan 通过，dev 联动验证 DeepSeek 解析成功 | `.project-to-act/tasks/T-013/evidence/E-T013-001.md` | 2026-08-17 |
 
 ## Gate 记录
 
@@ -50,6 +53,9 @@
 
 按时间倒序追加：日期、检查范围、证据 ID、结果、遗留问题和结论。失败、跳过与过期证据也必须如实记录。
 
+- 2026-08-10：FastAPI/Python 后端重构检查，E-T013-001，结果：`backend` pytest 22 个测试、Vitest 52 个测试、lint/tsc/build/scan 全部通过；`/api/v1/parse`、`/api/v1/breakdown`、`/api/v1/plan`、`/api/v1/conflicts/check`、`/api/v1/health` 均可用，Next.js 代理联动验证通过，实际 DeepSeek 解析成功。遗留问题：FastAPI 与前端需同时部署，`BACKEND_URL` 需在部署环境配置；真实 OpenAI 调用待部署环境人工验收。结论：T-013 通过，等待人工验收与阶段 7 发布准备。
+- 2026-08-10：AI 解析超时与失败反馈检查，E-T012-002，结果：`npm test` 14 个文件 105 个测试、lint/tsc/build/scan 全部通过；AI 请求默认 15 秒超时，超时或失败时 QuickAdd 显示明确错误并保留输入，仅未配置 Key 时回退本地规则。遗留问题：长句解析耗时仍受模型响应速度影响，超时后需重试或简化输入。结论：修订通过。
+- 2026-08-10：AI API 解析服务检查，E-T012-001，结果：`npm test` 14 个文件 103 个测试、lint/tsc/build/scan 全部通过；`POST /api/parse` 支持 OpenAI / DeepSeek，设置页可切换解析服务，未配置 Key 或接口失败自动回退本地 NLP 规则。遗留问题：真实服务商 API 调用与 Key 配置需部署环境人工验收。结论：T-012 通过，等待人工验收与阶段 7 发布准备。
 - 2026-08-10：阶段 6 Auth 错误提示完善检查，E-T011-003，结果：87 个测试、lint/tsc/build 通过；密码策略、泄露密码、常见密码映射为中文原因，未知错误展示原文。遗留问题：真实 Auth/RLS 仍待部署环境验收。结论：修订通过。
 - 2026-08-10：阶段 6 Auth 登录入口修订检查，E-T011-002，结果：登录按钮始终显示，未配置 Supabase 时弹窗提示配置；87 个测试、lint/tsc/build 通过。遗留问题：真实 Auth/RLS 仍待部署环境验收。结论：修订通过。
 - 2026-08-10：阶段 6 Auth 多租户隔离检查，E-T011-001，结果：13 个测试文件 87 个测试、lint/tsc/build/scan 全部通过，登录/注册/登出与 auth.uid() 读写就绪。遗留问题：真实 Email Auth/RLS 需部署环境人工验收，旧表需迁移。结论：T-011 通过；等待人工验收与阶段 7 发布准备。

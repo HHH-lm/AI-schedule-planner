@@ -125,7 +125,7 @@ export default function BlockModal({
         <div className="modal-body space-y-4">
           {block?.status === "pending" && (
             <div className="status-note-amber">
-              这是一个待排期时间块，设置起止时间后会自动进入周时间轴。
+              这是一个待排期时间块，设置起止时间后会自动进入周计划。
             </div>
           )}
 

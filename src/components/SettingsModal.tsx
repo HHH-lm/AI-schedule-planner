@@ -1,25 +1,35 @@
 "use client";
 
 import { useState } from "react";
-import { BookMarked, X } from "lucide-react";
+import { BookMarked, Bot, X } from "lucide-react";
 import { parseObsidianUrl } from "@/lib/obsidian";
+import type { AiProviderSetting } from "@/lib/types";
 
 interface Props {
   obsidianVault: string;
-  onSave: (obsidianVault: string) => void;
+  aiProvider: AiProviderSetting;
+  onSave: (settings: {
+    obsidianVault: string;
+    aiProvider: AiProviderSetting;
+  }) => void;
   onClose: () => void;
 }
 
 export default function SettingsModal({
   obsidianVault: initialVault,
+  aiProvider: initialProvider,
   onSave,
   onClose,
 }: Props) {
   const [vault, setVault] = useState(initialVault);
+  const [provider, setProvider] = useState<AiProviderSetting>(initialProvider);
 
   const handleSave = () => {
     const parsed = parseObsidianUrl(vault);
-    onSave((parsed.vault ?? vault).trim());
+    onSave({
+      obsidianVault: (parsed.vault ?? vault).trim(),
+      aiProvider: provider,
+    });
     onClose();
   };
 
@@ -58,6 +68,25 @@ export default function SettingsModal({
               }}
               placeholder="知识库名称，或粘贴 Obsidian 链接"
             />
+          </div>
+
+          <div>
+            <div className="field-hint">
+              <Bot size={13} />
+              <span>AI 解析服务</span>
+            </div>
+            <select
+              className={inputClass}
+              value={provider}
+              onChange={(event) =>
+                setProvider(event.target.value as AiProviderSetting)
+              }
+            >
+              <option value="auto">自动（优先 OpenAI，其次 DeepSeek）</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek</option>
+              <option value="local">本地规则</option>
+            </select>
           </div>
         </div>
 

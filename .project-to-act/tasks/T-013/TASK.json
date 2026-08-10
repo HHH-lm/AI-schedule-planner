@@ -1,0 +1,51 @@
+{
+  "taskId": "T-013",
+  "title": "FastAPI/Python 后端重构（AI 解析、任务拆解、时间规划、冲突检测、AI 调用）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "backend/",
+    "src/lib/api.ts",
+    "src/components/QuickAdd.tsx",
+    "src/components/TaskBoard.tsx",
+    "src/app/page.tsx",
+    "src/app/api/",
+    "src/lib/nlp.ts",
+    "src/lib/ai-parse.ts",
+    "src/lib/schedule-conflict.ts",
+    "next.config.mjs",
+    "scripts/dev.sh",
+    ".env.example",
+    "README.md",
+    "docs/operations.md",
+    "docs/security.md",
+    "scripts/scan-secrets.sh",
+    "package.json",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "加入 FastAPI 后端与 Python 技术栈，将 AI 任务解析、任务拆解、时间规划、冲突检测与 AI 调用全部迁移到后端；前端只保留交互与展示，通过 `/api/v1/*` 代理调用后端。",
+  "dependencies": ["F-015", "F-002", "F-012"],
+  "invariants": [
+    "API Key 只保存在 FastAPI 后端环境变量，不写入客户端",
+    "模型输出必须经类目/日期/时间白名单清洗",
+    "未配置 Key 时由后端本地 NLP 规则回退，生成流程不可中断",
+    "日志不得记录完整用户输入与 API Key"
+  ],
+  "acceptance": [
+    "backend/app 提供 /api/v1/parse、/api/v1/breakdown、/api/v1/plan、/api/v1/conflicts/check、/api/v1/health",
+    "pytest 覆盖 NLP、冲突检测、API 路由与本地回退",
+    "前端 QuickAdd、任务拆解、AI 规划与冲突检测统一调用后端",
+    "npm test、lint、tsc、build、scan:secrets 与 pytest 全部通过",
+    "dev 脚本同时启动 FastAPI（8000）与 Next.js（3000），代理联动验证通过"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q",
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build",
+    "npm run scan:secrets"
+  ]
+}

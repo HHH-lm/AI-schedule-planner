@@ -1,45 +1,103 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Sparkles } from "lucide-react";
-import type { ParsedSchedule } from "@/lib/types";
-import { parseScheduleWithFeedback } from "@/lib/nlp";
+import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
+import type { AiProviderSetting, ParsedSchedule } from "@/lib/types";
+import { todayKey } from "@/lib/date";
+import { apiPost, API_TIMEOUT_MS } from "@/lib/api";
 import { logInfo, logWarn } from "@/lib/logger";
 
 interface Props {
-  onAddParsed: (parsed: ParsedSchedule[]) => void;
+  onAddParsed: (parsed: ParsedSchedule[]) => Promise<number>;
+  aiProvider?: AiProviderSetting;
 }
 
-export default function QuickAdd({ onAddParsed }: Props) {
+interface ParseApiResponse {
+  source: "openai" | "deepseek" | "local" | "none";
+  schedules: ParsedSchedule[];
+  rejected?: { code: string; message: string } | null;
+  message?: string;
+}
+
+export default function QuickAdd({ onAddParsed, aiProvider }: Props) {
   const [text, setText] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<"ok" | "warn">("ok");
+  const [busy, setBusy] = useState(false);
 
   const showFeedback = (message: string, tone: "ok" | "warn" = "ok") => {
     setFeedback(message);
     setFeedbackTone(tone);
-    window.setTimeout(() => setFeedback(null), 3000);
+    if (tone === "ok") {
+      window.setTimeout(() => setFeedback(null), 3000);
+    }
   };
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     const input = text.trim();
-    const { schedules, rejected } = parseScheduleWithFeedback(input);
-    if (schedules.length === 0) {
-      logWarn("nlp_rejected", {
-        code: rejected?.code,
+    if (!input || busy) return;
+    setBusy(true);
+
+    try {
+      const result = await apiPost<ParseApiResponse>("/parse", {
+        text: input,
+        provider: aiProvider ?? "auto",
+        today: todayKey(),
+      });
+      if (result.source === "none") {
+        logWarn("ai_parse_failed", {
+          message: result.message,
+          inputLength: input.length,
+        });
+        showFeedback(result.message ?? "AI 解析失败，请稍后重试", "warn");
+        return;
+      }
+      if (result.schedules.length === 0) {
+        logWarn("nlp_rejected", {
+          code: result.rejected?.code,
+          inputLength: input.length,
+          preview: input.slice(0, 80),
+        });
+        showFeedback(
+          result.rejected?.message ?? "没有识别到时间安排，试试包含时间和事项的句子",
+          "warn"
+        );
+        return;
+      }
+      const added = await onAddParsed(result.schedules);
+      const skipped = result.schedules.length - added;
+      logInfo("nlp_generated", {
+        count: added,
+        skipped,
+        source: result.source,
+      });
+      const summary =
+        added > 0
+          ? skipped > 0
+            ? `已生成 ${added} 个时间块，跳过 ${skipped} 个冲突`
+            : `已生成 ${added} 个时间块`
+          : "所有时间块都与现有安排冲突，已跳过";
+      if (added === 0) {
+        showFeedback(summary, "warn");
+        return;
+      }
+      const providerLabel =
+        result.source === "local" ? "本地规则" : result.source.toUpperCase();
+      showFeedback(
+        result.message ? `${result.message}，${summary}` : `${summary}（${providerLabel}）`
+      );
+    } catch (error) {
+      logWarn("ai_parse_failed", {
+        message: error instanceof Error ? error.message : "后端服务调用失败",
         inputLength: input.length,
-        preview: input.slice(0, 80),
       });
       showFeedback(
-        rejected?.message ?? "没有识别到时间安排，试试包含时间和事项的句子",
+        error instanceof Error ? error.message : "后端服务调用失败，请稍后重试",
         "warn"
       );
-      return;
+    } finally {
+      setBusy(false);
     }
-    onAddParsed(schedules);
-    setText("");
-    logInfo("nlp_generated", { count: schedules.length });
-    showFeedback(`已生成 ${schedules.length} 个时间块`);
   };
 
   return (
@@ -61,10 +119,11 @@ export default function QuickAdd({ onAddParsed }: Props) {
           <button
             type="button"
             onClick={handleGenerate}
+            disabled={busy}
             className="btn-primary-pill"
           >
-            <Sparkles size={14} />
-            生成
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            {busy ? "解析中" : "生成"}
           </button>
         </div>
       </div>
@@ -77,6 +136,13 @@ export default function QuickAdd({ onAddParsed }: Props) {
         >
           <CheckCircle2 size={13} />
           {feedback}
+        </div>
+      )}
+
+      {busy && (
+        <div className="status-note-ok mt-3 inline-flex items-center gap-1.5 !py-1.5 text-xs">
+          <Loader2 size={13} className="animate-spin" />
+          AI 解析中，最长约 {API_TIMEOUT_MS / 1000} 秒，请稍候
         </div>
       )}
     </div>
