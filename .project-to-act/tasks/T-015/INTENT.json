@@ -1,0 +1,14 @@
+{
+  "intent": "FastAPI 后端增加定时提醒：APScheduler 每隔 5 分钟扫描 Supabase 中到达提醒时间的时间块，并通过企业微信机器人 / PushPlus / Server酱任一微信通道推送，手机锁屏也能收到。",
+  "conflicts": "无；提醒依赖 Supabase 云同步与常驻后端进程，本地模式时间块不参与提醒。",
+  "assumptions": [
+    "时间块新增可选 remindAt 字段，前端 BlockModal 提供提醒时间设置",
+    "后端使用 Supabase service role key 读取 schedule_state，绕过 RLS",
+    "推送成功后写入 reminder_log 去重，失败自动重试"
+  ],
+  "risks": [
+    "service role key 权限较高，只能放在后端环境变量",
+    "真实微信通道推送需要用户自行申请 webhook/token 并在部署环境验收",
+    "多实例部署时依赖 reminder_log 唯一约束防重复推送"
+  ]
+}

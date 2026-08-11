@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "ledger": ".project-to-act/AGENT_LIFECYCLE.json",
+  "currentStage": "6",
+  "stageStatus": "in_progress",
+  "intentSource": "用户指令：FastAPI 后端加定时任务，每 5 分钟扫描到达提醒时间的时间块并推送微信",
+  "contextFreshness": "2026-08-11，T-014 今日待办完成后追加",
+  "modificationIntent": "在 FastAPI 后端增加 APScheduler 定时提醒，通过微信通道推送，并补充前端提醒时间设置"
+}

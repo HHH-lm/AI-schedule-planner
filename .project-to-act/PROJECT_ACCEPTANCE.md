@@ -41,6 +41,9 @@
 | E-T012-001 | 2026-08-10T08:55:00Z | npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件 | AI API 解析：OpenAI / DeepSeek 双提供商、服务端 Key、本地回退；14 个文件 103 个测试通过 | `.project-to-act/tasks/T-012/evidence/E-T012-001.md` | 2026-08-17 |
 | E-T012-002 | 2026-08-10T09:45:00Z | npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、shasum | 0 | 关键文件 SHA-256 见证据文件 | AI 解析超时优化：默认 15 秒超时、max_tokens 限制、明确失败提示；14 个文件 105 个测试通过 | `.project-to-act/tasks/T-012/evidence/E-T012-002.md` | 2026-08-17 |
 | E-T013-001 | 2026-08-10T12:10:00Z | backend pytest、npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、curl | 0 | v0.1.0，FastAPI/Python 后端重构 | FastAPI 后端重构：pytest 22 个、Vitest 52 个测试通过，lint/tsc/build/scan 通过，dev 联动验证 DeepSeek 解析成功 | `.project-to-act/tasks/T-013/evidence/E-T013-001.md` | 2026-08-17 |
+| E-T014-001 | 2026-08-11T03:42:00Z | npm test、npm run lint、npx tsc --noEmit、npm run build、Playwright 截图 | 0 | v0.1.0，今日待办视图与双布局 | 今日待办：Vitest 52 个测试通过，lint/tsc/build 通过，移动端 390px 与桌面 1440px 截图验证双布局正常 | `.project-to-act/tasks/T-014/evidence/E-T014-001.md` | 2026-08-18 |
+| E-T015-001 | 2026-08-11T04:20:00Z | backend pytest、npm test、npm run lint、npx tsc --noEmit、npm run build、npm run scan:secrets、curl | 0 | 关键文件 SHA-256 见证据文件 | 定时提醒：后端 pytest 34 个测试通过，前端 52 个测试、lint/tsc/build/scan 通过，提醒端点探测返回符合预期 | `.project-to-act/tasks/T-015/evidence/E-T015-001.md` | 2026-08-18 |
+| E-T016-001 | 2026-08-11T04:30:00Z | npm test、npm run lint、npx tsc --noEmit、npm run build、Playwright 截图 | 0 | v0.1.0，今日待办四象限 | 四象限待办：Vitest 13 文件 57 个测试通过，lint/tsc/build 通过，注入四象限+旧数据截图验证分组正常 | `.project-to-act/tasks/T-016/evidence/E-T016-001.md` | 2026-08-18 |
 
 ## Gate 记录
 
@@ -53,6 +56,9 @@
 
 按时间倒序追加：日期、检查范围、证据 ID、结果、遗留问题和结论。失败、跳过与过期证据也必须如实记录。
 
+- 2026-08-11：今日待办四象限检查，E-T016-001，结果：`npm test` 13 个文件 57 个测试、lint/tsc/build（Turbopack）全部通过；Playwright 注入五个任务（四个象限各 1 条 + 1 条无象限旧数据）截图确认移动端单列四象限区块、桌面端 2x2 网格正常，旧任务自动归入“既不紧急也不重要”。遗留问题：无。结论：T-016 通过，下一步等待人工验收与阶段 7 发布准备。
+- 2026-08-11：今日待办视图与双布局检查，E-T014-001，结果：`npm test` 12 个文件 52 个测试、lint/tsc/build（Turbopack）全部通过；Playwright 移动端（390x844）与桌面端（1440x900）截图确认“今日安排 / 待办任务 / 明日预览”双布局正常，无溢出。遗留问题：提醒与微信推送尚未实施。结论：T-014 通过，下一步可继续 PWA 安装与提醒通道。
+- 2026-08-11：定时提醒与微信推送检查，E-T015-001，结果：`backend` pytest 34 个测试、Vitest 52 个测试、lint/tsc/build/scan 全部通过；实际启动 FastAPI 后端探测 `/api/v1/reminders/status` 与 `/api/v1/reminders/run` 返回符合预期（未配置时安全禁用并给出原因）。遗留问题：真实微信通道推送需部署环境配置 webhook/token 后人工验收。结论：T-015 通过，等待人工验收与阶段 7 发布准备。
 - 2026-08-10：FastAPI/Python 后端重构检查，E-T013-001，结果：`backend` pytest 22 个测试、Vitest 52 个测试、lint/tsc/build/scan 全部通过；`/api/v1/parse`、`/api/v1/breakdown`、`/api/v1/plan`、`/api/v1/conflicts/check`、`/api/v1/health` 均可用，Next.js 代理联动验证通过，实际 DeepSeek 解析成功。遗留问题：FastAPI 与前端需同时部署，`BACKEND_URL` 需在部署环境配置；真实 OpenAI 调用待部署环境人工验收。结论：T-013 通过，等待人工验收与阶段 7 发布准备。
 - 2026-08-10：AI 解析超时与失败反馈检查，E-T012-002，结果：`npm test` 14 个文件 105 个测试、lint/tsc/build/scan 全部通过；AI 请求默认 15 秒超时，超时或失败时 QuickAdd 显示明确错误并保留输入，仅未配置 Key 时回退本地规则。遗留问题：长句解析耗时仍受模型响应速度影响，超时后需重试或简化输入。结论：修订通过。
 - 2026-08-10：AI API 解析服务检查，E-T012-001，结果：`npm test` 14 个文件 103 个测试、lint/tsc/build/scan 全部通过；`POST /api/parse` 支持 OpenAI / DeepSeek，设置页可切换解析服务，未配置 Key 或接口失败自动回退本地 NLP 规则。遗留问题：真实服务商 API 调用与 Key 配置需部署环境人工验收。结论：T-012 通过，等待人工验收与阶段 7 发布准备。

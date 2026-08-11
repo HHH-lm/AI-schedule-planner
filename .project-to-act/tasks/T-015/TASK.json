@@ -1,0 +1,50 @@
+{
+  "taskId": "T-015",
+  "title": "FastAPI 定时提醒与微信推送",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "backend/app/config.py",
+    "backend/app/main.py",
+    "backend/app/services/reminders.py",
+    "backend/app/services/push.py",
+    "backend/app/routers/reminders.py",
+    "backend/tests/test_reminders.py",
+    "backend/pyproject.toml",
+    "backend/uv.lock",
+    "supabase/schema.sql",
+    "src/lib/types.ts",
+    "src/components/BlockModal.tsx",
+    ".env.example",
+    "README.md",
+    "docs/operations.md",
+    "docs/security.md",
+    "scripts/scan-secrets.sh",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "FastAPI 后端使用 APScheduler 每 5 分钟扫描 Supabase schedule_state 中 remindAt 已到期的 timeBlocks，推送微信并写入 reminder_log 去重；前端 BlockModal 可设置提醒时间。",
+  "dependencies": ["F-009", "F-016"],
+  "invariants": [
+    "API Key / webhook / token 不得写入浏览器或 Git",
+    "同一 user_id + block_id + remind_at 只推送一次",
+    "推送失败不写入去重记录，下次扫描自动重试",
+    "未配置 Supabase 或微信通道时安全禁用，不影响其他功能"
+  ],
+  "acceptance": [
+    "TimeBlock 支持 remindAt，BlockModal 可设置/清除提醒时间",
+    "后端 APScheduler 定时任务与 /api/v1/reminders/status、/run 可用",
+    "支持 wecom / pushplus / serverchan 三种微信通道",
+    "reminder_log 表 SQL 与去重逻辑就绪",
+    "后端 pytest、前端 test/lint/tsc/build/scan 全部通过"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q",
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build",
+    "npm run scan:secrets"
+  ]
+}

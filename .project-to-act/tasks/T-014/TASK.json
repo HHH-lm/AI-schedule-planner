@@ -1,0 +1,35 @@
+{
+  "taskId": "T-014",
+  "title": "移动端今日待办视图与移动/桌面双布局",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "src/components/TodayView.tsx",
+    "src/app/page.tsx",
+    "src/lib/types.ts",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "新增移动端“今日待办”视图；移动端与桌面端呈现完全不同的布局：移动端单列卡片流，桌面端双栏仪表盘；应用默认打开今日待办。",
+  "dependencies": ["F-003", "F-005"],
+  "invariants": [
+    "周计划、任务看板、统计周报与 FastAPI 后端行为不得回退",
+    "移动端与桌面端布局由同一组件通过断点分别渲染",
+    "今日待办数据必须来自现有 AppData，不引入新的持久化结构"
+  ],
+  "acceptance": [
+    "默认视图为今日待办，顶部导航含“今日”入口",
+    "移动端（<768px）为单列卡片流：今日安排、待办任务、明日预览",
+    "桌面端（>=768px）为双栏仪表盘：顶部摘要统计 + 今日安排 + 待办任务/明日预览",
+    "今日安排支持完成打卡、编辑、Obsidian 跳转；待办任务支持“排到今天”与编辑",
+    "npm test、lint、tsc、build 全部通过，Playwright 双端截图验证无溢出"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build",
+    "Playwright 截图（390x844 / 1440x900）"
+  ]
+}

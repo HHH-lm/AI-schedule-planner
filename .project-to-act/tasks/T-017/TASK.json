@@ -1,0 +1,33 @@
+{
+  "taskId": "T-017",
+  "title": "微信提醒默认开始前 5 分钟自动预填（F-018 修订）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户反馈）",
+  "allowedPaths": [
+    "src/components/BlockModal.tsx",
+    "src/lib/date.ts",
+    "src/lib/date.test.ts",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "时间块编辑弹窗未设置提醒时自动预填开始前 5 分钟；修改日期或开始时间时同步重算；手动修改保留手动值，清空则关闭提醒。",
+  "dependencies": ["F-018"],
+  "invariants": [
+    "已设置自定义提醒的时间块在修改日期/开始时不自动覆盖",
+    "用户手动修改或清空提醒后不再自动同步",
+    "保存仍以 TimeBlock.remindAt 字段写入，后端推送行为不变"
+  ],
+  "acceptance": [
+    "新建/编辑时间块默认预填开始前 5 分钟的微信提醒",
+    "日期或开始时间变化时未触碰的提醒跟随重算，跨天正确回落到前一天",
+    "remindBeforeInput 工具测试覆盖跨天边界",
+    "npm test、lint、tsc、build 全部通过"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build"
+  ]
+}

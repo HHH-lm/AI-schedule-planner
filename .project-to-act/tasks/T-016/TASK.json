@@ -1,0 +1,39 @@
+{
+  "taskId": "T-016",
+  "title": "今日待办四象限（紧急/重要矩阵）与新建任务象限选择",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "src/lib/types.ts",
+    "src/lib/priorities.ts",
+    "src/lib/priorities.test.ts",
+    "src/components/TaskModal.tsx",
+    "src/components/TodayView.tsx",
+    "src/components/TaskBoard.tsx",
+    "src/app/page.tsx",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "所有待办按紧急/重要矩阵分为四个象限；新建/编辑任务时选择象限；今日待办按象限分组展示（移动端单列、桌面端 2x2）。",
+  "dependencies": ["F-017", "F-003"],
+  "invariants": [
+    "旧任务缺少 priority 时归入“既不紧急也不重要”，不丢失数据",
+    "新建任务默认“重要但不紧急”",
+    "周计划、任务看板、统计周报、FastAPI 后端行为不得回退"
+  ],
+  "acceptance": [
+    "任务数据模型含 TaskQuadrant 与 Task.priority",
+    "新建/编辑任务弹窗提供四象限选择器",
+    "今日待办按四象限分组：移动端单列区块、桌面端 2x2 网格",
+    "任务看板任务行显示象限色点",
+    "npm test、lint、tsc、build 全部通过，注入数据截图验证分组正常"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build",
+    "Playwright 注入数据截图（390x844 / 1440x900）"
+  ]
+}
