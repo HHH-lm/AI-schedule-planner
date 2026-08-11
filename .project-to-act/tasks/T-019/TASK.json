@@ -1,0 +1,29 @@
+{
+  "taskId": "T-019",
+  "title": "修复 PushPlus 业务错误码误判为推送成功（F-018 修订）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户反馈定位）",
+  "allowedPaths": [
+    "backend/app/services/push.py",
+    "backend/tests/test_reminders.py",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "PushPlus 返回 HTTP 200 但业务 code 非 200 时，推送必须判定为失败且不写入 reminder_log，避免假成功与永久去重。",
+  "dependencies": ["F-018", "T-015"],
+  "invariants": [
+    "PushPlus code 905（未实名认证）等业务失败不记成功",
+    "已去重记录只包含真正发送成功（code 200）的推送",
+    "wecom / serverchan 行为不回退"
+  ],
+  "acceptance": [
+    "push_wechat_message 对 PushPlus 响应解析 code 并校验 200",
+    "code 905 返回失败；code 200 返回成功",
+    "后端 pytest 全部通过",
+    "实测未实名时返回 905，实名后返回 200"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q"
+  ]
+}

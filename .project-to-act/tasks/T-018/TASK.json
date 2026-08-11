@@ -1,0 +1,34 @@
+{
+  "taskId": "T-018",
+  "title": "修复微信提醒 remindAt 保存链路（F-018 修订）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户反馈定位）",
+  "allowedPaths": [
+    "src/app/page.tsx",
+    "src/components/WeekTimeline.tsx",
+    "src/lib/date.ts",
+    "src/lib/date.test.ts",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "时间块编辑保存、自然语言/AI 生成、待排期拖拽落点都必须写入 remindAt 默认值（开始前 5 分钟）。",
+  "dependencies": ["F-018", "T-017"],
+  "invariants": [
+    "保存链路不得丢弃 remindAt",
+    "无开始时间的 pending 块不生成 remindAt",
+    "后端推送行为不变"
+  ],
+  "acceptance": [
+    "saveBlock 构造 TimeBlock 时保留 draft.remindAt",
+    "addParsedBlocks / planTasks / WeekTimeline pending 落点自动写入默认 remindAt",
+    "defaultRemindAtISO 单元测试覆盖",
+    "npm test、lint、tsc、build 全部通过"
+  ],
+  "validation": [
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run build"
+  ]
+}

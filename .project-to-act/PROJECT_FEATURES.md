@@ -39,6 +39,8 @@
 
 按时间倒序追加：日期、功能 ID、变化、原因、影响、证据 ID 和确认来源。
 
+- 2026-08-11：F-018，修订 PushPlus 推送判定：PushPlus 通道从“仅看 HTTP 状态码”改为解析响应并校验 `code == 200`，`code 905`（未实名认证）等业务失败不再误记成功、不写 `reminder_log`、可自动重试；原因：用户实测 `pushed:3` 但微信收不到，直测 PushPlus 返回 905；影响：`push_wechat_message`、提醒去重与重试语义；证据 E-T019-001，来源：用户反馈定位。
+- 2026-08-11：F-018，修订 remindAt 保存链路：修复 BlockModal 保存时遗漏 `remindAt` 导致云端时间块无提醒时间的缺陷；`addParsedBlocks`、`planTasks` 生成的新块和待排期拖拽落点自动写入“开始前 5 分钟”默认提醒；原因：用户实测 `pushed:0`，云端 32 个时间块全部缺 `remindAt`；影响：`saveBlock`、WeekTimeline 落点、`defaultRemindAtISO` 工具；证据 E-T018-001，来源：用户反馈定位。
 - 2026-08-11：F-018，修订默认提醒行为：BlockModal 新建/编辑时间块时，若未设置过提醒，自动预填“开始前 5 分钟”；修改日期或开始时间且未手动触碰提醒时自动重算，跨天正确回落到前一天；手动修改后保留手动值，清空则关闭提醒；原因：用户反馈每次手动填写微信提醒时间冗余；影响：BlockModal 默认值逻辑、`remindBeforeInput` 工具、提醒输入提示文案；证据 E-T017-001，来源：用户反馈。
 - 2026-08-11：F-019，新增今日待办四象限：任务增加 `priority`（紧急且重要 / 重要但不紧急 / 紧急但不重要 / 既不紧急也不重要），新建/编辑任务可选择象限，今日待办按矩阵分组（移动端单列、桌面端 2x2），任务看板显示象限色点；原因：用户希望所有待办按紧急/重要矩阵组织，并在建任务时选择类型；影响：`TaskQuadrant` 类型、`priorities.ts` 元数据、TaskModal 象限选择器、TodayView/TaskBoard 展示；证据 E-T016-001，来源：用户指令。
 - 2026-08-11：F-018，新增定时提醒：时间块可设置提醒时间，FastAPI 后端 APScheduler 按 `REMINDER_SCAN_SECONDS`（默认 300 秒）扫描 Supabase `schedule_state` 中到期待提醒的时间块并推送微信；推送成功后写入 `reminder_log` 去重，失败自动重试；原因：用户希望手机锁屏也能收到提醒，不受页面是否打开影响；影响：`TimeBlock.remindAt`、BlockModal 提醒输入、后端 `/api/v1/reminders/{status,run}`、Supabase `reminder_log` 表；证据 E-T015-001，来源：用户指令。
