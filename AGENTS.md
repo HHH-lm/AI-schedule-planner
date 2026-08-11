@@ -28,6 +28,13 @@
 - `SESSION.md` 与 `.project-to-act/` 不一致时，以 `.project-to-act/` 为准。
 - 差异先记入 `SESSION.md` 的 Open Questions，确认后再更新 P2A 文档。
 
+## 开发运行约定
+
+- 禁止在本项目 dev server（`npm run dev`）运行时执行 `npm run build`：两者共用 `.next`，生产构建会覆盖 dev 缓存，导致页面资源 404、前端停在“加载中”。
+- 需要构建时先停止 dev server，再执行 `npm run clean` 清空 `.next`，构建完成后再 `npm run dev` 或 `npm run start`。
+- 已误操作后的恢复流程：停止 dev → `npm run clean` → 重新 `npm run dev`。
+- `npm run build` 内置冲突检查：检测到本项目服务占用默认 Web 端口（3000-3005）时直接报错并提示恢复步骤。
+
 ## 约定范围
 
 - 本文件为项目级约定，供所有 Agent 会话遵守；不修改全局 skill 文件。

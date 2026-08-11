@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Cloud,
   CloudOff,
+  ListTodo,
   LogIn,
   LogOut,
   Plus,
@@ -24,12 +25,14 @@ import type {
   ParsedSchedule,
   Subtask,
   Task,
+  TaskQuadrant,
   TimeBlock,
   ViewMode,
 } from "@/lib/types";
 import {
   formatWeekRange,
   getWeekDays,
+  defaultRemindAtISO,
   todayKey,
   weekOffsetForDate,
 } from "@/lib/date";
@@ -39,6 +42,7 @@ import {
   uid,
 } from "@/lib/storage";
 import { apiPost } from "@/lib/api";
+import { DEFAULT_TASK_PRIORITY, normalizeQuadrant } from "@/lib/priorities";
 import {
   getSession,
   isSupabaseConfigured,
@@ -51,6 +55,7 @@ import { logInfo } from "@/lib/logger";
 import { makeSampleData } from "@/lib/sample";
 // import { buildWeekICS } from "@/lib/ics"; // 苹果日历导出暂未启用
 import WeekTimeline from "@/components/WeekTimeline";
+import TodayView from "@/components/TodayView";
 import QuickAdd from "@/components/QuickAdd";
 import BlockModal from "@/components/BlockModal";
 import TaskBoard from "@/components/TaskBoard";
@@ -75,10 +80,32 @@ const TABS: Array<{
   label: string;
   icon: typeof CalendarRange;
 }> = [
+  { key: "today", label: "今日", icon: ListTodo },
   { key: "week", label: "周计划", icon: CalendarRange },
   { key: "board", label: "任务看板", icon: ClipboardList },
   { key: "stats", label: "统计周报", icon: BarChart3 },
 ];
+
+type BlockDraft = Partial<TimeBlock> & { syncTask?: boolean };
+
+const ensureTaskForName = (
+  name: string,
+  tasks: Task[]
+): { tasks: Task[]; taskId: string } => {
+  const trimmed = name.trim() || "未命名事项";
+  const existing = tasks.find((task) => task.name === trimmed);
+  if (existing) return { tasks, taskId: existing.id };
+  const task: Task = {
+    id: uid(),
+    name: trimmed,
+    date: null,
+    status: "todo",
+    subtasks: [],
+    priority: DEFAULT_TASK_PRIORITY,
+    pinned: false,
+  };
+  return { tasks: [...tasks, task], taskId: task.id };
+};
 
 export default function Home() {
   const [historyState, setHistoryState] = useState<HistoryState<AppData> | null>(
@@ -86,7 +113,7 @@ export default function Home() {
   );
   const data = historyState?.present ?? null;
   const [hydrated, setHydrated] = useState(false);
-  const [view, setView] = useState<ViewMode>("week");
+  const [view, setView] = useState<ViewMode>("today");
   const [weekOffset, setWeekOffset] = useState(0);
   const [syncState, setSyncState] = useState<"loading" | "local" | "supabase">(
     "loading"
@@ -297,12 +324,27 @@ export default function Home() {
   }, [commitData]);
 
   const saveBlock = useCallback(
-    (draft: Partial<TimeBlock>, id?: string) => {
+    (draft: BlockDraft, id?: string) => {
       commitData((prev) => {
         if (!prev) return prev;
+        const name = draft.name ?? "未命名事项";
+        const existingBlock = id
+          ? prev.timeBlocks.find((block) => block.id === id)
+          : undefined;
+        let tasks = prev.tasks;
+        let taskId = draft.taskId;
+        if (
+          !taskId &&
+          draft.syncTask !== false &&
+          (!existingBlock || !existingBlock.taskId)
+        ) {
+          const synced = ensureTaskForName(name, tasks);
+          tasks = synced.tasks;
+          taskId = synced.taskId;
+        }
         const block: TimeBlock = {
           id: id ?? uid(),
-          name: draft.name ?? "未命名事项",
+          name,
           date: draft.date ?? todayKey(),
           start: draft.start ?? 9 * 60,
           end: draft.end ?? 10 * 60,
@@ -310,19 +352,21 @@ export default function Home() {
           location: draft.location,
           done: draft.done ?? false,
           status: draft.status ?? "scheduled",
-          taskId: draft.taskId,
+          taskId,
           obsidianVault: draft.obsidianVault,
           obsidianNote: draft.obsidianNote,
+          remindAt: draft.remindAt,
         };
         if (id) {
           return {
             ...prev,
+            tasks,
             timeBlocks: prev.timeBlocks.map((item) =>
               item.id === id ? { ...item, ...block } : item
             ),
           };
         }
-        return { ...prev, timeBlocks: [...prev.timeBlocks, block] };
+        return { ...prev, tasks, timeBlocks: [...prev.timeBlocks, block] };
       });
     },
     [commitData]
@@ -353,22 +397,27 @@ export default function Home() {
       throw error instanceof Error ? error : new Error("冲突检测失败");
     }
     if (accepted.length > 0) {
-      commitData((prev) =>
-        prev
-          ? {
-              ...prev,
-              timeBlocks: [
-                ...prev.timeBlocks,
-                ...accepted.map<ParsedSchedule & TimeBlock>((item) => ({
-                  ...item,
-                  id: uid(),
-                  done: false,
-                  status: "scheduled",
-                })),
-              ],
-            }
-          : prev
-      );
+      commitData((prev) => {
+        if (!prev) return prev;
+        let tasks = prev.tasks;
+        const newBlocks = accepted.map<ParsedSchedule & TimeBlock>((item) => {
+          const synced = ensureTaskForName(item.name, tasks);
+          tasks = synced.tasks;
+          return {
+            ...item,
+            id: uid(),
+            taskId: synced.taskId,
+            done: false,
+            status: "scheduled",
+            remindAt: defaultRemindAtISO(item.date, item.start),
+          };
+        });
+        return {
+          ...prev,
+          tasks,
+          timeBlocks: [...prev.timeBlocks, ...newBlocks],
+        };
+      });
     }
     if (blocked.length > 0) {
       setConflicts(blocked);
@@ -452,7 +501,11 @@ export default function Home() {
   }, []);
 
   const addTasks = useCallback(
-    (seeds: Array<{ name: string; subtasks?: string[] } | string>) => {
+    (
+      seeds: Array<
+        { name: string; subtasks?: string[]; priority?: TaskQuadrant } | string
+      >
+    ) => {
       commitData((prev) =>
         prev
           ? {
@@ -463,6 +516,10 @@ export default function Home() {
                   const name = typeof seed === "string" ? seed : seed.name;
                   const subtaskNames =
                     typeof seed === "string" ? [] : (seed.subtasks ?? []);
+                  const priority =
+                    typeof seed === "string"
+                      ? DEFAULT_TASK_PRIORITY
+                      : normalizeQuadrant(seed.priority);
                   const subtasks: Subtask[] = subtaskNames.map((subtask) => ({
                     id: uid(),
                     name: subtask,
@@ -474,6 +531,7 @@ export default function Home() {
                     date: null,
                     status: "todo" as const,
                     subtasks,
+                    priority,
                     pinned: false,
                   };
                 }),
@@ -494,6 +552,7 @@ export default function Home() {
         date: draft.date ?? null,
         status: draft.status ?? "todo",
         subtasks: draft.subtasks ?? [],
+        priority: normalizeQuadrant(draft.priority),
         pinned: draft.pinned ?? false,
       };
       if (id) {
@@ -507,6 +566,9 @@ export default function Home() {
                   date: task.date,
                   status: task.status,
                   subtasks: task.subtasks,
+                  priority: normalizeQuadrant(
+                    draft.priority ?? item.priority ?? DEFAULT_TASK_PRIORITY
+                  ),
                   pinned: draft.pinned ?? item.pinned ?? false,
                 }
               : item
@@ -600,6 +662,13 @@ export default function Home() {
     });
   }, [commitData]);
 
+  const moveTaskToToday = useCallback(
+    (taskId: string) => {
+      moveTask(taskId, todayKey());
+    },
+    [moveTask]
+  );
+
   const toggleSubtask = useCallback((taskId: string, subtaskId: string) => {
     commitData((prev) => {
       if (!prev) return prev;
@@ -687,6 +756,7 @@ export default function Home() {
                     id: uid(),
                     done: false,
                     status: "scheduled" as const,
+                    remindAt: defaultRemindAtISO(block.date, block.start),
                   })),
                 ],
               }
@@ -733,13 +803,13 @@ export default function Home() {
 
   const currentTab = TABS.find((tab) => tab.key === view);
   const subTitle =
-    view === "week"
-      ? "周计划"
-      : currentTab?.label ?? "AI 日程";
+    view === "today" ? "今日待办" : view === "week" ? "周计划" : currentTab?.label ?? "AI 日程";
   const subMeta =
-    view === "week" || view === "stats"
-      ? formatWeekRange(weekOffset)
-      : "宏观拆解 · 拖拽排期";
+    view === "today"
+      ? "今天要做的安排与任务"
+      : view === "week" || view === "stats"
+        ? formatWeekRange(weekOffset)
+        : "宏观拆解 · 拖拽排期";
 
   return (
     <div className="app-shell">
@@ -920,6 +990,23 @@ export default function Home() {
       </section>
 
       <main className="content-shell">
+        {view === "today" && (
+          <TodayView
+            data={data}
+            onToggleDone={toggleBlockDone}
+            onEditBlock={(block) => {
+              setEditingBlock(block);
+              setBlockModalOpen(true);
+            }}
+            onEditTask={(task) => {
+              setEditingTask(task);
+              setTaskModalOpen(true);
+            }}
+            onMoveTaskToToday={moveTaskToToday}
+            onOpenObsidian={handleOpenObsidian}
+          />
+        )}
+
         {view === "week" && (
           <div className="flex h-[calc(150vh-354px)] min-h-[780px] flex-col gap-4">
             <QuickAdd

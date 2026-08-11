@@ -21,10 +21,10 @@ import { addDays, minutesToHHMM, toDateKey, weekdayName } from "@/lib/date";
 import { getBoardStart } from "@/lib/board";
 import { CATEGORIES } from "@/lib/categories";
 import { apiPost } from "@/lib/api";
+import { normalizeQuadrant, QUADRANT_META } from "@/lib/priorities";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import RestoreWeeksModal from "@/components/RestoreWeeksModal";
 
-const DAY_W = 112;
 const INITIAL_WEEKS = 4;
 const EXTEND_THRESHOLD = 480;
 
@@ -589,7 +589,11 @@ export default function TaskBoard({
                 <div
                   key={week.key}
                   className="board-week-header"
-                  style={{ width: collapsed ? DAY_W : DAY_W * 7 }}
+                  style={{
+                    width: collapsed
+                      ? "var(--board-day-w)"
+                      : "calc(var(--board-day-w) * 7)",
+                  }}
                 >
                   <button
                     type="button"
@@ -721,8 +725,14 @@ export default function TaskBoard({
                       onClick={() => onEditTask(task)}
                       className="min-w-0 flex-1 text-left"
                     >
-                      <span className="text-sm font-medium text-ink">
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className={`h-2 w-2 shrink-0 rounded-full ${QUADRANT_META[normalizeQuadrant(task.priority)].dot}`}
+                          title={QUADRANT_META[normalizeQuadrant(task.priority)].label}
+                        />
+                        <span className="truncate text-sm font-medium text-ink">
                         {task.name}
+                        </span>
                       </span>
                     </button>
                     <button

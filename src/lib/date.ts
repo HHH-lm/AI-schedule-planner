@@ -78,6 +78,25 @@ export function minutesToHHMM(minutes: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+export function remindBeforeInput(
+  dateKey: string,
+  startMinutes: number,
+  beforeMinutes = 5
+): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const remind = new Date(y, (m ?? 1) - 1, d ?? 1, 0, startMinutes - beforeMinutes);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${remind.getFullYear()}-${pad(remind.getMonth() + 1)}-${pad(remind.getDate())}T${pad(remind.getHours())}:${pad(remind.getMinutes())}`;
+}
+
+export function defaultRemindAtISO(
+  dateKey: string,
+  startMinutes: number,
+  beforeMinutes = 5
+): string {
+  return new Date(remindBeforeInput(dateKey, startMinutes, beforeMinutes)).toISOString();
+}
+
 export function minutesToDuration(minutes: number): string {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;

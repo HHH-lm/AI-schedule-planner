@@ -6,7 +6,7 @@ AI 拆解宏观计划，双视图落地微观执行。
 
 - 当前阶段：阶段 6（评测、安全测试与调优）
 - 版本：`0.1.0`（未发布）
-- 前端测试：Vitest 52 个测试通过；后端测试：pytest 22 个测试通过（2026-08-10）
+- 前端测试：Vitest 52 个测试通过；后端测试：pytest 34 个测试通过（2026-08-11）
 
 ## 核心功能
 
@@ -63,6 +63,12 @@ AI 拆解宏观计划，双视图落地微观执行。
 
 - localStorage 本地持久化（默认）
 - Supabase 可选云同步
+
+### 定时提醒
+
+- 时间块编辑弹窗可设置“微信提醒”时间
+- FastAPI 后端每隔 5 分钟扫描到达提醒时间的时间块，推送到微信（手机锁屏可收到）
+- 支持企业微信机器人、PushPlus、Server酱三种通道；推送记录写入 `reminder_log` 去重
 
 ## 技术栈
 
@@ -147,6 +153,23 @@ DEEPSEEK_MODEL=deepseek-chat
 - 也可以在应用“设置”中选择解析服务；选择的服务需要对应的服务端 Key 已配置，否则回退本地规则。
 - API Key 只保存在 FastAPI 后端环境变量中，不会下发到浏览器。
 
+### 定时提醒（微信推送）
+
+需要同时满足三个条件：Supabase 云同步启用并登录、FastAPI 后端常驻运行、配置一个微信通道。在 `.env.local` 中配置：
+
+```text
+SUPABASE_URL=
+SUPABASE_SERVICE_ROLE_KEY=
+REMINDER_SCAN_SECONDS=300
+WECHAT_PUSH_TYPE=wecom
+WECOM_WEBHOOK_URL=
+```
+
+- `WECHAT_PUSH_TYPE` 可选 `none` / `wecom` / `pushplus` / `serverchan`；企业微信机器人填 `WECOM_WEBHOOK_URL`，PushPlus 填 `PUSHPLUS_TOKEN`，Server酱填 `SERVERCHAN_KEY`。
+- `SUPABASE_SERVICE_ROLE_KEY` 权限较高，只放在后端环境变量，不能写进 `NEXT_PUBLIC_*` 或提交 Git。
+- 后端推送成功后写入 `reminder_log`，同一时间块同一提醒时间不会重复推送；推送失败会自动重试。
+- 提醒依赖常驻 FastAPI 进程，部署到 Serverless 冷启动平台时无法定时扫描。
+
 ### FastAPI 后端 API
 
 前端通过 Next.js 的 `/api/v1/*` 代理访问后端，后端接口：
@@ -156,6 +179,8 @@ DEEPSEEK_MODEL=deepseek-chat
 - `POST /api/v1/breakdown`：AI 任务拆解
 - `POST /api/v1/plan`：AI 时间规划
 - `POST /api/v1/conflicts/check`：冲突检测
+- `GET /api/v1/reminders/status`：提醒任务状态
+- `POST /api/v1/reminders/run`：手动触发一次提醒扫描
 
 后端代码在 `backend/`，依赖由 `uv sync --project backend --extra dev` 安装。
 

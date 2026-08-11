@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { CheckCircle2, Circle, Plus, Trash2, X } from "lucide-react";
-import type { Subtask, Task } from "@/lib/types";
+import type { Subtask, Task, TaskQuadrant } from "@/lib/types";
+import {
+  DEFAULT_TASK_PRIORITY,
+  normalizeQuadrant,
+  QUADRANT_META,
+  QUADRANT_ORDER,
+} from "@/lib/priorities";
 import { uid } from "@/lib/storage";
 
 interface Props {
@@ -25,6 +31,9 @@ export default function TaskModal({
   const [status, setStatus] = useState(task?.status ?? "todo");
   const [subtasks, setSubtasks] = useState<Subtask[]>(task?.subtasks ?? []);
   const [subtaskName, setSubtaskName] = useState("");
+  const [priority, setPriority] = useState<TaskQuadrant>(
+    task ? normalizeQuadrant(task.priority) : DEFAULT_TASK_PRIORITY
+  );
 
   const addSubtask = () => {
     const value = subtaskName.trim();
@@ -40,6 +49,7 @@ export default function TaskModal({
         date: date || null,
         status,
         subtasks,
+        priority,
       },
       task?.id
     );
@@ -115,6 +125,38 @@ export default function TaskModal({
                   <Circle size={15} className="text-ink-muted-48" />
                 )}
               </button>
+            </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>任务象限</label>
+            <div className="grid grid-cols-2 gap-2">
+              {QUADRANT_ORDER.map((key) => {
+                const meta = QUADRANT_META[key];
+                const active = priority === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setPriority(key)}
+                    className={`rounded-[8px] border px-2.5 py-2 text-left transition ${
+                      active
+                        ? "border-primary bg-[rgba(0,102,204,0.06)]"
+                        : "border-hairline bg-surface-pearl hover:bg-canvas-parchment"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} />
+                      <span className="text-xs font-semibold text-ink">
+                        {meta.label}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block text-[11px] text-ink-muted-48">
+                      {meta.description}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

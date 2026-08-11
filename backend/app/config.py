@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     max_schedules: int = 20
     max_output_tokens: int = 1000
 
+    supabase_url: str | None = None
+    supabase_service_role_key: str | None = None
+
+    reminder_scan_seconds: int = 300
+    timezone: str = "Asia/Shanghai"
+
+    wechat_push_type: str = "none"
+    wecom_webhook_url: str | None = None
+    pushplus_token: str | None = None
+    serverchan_key: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
