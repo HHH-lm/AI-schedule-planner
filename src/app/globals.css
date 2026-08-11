@@ -1021,7 +1021,7 @@ textarea.input-rect {
 .time-block-card {
   position: absolute;
   cursor: pointer;
-  touch-action: none;
+  touch-action: pan-x pan-y;
   user-select: none;
   border-left: 4px solid transparent;
   border-radius: 8px;
@@ -1073,6 +1073,8 @@ textarea.input-rect {
 }
 
 .board-shell {
+  --board-task-w: 288px;
+  --board-day-w: 112px;
   flex: 1;
   overflow: auto;
   border: 1px solid var(--hairline);
@@ -1095,7 +1097,7 @@ textarea.input-rect {
   left: 0;
   z-index: 30;
   display: flex;
-  width: 288px;
+  width: var(--board-task-w);
   flex-shrink: 0;
   flex-direction: column;
   justify-content: center;
@@ -1110,7 +1112,7 @@ textarea.input-rect {
   left: 0;
   z-index: 10;
   display: flex;
-  width: 288px;
+  width: var(--board-task-w);
   flex-shrink: 0;
   flex-direction: column;
   gap: 6px;
@@ -1121,7 +1123,7 @@ textarea.input-rect {
 
 .board-day-cell {
   position: relative;
-  width: 112px;
+  width: var(--board-day-w);
   flex-shrink: 0;
   border-right: 1px solid var(--divider-soft);
   padding: 6px;
@@ -1155,7 +1157,7 @@ textarea.input-rect {
 
 .board-day-head {
   display: flex;
-  width: 112px;
+  width: var(--board-day-w);
   flex-shrink: 0;
   flex-direction: column;
   align-items: center;
@@ -1285,6 +1287,10 @@ textarea.input-rect {
 /* ---------- Responsive ---------- */
 
 @media (max-width: 900px) {
+  .board-shell {
+    --board-task-w: 200px;
+  }
+
   .nav-links {
     gap: 0;
   }
@@ -1320,6 +1326,11 @@ textarea.input-rect {
 }
 
 @media (max-width: 640px) {
+  .board-shell {
+    --board-task-w: calc(50vw - 16px);
+    --board-day-w: calc((50vw - 16px) / 3);
+  }
+
   .global-nav {
     gap: 8px;
     padding: 0 12px;

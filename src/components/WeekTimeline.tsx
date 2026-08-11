@@ -11,7 +11,7 @@ import {
 import type { TimeBlock } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
 import { CATEGORIES } from "@/lib/categories";
-import { minutesToHHMM } from "@/lib/date";
+import { defaultRemindAtISO, minutesToHHMM } from "@/lib/date";
 import { pointToGridSlot } from "@/lib/grid";
 import {
   getTimelineFocusScroll,
@@ -22,6 +22,8 @@ const HOUR_HEIGHT = 48;
 const COL_WIDTH = 132;
 const TIME_COL_W = 56;
 const TOTAL_HEIGHT = HOUR_HEIGHT * 24;
+const LONG_PRESS_MS = 200;
+const TOUCH_MOVE_CANCEL = 10;
 
 interface DragState {
   blockId: string;
@@ -45,6 +47,16 @@ interface PendingDrag {
   blockId: string;
   date: string;
   start: number;
+}
+
+interface PendingTouch {
+  block: TimeBlock;
+  kind: DragState["kind"];
+  pointerId: number;
+  target: HTMLElement;
+  startX: number;
+  startY: number;
+  timer: number;
 }
 
 interface Props {
@@ -76,6 +88,9 @@ export default function WeekTimeline({
   const [preview, setPreview] = useState<Preview | null>(null);
   const [pendingDrag, setPendingDrag] = useState<PendingDrag | null>(null);
   const movedRef = useRef(false);
+  const pendingTouchRef = useRef<PendingTouch | null>(null);
+  const dragTargetRef = useRef<HTMLElement | null>(null);
+  const touchMoveLockRef = useRef<((event: TouchEvent) => void) | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const previewRef = useRef<Preview | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,8 +101,9 @@ export default function WeekTimeline({
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const update = () => {
+      const minColWidth = el.clientWidth < 640 ? 88 : COL_WIDTH;
       setColumnWidth(
-        Math.max(COL_WIDTH, Math.floor((el.clientWidth - TIME_COL_W) / 7))
+        Math.max(minColWidth, Math.floor((el.clientWidth - TIME_COL_W) / 7))
       );
     };
     update();
@@ -151,20 +167,23 @@ export default function WeekTimeline({
     return () => cancelAnimationFrame(frame);
   }, [focusTarget, days, columnWidth, onFocusHandled]);
 
-  const startDrag = (
-    event: React.PointerEvent,
+  const beginDrag = (
     block: TimeBlock,
-    kind: DragState["kind"]
+    kind: DragState["kind"],
+    startX: number,
+    startY: number,
+    target: HTMLElement,
+    pointerId: number
   ) => {
-    event.preventDefault();
-    event.stopPropagation();
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    target.setPointerCapture(pointerId);
+    dragTargetRef.current = target;
+    target.style.touchAction = "none";
     movedRef.current = false;
     const next: DragState = {
       blockId: block.id,
       kind,
-      startX: event.clientX,
-      startY: event.clientY,
+      startX,
+      startY,
       originDate: block.date,
       originStart: block.start,
       originEnd: block.end,
@@ -185,7 +204,89 @@ export default function WeekTimeline({
     setPreview(initialPreview);
   };
 
+  const startDrag = (
+    event: React.PointerEvent,
+    block: TimeBlock,
+    kind: DragState["kind"]
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    beginDrag(
+      block,
+      kind,
+      event.clientX,
+      event.clientY,
+      event.currentTarget as HTMLElement,
+      event.pointerId
+    );
+  };
+
+  const clearPendingTouch = () => {
+    const pending = pendingTouchRef.current;
+    if (!pending) return;
+    window.clearTimeout(pending.timer);
+    pendingTouchRef.current = null;
+  };
+
+  const lockTouchScroll = () => {
+    if (touchMoveLockRef.current) return;
+    const handler = (event: TouchEvent) => event.preventDefault();
+    touchMoveLockRef.current = handler;
+    document.addEventListener("touchmove", handler, { passive: false });
+  };
+
+  const releaseTouchScroll = () => {
+    if (!touchMoveLockRef.current) return;
+    document.removeEventListener("touchmove", touchMoveLockRef.current);
+    touchMoveLockRef.current = null;
+  };
+
+  const handlePointerDown = (
+    event: React.PointerEvent,
+    block: TimeBlock,
+    kind: DragState["kind"]
+  ) => {
+    if (event.pointerType === "mouse") {
+      startDrag(event, block, kind);
+      return;
+    }
+    event.stopPropagation();
+    const pending: PendingTouch = {
+      block,
+      kind,
+      pointerId: event.pointerId,
+      target: event.currentTarget as HTMLElement,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer: 0,
+    };
+    pendingTouchRef.current = pending;
+    pending.timer = window.setTimeout(() => {
+      if (pendingTouchRef.current !== pending) return;
+      pendingTouchRef.current = null;
+      lockTouchScroll();
+      beginDrag(
+        pending.block,
+        pending.kind,
+        pending.startX,
+        pending.startY,
+        pending.target,
+        pending.pointerId
+      );
+    }, LONG_PRESS_MS);
+  };
+
   const handlePointerMove = (event: React.PointerEvent) => {
+    const pending = pendingTouchRef.current;
+    if (pending) {
+      const dx = event.clientX - pending.startX;
+      const dy = event.clientY - pending.startY;
+      if (Math.abs(dx) + Math.abs(dy) > TOUCH_MOVE_CANCEL) {
+        clearPendingTouch();
+      }
+      return;
+    }
+
     const current = dragRef.current;
     if (!current) return;
     const dx = event.clientX - current.startX;
@@ -248,6 +349,11 @@ export default function WeekTimeline({
     setPreview(null);
     previewRef.current = null;
     movedRef.current = false;
+    if (dragTargetRef.current) {
+      dragTargetRef.current.style.touchAction = "";
+      dragTargetRef.current = null;
+    }
+    releaseTouchScroll();
   };
 
   const cancelDrag = () => {
@@ -256,7 +362,43 @@ export default function WeekTimeline({
     setPreview(null);
     previewRef.current = null;
     movedRef.current = false;
+    if (dragTargetRef.current) {
+      dragTargetRef.current.style.touchAction = "";
+      dragTargetRef.current = null;
+    }
+    releaseTouchScroll();
   };
+
+  const handlePointerUp = (event: React.PointerEvent) => {
+    const pending = pendingTouchRef.current;
+    if (pending) {
+      clearPendingTouch();
+      if (!movedRef.current) {
+        const block = blocks.find((b) => b.id === pending.block.id);
+        if (block) onEditBlock(block);
+      }
+      return;
+    }
+    finishDrag();
+  };
+
+  const handlePointerCancel = () => {
+    clearPendingTouch();
+    cancelDrag();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (pendingTouchRef.current) {
+        window.clearTimeout(pendingTouchRef.current.timer);
+        pendingTouchRef.current = null;
+      }
+      if (touchMoveLockRef.current) {
+        document.removeEventListener("touchmove", touchMoveLockRef.current);
+        touchMoveLockRef.current = null;
+      }
+    };
+  }, []);
 
   const getPendingDropPosition = (event: React.DragEvent) => {
     const el = gridRef.current;
@@ -313,6 +455,7 @@ export default function WeekTimeline({
       start: position.start,
       end: Math.min(1440, position.start + 60),
       status: "scheduled",
+      remindAt: defaultRemindAtISO(position.date, position.start),
     });
     setPendingDrag(null);
   };
@@ -513,21 +656,23 @@ export default function WeekTimeline({
                     top,
                     height,
                   }}
-                  onPointerDown={(event) => startDrag(event, block, "move")}
+                  onPointerDown={(event) =>
+                    handlePointerDown(event, block, "move")
+                  }
                   onPointerMove={handlePointerMove}
-                  onPointerUp={finishDrag}
-                  onPointerCancel={cancelDrag}
+                  onPointerUp={handlePointerUp}
+                  onPointerCancel={handlePointerCancel}
                 >
                   <div
                     className="resize-handle top-0"
                     onPointerDown={(event) =>
-                      startDrag(event, block, "resize-start")
+                      handlePointerDown(event, block, "resize-start")
                     }
                   />
                   <div
                     className="resize-handle bottom-0"
                     onPointerDown={(event) =>
-                      startDrag(event, block, "resize-end")
+                      handlePointerDown(event, block, "resize-end")
                     }
                   />
                   <div className="flex h-full min-h-0 flex-col justify-between gap-1 overflow-hidden px-1.5 py-1">

@@ -1,7 +1,8 @@
 export type Category = "work" | "study" | "fitness" | "life" | "rest";
 export type BlockStatus = "scheduled" | "pending";
-export type ViewMode = "week" | "board" | "stats";
+export type ViewMode = "today" | "week" | "board" | "stats";
 export type AiProviderSetting = "auto" | "openai" | "deepseek" | "local";
+export type TaskQuadrant = "urgent-important" | "important" | "urgent" | "neither";
 
 export interface Subtask {
   id: string;
@@ -15,6 +16,7 @@ export interface Task {
   date: string | null;
   status: "todo" | "done";
   subtasks: Subtask[];
+  priority?: TaskQuadrant;
   pinned?: boolean;
 }
 
@@ -31,6 +33,7 @@ export interface TimeBlock {
   status: BlockStatus;
   obsidianVault?: string;
   obsidianNote?: string;
+  remindAt?: string;
 }
 
 export interface AppSettings {

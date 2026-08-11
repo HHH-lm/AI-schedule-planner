@@ -32,3 +32,15 @@ create policy schedule_state_delete on public.schedule_state
 -- alter table public.schedule_state
 --   alter column user_id type uuid using user_id::uuid;
 -- 升级前请确认旧行的 user_id 均为有效 UUID，否则先删除旧测试行。
+
+-- 后端定时提醒去重表：仅 FastAPI 后端使用 service_role 读写，普通客户端无策略不可访问。
+create table if not exists public.reminder_log (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  block_id text not null,
+  remind_at timestamptz not null,
+  pushed_at timestamptz not null default now(),
+  primary key (user_id, block_id, remind_at)
+);
+
+alter table public.reminder_log enable row level security;
+-- 不创建客户端策略：后端使用 service_role 绕过 RLS，浏览器/未登录客户端无权限。

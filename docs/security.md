@@ -8,7 +8,7 @@
 - 边界输入：超长文本、控制字符、纯符号
 - 渲染安全：React 默认转义，项目内未使用 `dangerouslySetInnerHTML`、`document.write`、`eval`
 - 链接协议：Obsidian 跳转只接受 `obsidian://`，参数使用 `encodeURIComponent`
-- 密钥泄漏：扫描已跟踪文件中的 API key（含 `OPENAI_API_KEY` / `DEEPSEEK_API_KEY`）、高熵 token、私钥块与带值环境变量
+- 密钥泄漏：扫描已跟踪文件中的 API key（含 `OPENAI_API_KEY` / `DEEPSEEK_API_KEY`）、微信推送凭据（`WECOM_WEBHOOK_URL` / `PUSHPLUS_TOKEN` / `SERVERCHAN_KEY`）、高熵 token、私钥块与带值环境变量
 
 ## 运行方式
 
@@ -32,3 +32,4 @@ npm run scan:secrets    # 密钥与危险 API 扫描，发现泄漏时退出码�
 - Supabase 云同步依赖 Email Auth 登录；RLS 已按 `auth.uid()` 启用，未登录客户端无法访问云端数据
 - NLP 拒答规则已评测（见 T-010）：无意义输入不再生成默认时间块，QuickAdd 显示明确拒绝原因
 - 启用 OpenAI / DeepSeek 后，用户输入的自然语言文本会发送到对应第三方服务；API Key 只保存在 FastAPI 后端环境变量，不写入浏览器与 Git
+- 定时提醒使用 Supabase service role key 读取云端数据，并把提醒内容发送到微信通道；service role key 与微信凭据只保存在 FastAPI 后端环境变量，`reminder_log` 仅后端可写

@@ -25,6 +25,15 @@ http_code_on() {
   curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:${port}${path}" 2>/dev/null || true
 }
 
+frontend_assets_ok() {
+  local port="$1"
+  local home page
+  home="$(http_code_on "$port" /)"
+  [ "$home" = "200" ] || return 1
+  page="$(http_code_on "$port" /_next/static/chunks/app/page.js)"
+  [ "$page" = "200" ]
+}
+
 same_project_running() {
   local port pid cwd
   for port in "${DEFAULT_PORTS[@]}"; do
@@ -62,12 +71,12 @@ ensure_backend() {
   if [ -n "$existing_pid" ]; then
     local existing_cwd
     existing_cwd="$(cwd_of "$existing_pid")"
-    if [ "$existing_cwd" = "$ROOT" ]; then
+    if [ "$existing_cwd" = "$ROOT" ] || [ "$existing_cwd" = "$ROOT/backend" ]; then
       echo "$existing_pid" > "$ROOT/.backend.pid"
       echo "FastAPI 后端已在运行：http://localhost:${BACKEND_PORT}"
       return 0
     fi
-    echo "端口 $BACKEND_PORT 已被其他进程占用（PID $existing_pid），请先释放端口，或使用 BACKEND_PORT 环境变量指定其他端口。"
+    echo "端口 $BACKEND_PORT 已被其他进程占用（PID ${existing_pid}），请先释放端口，或使用 BACKEND_PORT 环境变量指定其他端口。"
     exit 1
   fi
 
@@ -95,29 +104,30 @@ cleanup() {
   if [ -n "$next_pid" ]; then
     kill "$next_pid" 2>/dev/null || true
   fi
-  if [ "$backend_started" = "1" ] && [ -n "${backend_pid:-}" ]; then
+  if [ "$backend_started" = "1" ] && [ -n "${backend_pid:-}" ] && [ -n "$next_pid" ]; then
     kill "$backend_pid" 2>/dev/null || true
     rm -f "$ROOT/.backend.pid"
   fi
 }
 trap cleanup EXIT
 
-ensure_backend
-
 existing="$(same_project_running || true)"
 if [ -n "$existing" ]; then
   existing_port="${existing%% *}"
   existing_pid="${existing##* }"
-  if [[ "$(http_code_on "${existing_port}")" =~ ^2 ]]; then
+  if frontend_assets_ok "$existing_port"; then
+    ensure_backend
     echo "AI 日程 dev server 已在运行：http://localhost:${existing_port}"
     exit 0
   fi
-  echo "检测到本项目实例异常（PID ${existing_pid}，端口 ${existing_port}），正在停止并清理缓存后重启..."
+  echo "检测到本项目前端实例异常（PID ${existing_pid}，端口 ${existing_port}），正在停止并清理缓存后重启..."
   parent="$(ps -o ppid= -p "${existing_pid}" 2>/dev/null | tr -d ' ' || true)"
   kill "${existing_pid}" "$parent" 2>/dev/null || true
   sleep 1
   rm -rf "$ROOT/.next"
 fi
+
+ensure_backend
 
 blocking_pid="$(find_pid_on_port "$PORT")"
 if [ -n "$blocking_pid" ]; then

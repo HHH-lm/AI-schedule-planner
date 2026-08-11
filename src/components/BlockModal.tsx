@@ -4,7 +4,7 @@ import { useState } from "react";
 import { BookMarked, Clock, MapPin, Tag, Trash2, X } from "lucide-react";
 import type { Category, TimeBlock } from "@/lib/types";
 import { CATEGORIES, CATEGORY_ORDER } from "@/lib/categories";
-import { minutesToHHMM } from "@/lib/date";
+import { minutesToHHMM, remindBeforeInput } from "@/lib/date";
 import { buildObsidianUrl, parseObsidianUrl } from "@/lib/obsidian";
 
 interface Props {
@@ -13,7 +13,10 @@ interface Props {
   defaultStart?: number;
   defaultObsidianVault?: string;
   tasks: Array<{ id: string; name: string }>;
-  onSave: (draft: Partial<TimeBlock>, id?: string) => void;
+  onSave: (
+    draft: Partial<TimeBlock> & { syncTask?: boolean },
+    id?: string
+  ) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
 }
@@ -22,6 +25,14 @@ function timeToMinutes(value: string): number {
   const [h, m] = value.split(":").map(Number);
   if (!Number.isFinite(h)) return 9 * 60;
   return h * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+function isoToLocalInput(iso: string | undefined): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 export default function BlockModal({
@@ -34,6 +45,8 @@ export default function BlockModal({
   onDelete,
   onClose,
 }: Props) {
+  const initialStartMinutes = block?.start ?? defaultStart ?? 9 * 60;
+  const initialRemindInput = isoToLocalInput(block?.remindAt);
   const initialParsedNote = parseObsidianUrl(block?.obsidianNote ?? "");
   const initialObsidianVault =
     initialParsedNote.vault ?? block?.obsidianVault ?? "";
@@ -42,7 +55,7 @@ export default function BlockModal({
   const [name, setName] = useState(block?.name ?? "");
   const [date, setDate] = useState(block?.date ?? defaultDate);
   const [startText, setStartText] = useState(
-    minutesToHHMM(block?.start ?? defaultStart ?? 9 * 60)
+    minutesToHHMM(initialStartMinutes)
   );
   const [endText, setEndText] = useState(
     minutesToHHMM(
@@ -52,6 +65,7 @@ export default function BlockModal({
   const [category, setCategory] = useState<Category>(block?.category ?? "work");
   const [location, setLocation] = useState(block?.location ?? "");
   const [taskId, setTaskId] = useState(block?.taskId ?? "");
+  const [taskIdTouched, setTaskIdTouched] = useState(false);
   const [done, setDone] = useState(block?.done ?? false);
   const [obsidianVault, setObsidianVault] = useState(initialObsidianVault);
   const [obsidianNote, setObsidianNote] = useState(initialObsidianNote);
@@ -60,6 +74,17 @@ export default function BlockModal({
       ? buildObsidianUrl(initialObsidianVault, initialObsidianNote)
       : ""
   );
+  const [remindAt, setRemindAt] = useState(
+    initialRemindInput ||
+      remindBeforeInput(block?.date ?? defaultDate, initialStartMinutes)
+  );
+  const [remindTouched, setRemindTouched] = useState(false);
+  const hasCustomReminder = Boolean(initialRemindInput);
+
+  const syncDefaultReminder = (nextDate: string, nextStartMinutes: number) => {
+    if (remindTouched || hasCustomReminder) return;
+    setRemindAt(remindBeforeInput(nextDate, nextStartMinutes));
+  };
 
   const handleObsidianLinkChange = (value: string) => {
     setObsidianLink(value);
@@ -85,8 +110,10 @@ export default function BlockModal({
         category,
         location: location.trim() || undefined,
         taskId: taskId || undefined,
+        syncTask: !taskIdTouched,
         obsidianVault: resolvedVault,
         obsidianNote: resolvedNote,
+        remindAt: remindAt ? new Date(remindAt).toISOString() : undefined,
         done,
         status: "scheduled",
       },
@@ -122,7 +149,13 @@ export default function BlockModal({
           </button>
         </div>
 
-        <div className="modal-body space-y-4">
+        <form
+          className="modal-body space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleSave();
+          }}
+        >
           {block?.status === "pending" && (
             <div className="status-note-amber">
               这是一个待排期时间块，设置起止时间后会自动进入周计划。
@@ -150,7 +183,11 @@ export default function BlockModal({
                 type="date"
                 className={inputClass}
                 value={date}
-                onChange={(event) => setDate(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setDate(value);
+                  syncDefaultReminder(value, timeToMinutes(startText));
+                }}
               />
             </div>
             <div>
@@ -178,7 +215,11 @@ export default function BlockModal({
                   type="time"
                   className={inputClass}
                   value={startText}
-                  onChange={(event) => setStartText(event.target.value)}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setStartText(value);
+                    syncDefaultReminder(date, timeToMinutes(value));
+                  }}
                 />
               </div>
             </div>
@@ -214,7 +255,10 @@ export default function BlockModal({
               <select
                 className={inputClass}
                 value={taskId}
-                onChange={(event) => setTaskId(event.target.value)}
+                onChange={(event) => {
+                  setTaskId(event.target.value);
+                  setTaskIdTouched(true);
+                }}
               >
                 <option value="">不关联</option>
                 {tasks.map((task) => (
@@ -230,6 +274,24 @@ export default function BlockModal({
             <div className="field-hint">
               <BookMarked size={13} />
               <span>Obsidian 关联</span>
+            </div>
+            <div className="mb-4">
+              <div className="field-hint">
+                <Clock size={13} />
+                <span>微信提醒</span>
+              </div>
+              <input
+                type="datetime-local"
+                className={inputClass}
+                value={remindAt}
+                onChange={(event) => {
+                  setRemindAt(event.target.value);
+                  setRemindTouched(true);
+                }}
+              />
+              <p className="mt-1 text-[11px] text-ink-muted-48">
+                默认开始前 5 分钟提醒，留空则不提醒
+              </p>
             </div>
             <div className="mb-4">
               <label className={labelClass}>Obsidian 链接</label>
@@ -276,32 +338,30 @@ export default function BlockModal({
             />
             标记为完成
           </label>
-        </div>
-
-        <div className="modal-footer">
-          {block ? (
+          <div className="modal-footer !mt-0">
+            {block ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onDelete(block.id);
+                  onClose();
+                }}
+                className="btn-ghost !border-[rgba(190,40,60,0.3)] !text-[#b3261e] hover:!bg-[rgba(190,40,60,0.06)]"
+              >
+                <Trash2 size={14} />
+                删除
+              </button>
+            ) : (
+              <span />
+            )}
             <button
-              type="button"
-              onClick={() => {
-                onDelete(block.id);
-                onClose();
-              }}
-              className="btn-ghost !border-[rgba(190,40,60,0.3)] !text-[#b3261e] hover:!bg-[rgba(190,40,60,0.06)]"
+              type="submit"
+              className="btn-primary-pill"
             >
-              <Trash2 size={14} />
-              删除
+              保存
             </button>
-          ) : (
-            <span />
-          )}
-          <button
-            type="button"
-            onClick={handleSave}
-            className="btn-primary-pill"
-          >
-            保存
-          </button>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   );

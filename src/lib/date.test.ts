@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addDays,
+  defaultRemindAtISO,
   formatWeekRange,
   getWeekDays,
   isoWeekNumber,
@@ -8,6 +9,7 @@ import {
   minutesToHHMM,
   nowMinutes,
   parseDateKey,
+  remindBeforeInput,
   startOfWeek,
   toDateKey,
   todayKey,
@@ -94,6 +96,25 @@ describe("time formatting", () => {
     expect(minutesToDuration(60)).toBe("1小时");
     expect(minutesToDuration(90)).toBe("1小时30分");
     expect(minutesToDuration(120)).toBe("2小时");
+  });
+
+  it("remindBeforeInput 默认取开始前 5 分钟", () => {
+    expect(remindBeforeInput("2026-08-11", 9 * 60)).toBe("2026-08-11T08:55");
+    expect(remindBeforeInput("2026-08-11", 14 * 60 + 30)).toBe(
+      "2026-08-11T14:25"
+    );
+  });
+
+  it("remindBeforeInput 跨天回落到前一天", () => {
+    expect(remindBeforeInput("2026-08-11", 0)).toBe("2026-08-10T23:55");
+    expect(remindBeforeInput("2026-03-01", 0)).toBe("2026-02-28T23:55");
+  });
+
+  it("defaultRemindAtISO 与本地提醒输入等价", () => {
+    const iso = defaultRemindAtISO("2026-08-11", 9 * 60);
+    expect(new Date(iso).getTime()).toBe(
+      new Date("2026-08-11T08:55").getTime()
+    );
   });
 
   it("todayKey 与 nowMinutes 跟随固定时间", () => {
