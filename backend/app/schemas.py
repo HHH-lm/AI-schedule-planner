@@ -189,3 +189,45 @@ class MemoryAnalysisResponse(BaseModel):
     stats: dict[str, int] = Field(
         default_factory=dict, description="分析统计摘要"
     )
+
+# --- Planning V2 ---
+
+Priority = Literal["low", "medium", "high"]
+
+
+class PlanV2Task(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    duration: int = Field(ge=15, le=480, description="duration in minutes")
+    priority: Priority = "medium"
+    deadline: str | None = Field(default=None, description="YYYY-MM-DD")
+
+
+class PlanningRange(BaseModel):
+    start: str = Field(description="YYYY-MM-DD")
+    end: str = Field(description="YYYY-MM-DD")
+
+
+class PlanV2Request(BaseModel):
+    goal: str = Field(default="", max_length=500, description="user goal")
+    tasks: list[PlanV2Task] = Field(min_length=1, max_length=50)
+    memories: list[str] = Field(default_factory=list)
+    constraints: list[str] = Field(default_factory=list)
+    existing_schedule: list[ExistingBlock] = Field(default_factory=list)
+    planning_range: PlanningRange
+    provider: Provider | None = None
+
+
+class PlanV2Block(BaseModel):
+    title: str
+    date: str
+    start: int
+    end: int
+    category: Category = "life"
+    priority: Priority = "medium"
+
+
+class PlanV2Response(BaseModel):
+    source: Literal["openai", "deepseek", "none", "local"]
+    blocks: list[PlanV2Block]
+    unassigned: list[str] = Field(default_factory=list)
+    message: str | None = None
