@@ -292,9 +292,14 @@ export default function MemoryModal({
                         className="shrink-0 mt-0.5 text-amber-500"
                       />
                       <div className="min-w-0">
-                        <p className="text-xs leading-relaxed whitespace-pre-wrap">
-                          {suggestion.content}
+                        <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap text-amber-900">
+                          {suggestion.conclusion || suggestion.content}
                         </p>
+                        {suggestion.conclusion && suggestion.conclusion !== suggestion.content && (
+                          <p className="text-[11px] text-ink-muted-48 leading-relaxed mt-1 whitespace-pre-wrap">
+                            {suggestion.content}
+                          </p>
+                        )}
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-[11px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
                             {CATEGORY_META[suggestion.category].label}

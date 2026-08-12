@@ -4,38 +4,78 @@
 
 ## 当前目标
 
-- 记忆系统增强：记忆启用/停用功能 + 用户数据隔离确认（2026-08-12 指示）。
+- 架构分离：将 AI 决定与程序决定分开实现（2026-08-12 指示）
 
 ## 文件索引
 
-- 新增：`src/components/MemoryModal.tsx`（记忆 CRUD 模态框，含分类标签过滤、添加/编辑/删除）
-- 新增：`src/lib/memory.test.ts`（19 个测试，覆盖创建、过滤、CRUD 操作、启用/停用）
-- 新增：`backend/app/routers/memories.py`（`POST /api/v1/memories/context` 格式化记忆上下文）
-- 修改：`src/components/SettingsModal.tsx`（新增 `onOpenMemory` 回调和"记忆系统"管理入口按钮）
-- 修改：`src/lib/types.ts`（新增 `MemoryCategory`、`MemorySource`、`Memory`、`MemoryCandidate` 类型，`AppData` 增加 `memories`/`memoryCandidates` 字段）
-- 修改：`src/app/page.tsx`（导航栏"记忆"按钮已移除，改为通过设置页打开；`MemoryModal` 集成、`saveMemory`/`deleteMemory` 回调）
-- 修改：`backend/app/main.py`（注册 `memories` 路由）
+### 新增模块
+- `backend/app/services/slot_finder.py` — 候选空闲时段生成器（Rule Engine 组件）
+- `backend/app/services/scheduling_engine.py` — 调度引擎（任务分配 + 记忆排序）
+- `backend/app/services/validator.py` — 规划校验器（每日工作量、截止日期、时间合理性）
+
+### 重构模块
+- `backend/app/services/conflict.py` — 提取共享 `overlaps()` / `overlaps_with_any()` 函数，消除 planner.py 和 planner_v2.py 中的重复代码
+- `backend/app/services/planner_v2.py` — 重构为 AI 理解层 + SchedulingEngine 调度
+- `backend/app/services/planner.py` — 使用共享 `overlaps_with_any()` 替代私有 `_overlaps()`
+
+### 新增测试
+- `backend/tests/test_slot_finder.py` — 13 个测试
+- `backend/tests/test_scheduling_engine.py` — 13 个测试
+- `backend/tests/test_validator.py` — 9 个测试
+- `backend/tests/test_conflict.py` — 更新 4 个测试
 
 ## Git 状态
 
-- 当前分支 `main`，针对本次记忆系统的新增文件未提交。
+- 当前分支 `main`，架构分离相关文件未提交。
 
-## 决策
+## 架构变更
 
-- 记忆数据与 `AppData` 共存，走 localStorage + Supabase 同步，与现有数据持久化策略一致。
-- 后端 `POST /api/v1/memories/context` 接收前端记忆列表，格式化后供 AI 规划使用，记忆本身不保存在后端。
-- 四类别设计：`time-preference`（时间偏好）、`habit`（习惯）、`life-preference`（生活/工作偏好）、`long-term-constraint`（长期约束）。
-- `source` 区分 `user`（用户主动管理）和 `ai-candidate`（AI 候选，后续阶段实现）。
-- 记忆新增 `active` 字段，默认 `true`；停用的记忆在后端 context API 中自动过滤，不参与 AI 规划。
-- 记忆数据通过 `AppData` 随 Supabase 同步，已通过 `auth.uid()` RLS 实现用户隔离。
+### 新架构流程
+
+```
+Planning Request
+    ↓
+┌─ LLM 理解层 ──┐   ┌─ Rule Engine ────────┐
+│ planner_v2.py   │   │ slot_finder.py       │
+│ 理解用户目标     │   │ 找空闲时间           │
+│ 拆解任务         │   │ conflict.py          │
+│ 输出任务理解     │   │ 检测冲突             │
+│（类别/偏好/备注） │   │ validator.py         │
+│ 生成解释         │   │ 检查每日工作量       │
+└────────────────┘   │ 检查截止日期          │
+    ↓                 │ 检查时间合理性        │
+    └──┬──────────────┴──────────────────┘
+       ↓
+ Scheduling Engine（scheduling_engine.py）
+  - 根据记忆偏好对候选时段打分排序
+  - 按优先级分配任务到最优空闲时段
+  - 调用 Validator 校验最终规划
+       ↓
+   Final Plan
+       ↓
+   Validator（validator.py）
+```
+
+### AI 职责（planner_v2.py 的 LLM 路径）
+- 理解用户目标
+- 输出任务理解（category, preferred_time, focus_level, notes）
+- 生成规划解释（可选）
+- 不再直接生成时间块
+
+### Python 职责（新模块）
+- slot_finder: 找空闲时间
+- conflict: 检测冲突
+- scheduling_engine: 根据记忆排序 + 分配任务
+- validator: 检查每日工作量、截止日期、时间合理性
 
 ## 验证结果
 
-- 已通过：`npm test`（14 文件 79 个测试）、`npx tsc --noEmit`、`npm run lint`、`backend pytest`（36 个测试）。
-- 未做浏览器实测：需刷新后点击导航栏"记忆"按钮，添加/编辑/删除记忆，验证分类标签过滤和 CRUD 效果。
+- 全部 75 个测试通过（36 个原有 + 39 个新增）
+- 原有 API 向后兼容
 
 ## 交接要点
 
-- 项目定义与长期状态见 `.project-to-act/PROJECT_OVERVIEW.md`。
-- 记忆系统第一阶段功能已实现，后续可扩展 AI 自动生成候选记忆并展示在 `MemoryModal` 中。
-- 后端 `POST /api/v1/memories/context` 已就绪，可在 `plan.py` 中引用记忆上下文优化 AI 规划。
+- 项目定义与长期状态见 `.project-to-act/PROJECT_OVERVIEW.md`
+- 架构分离已完成，AI 路径和本地 fallback 路径均使用 SchedulingEngine
+- LLM 不再直接生成时间块，只输出任务理解
+- 下一步可优化：scheduling_engine 的评分函数增加更多记忆维度

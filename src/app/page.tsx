@@ -129,6 +129,7 @@ export default function Home() {
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [memoryModalOpen, setMemoryModalOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [focusTarget, setFocusTarget] = useState<{
@@ -137,6 +138,15 @@ export default function Home() {
     end: number;
   } | null>(null);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 自动关闭 toast 提示
+  useEffect(() => {
+    if (!toastMessage) return;
+    const timer = setTimeout(() => setToastMessage(null), 3000);
+    return () => clearTimeout(timer);
+  }, [toastMessage]);
+
+
   const dataRef = useRef<AppData | null>(null);
 
   useEffect(() => {
@@ -516,11 +526,32 @@ export default function Home() {
 
   const acceptSuggestion = useCallback(
     (suggestion: AIMemorySuggestion) => {
+      const conclusion = suggestion.conclusion || suggestion.content;
+      
+      // 检查是否已存在相同记忆
+      const existing = data?.memories?.find(
+        (m) => m.category === suggestion.category && m.content === conclusion
+      );
+      if (existing) {
+        setToastMessage("此条记忆已经添加过，无需重复添加。");
+        // 移除这条建议（效果同"忽略"）
+        commitData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            aiMemorySuggestions: (prev.aiMemorySuggestions ?? []).filter(
+              (s) => s.id !== suggestion.id
+            ),
+          };
+        });
+        return;
+      }
+      
       const now = new Date().toISOString();
       const memory: Memory = {
         id: uid(),
         category: suggestion.category,
-        content: suggestion.content,
+        content: conclusion,
         createdAt: now,
         updatedAt: now,
         source: "ai-suggested",
@@ -537,7 +568,7 @@ export default function Home() {
         };
       });
     },
-    [commitData]
+    [commitData, data]
   );
 
   const runAnalysis = useCallback(async () => {
@@ -549,6 +580,7 @@ export default function Home() {
           id: string;
           category: string;
           content: string;
+          conclusion: string;
           reasoning: string;
           confidence: number;
           createdAt: string;
@@ -570,18 +602,16 @@ export default function Home() {
         if (!prev) return prev;
         return {
           ...prev,
-          aiMemorySuggestions: [
-            ...(prev.aiMemorySuggestions ?? []),
-            ...result.suggestions.map((s) => ({
+          aiMemorySuggestions: result.suggestions.map((s) => ({
               id: s.id,
               category: s.category as MemoryCategory,
               content: s.content,
+              conclusion: s.conclusion,
               reasoning: s.reasoning,
               confidence: s.confidence,
               createdAt: s.createdAt,
               status: "pending" as const,
             })),
-          ],
         };
       });
     } catch {
@@ -1439,6 +1469,40 @@ export default function Home() {
           onDelete={deleteTask}
           onClose={() => setTaskModalOpen(false)}
         />
+      )}
+      {toastMessage && (
+        <div className="modal-backdrop" onMouseDown={() => setToastMessage(null)}>
+          <div
+            className="modal-card max-w-sm"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3 className="modal-title">提示</h3>
+              <button
+                type="button"
+                onClick={() => setToastMessage(null)}
+                className="icon-btn-plain"
+                aria-label="关闭"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="modal-body">
+              <p className="text-[15px] leading-relaxed text-ink-muted-80">{toastMessage}</p>
+            </div>
+            <div className="modal-footer !justify-end">
+              <button
+                type="button"
+                onClick={() => setToastMessage(null)}
+                className="btn-primary-pill"
+              >
+                知道了
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

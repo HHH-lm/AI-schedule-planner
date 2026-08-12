@@ -56,6 +56,7 @@ export interface AIMemorySuggestion {
   id: string;
   category: MemoryCategory;
   content: string;
+  conclusion?: string;
   reasoning: string;
   confidence: number;
   createdAt: string;

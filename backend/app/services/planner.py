@@ -27,6 +27,7 @@ from app.services.ai import (
     parse_model_json,
     resolve_ai_provider,
 )
+from app.services.conflict import overlaps, overlaps_with_any
 from app.services.nlp import guess_category
 
 
@@ -176,14 +177,6 @@ def _sanitize_planned_block(
     )
 
 
-def _overlaps(
-    occupied: list[ExistingBlock],
-    block: PlannedBlock,
-) -> bool:
-    return any(
-        item.date == block.date and item.start < block.end and block.start < item.end
-        for item in occupied
-    )
 
 
 def _fallback_plan(
@@ -213,7 +206,7 @@ def _fallback_plan(
                         end=minute + 60,
                         category=guess_category(subtask_name),  # type: ignore[arg-type]
                     )
-                    if _overlaps(occupied, candidate):
+                    if overlaps_with_any(candidate, occupied):
                         continue
                     occupied.append(
                         ExistingBlock(date=candidate.date, start=candidate.start, end=candidate.end)
@@ -265,7 +258,7 @@ async def plan_schedule(
         blocked: list[PlannedBlock] = []
         occupied = [block.model_copy() for block in request.existing_blocks]
         for candidate in cleaned:
-            if _overlaps(occupied, candidate):
+            if overlaps_with_any(candidate, occupied):
                 blocked.append(candidate)
                 continue
             occupied.append(
