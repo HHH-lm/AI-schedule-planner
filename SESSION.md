@@ -4,26 +4,38 @@
 
 ## 当前目标
 
-- 时间块弹窗（周计划与任务看板共用）支持按 Enter 保存并关闭对话框（2026-08-11 指示）。
+- 记忆系统增强：记忆启用/停用功能 + 用户数据隔离确认（2026-08-12 指示）。
 
 ## 文件索引
 
-- 修改：`src/components/BlockModal.tsx`（弹窗改为表单提交，Enter 保存，保存按钮改为 submit）
-- 保留：任务与时间块自动同步、移动端布局、触屏长按拖拽、今日待办、四象限、统计周报、FastAPI 后端、Supabase 保持原行为。
+- 新增：`src/components/MemoryModal.tsx`（记忆 CRUD 模态框，含分类标签过滤、添加/编辑/删除）
+- 新增：`src/lib/memory.test.ts`（19 个测试，覆盖创建、过滤、CRUD 操作、启用/停用）
+- 新增：`backend/app/routers/memories.py`（`POST /api/v1/memories/context` 格式化记忆上下文）
+- 修改：`src/components/SettingsModal.tsx`（新增 `onOpenMemory` 回调和"记忆系统"管理入口按钮）
+- 修改：`src/lib/types.ts`（新增 `MemoryCategory`、`MemorySource`、`Memory`、`MemoryCandidate` 类型，`AppData` 增加 `memories`/`memoryCandidates` 字段）
+- 修改：`src/app/page.tsx`（导航栏"记忆"按钮已移除，改为通过设置页打开；`MemoryModal` 集成、`saveMemory`/`deleteMemory` 回调）
+- 修改：`backend/app/main.py`（注册 `memories` 路由）
 
 ## Git 状态
 
-- 当前分支 `main`，T-014 今日待办视图与 T-015 四象限改动均未提交。
-- 本次新增 `src/components/TodayView.tsx` 桌面端布局调整，文件本身仍为未跟踪状态。
-- 工作区存在用户/其他会话新增的 `backend/app/routers/reminders.py`、`backend/app/services/{push,reminders}.py` 等提醒相关文件，未触碰。
+- 当前分支 `main`，针对本次记忆系统的新增文件未提交。
 
 ## 决策
 
-- 将 `modal-body` 与底部按钮包进同一个 `<form>`，任意单行输入框按 Enter 触发保存；删除按钮保持 `type="button"` 避免误提交。
-- 保存按钮改为 `type="submit"`，点击行为与 Enter 一致。
+- 记忆数据与 `AppData` 共存，走 localStorage + Supabase 同步，与现有数据持久化策略一致。
+- 后端 `POST /api/v1/memories/context` 接收前端记忆列表，格式化后供 AI 规划使用，记忆本身不保存在后端。
+- 四类别设计：`time-preference`（时间偏好）、`habit`（习惯）、`life-preference`（生活/工作偏好）、`long-term-constraint`（长期约束）。
+- `source` 区分 `user`（用户主动管理）和 `ai-candidate`（AI 候选，后续阶段实现）。
+- 记忆新增 `active` 字段，默认 `true`；停用的记忆在后端 context API 中自动过滤，不参与 AI 规划。
+- 记忆数据通过 `AppData` 随 Supabase 同步，已通过 `auth.uid()` RLS 实现用户隔离。
 
 ## 验证结果
 
-- 已通过：`npm run lint`、`npx tsc --noEmit`、`npm test`（13 文件 60 测试）。
-- 未做浏览器实测：需刷新后在时间块弹窗内按 Enter 确认保存并关闭。
-- 项目定义与长期状态见 `.project-to-act/PROJECT_OVERVIEW.md`；证据见 `.project-to-act/tasks/T-015/evidence/E-T015-001.md`。
+- 已通过：`npm test`（14 文件 79 个测试）、`npx tsc --noEmit`、`npm run lint`、`backend pytest`（36 个测试）。
+- 未做浏览器实测：需刷新后点击导航栏"记忆"按钮，添加/编辑/删除记忆，验证分类标签过滤和 CRUD 效果。
+
+## 交接要点
+
+- 项目定义与长期状态见 `.project-to-act/PROJECT_OVERVIEW.md`。
+- 记忆系统第一阶段功能已实现，后续可扩展 AI 自动生成候选记忆并展示在 `MemoryModal` 中。
+- 后端 `POST /api/v1/memories/context` 已就绪，可在 `plan.py` 中引用记忆上下文优化 AI 规划。
