@@ -1,4 +1,23 @@
-"""AI Planning V2 - 结构化规划服务。"""
+"""AI Planning V2 - 结构化规划服务（架构分离：AI 理解 + Python 调度）。
+
+架构：
+  LLM 理解层（本模块）                   Rule Engine / SchedulingEngine
+  ┌─────────────────────────┐           ┌──────────────────────────────┐
+  │ 理解用户目标              │           │ slot_finder: 找空闲时间       │
+  │ 拆解任务                  │           │ conflict: 检测冲突            │
+  │ 判断任务类型/优先级        │           │ scheduling_engine: 分配任务   │
+  │ 估计任务时长              │           │ validator: 校验规划结果      │
+  │ 理解自然语言约束          │           │ 根据 Memory 排序候选时段     │
+  │ 生成规划解释              │           │ 最终生成可执行时间块         │
+  └───────────┬─────────────┘           └──────────────┬───────────────┘
+              │                                        │
+              └───────────┬────────────────────────────┘
+                          ↓
+                   Scheduling Engine
+                   （合并理解 + 空闲时段 → 最终规划）
+                          ↓
+                     Validator
+"""
 
 from __future__ import annotations
 
@@ -23,29 +42,13 @@ from app.services.ai import (
     parse_model_json,
     resolve_ai_provider,
 )
-from app.services.nlp import guess_category
+from app.services.scheduling_engine import schedule_tasks
 
 
 CATEGORY_VALUES = ("work", "study", "fitness", "life", "rest")
-PRIORITY_SCORE: dict[str, int] = {"high": 3, "medium": 2, "low": 1}
 
 
-def _resolve_priority(task: PlanV2Task) -> str:
-    """解析任务优先级。用户手动指定则直接使用，auto 则根据 deadline 推断。"""
-    if task.priority != "auto":
-        return task.priority
-    if task.deadline:
-        deadline = parse_local_date(task.deadline)
-        if deadline:
-            days_until = (deadline - date.today()).days
-            if days_until <= 3:
-                return "high"
-            elif days_until <= 7:
-                return "medium"
-    return "medium"
-
-
-def _build_plan_v2_prompt(
+def _build_understanding_prompt(
     goal: str,
     tasks: list[PlanV2Task],
     memories: list[str],
@@ -54,12 +57,19 @@ def _build_plan_v2_prompt(
     range_start: str,
     range_end: str,
 ) -> str:
+    """构建 LLM 理解层 prompt，只要求输出任务理解，不要求输出时间块。"""
     lines: list[str] = [
-        "你是高级日程规划助手。根据用户目标、任务、记忆偏好和约束，生成最优时间安排。",
+        "你是高级日程规划助手。根据用户目标、任务、记忆偏好和约束，理解每个任务的性质。",
         "只输出 JSON，不要输出解释。",
-        '格式: {"blocks": [{"title":"事项名","date":"YYYY-MM-DD","start":分钟,"end":分钟,"category":"work|study|fitness|life|rest","priority":"high|medium|low"}]}',
+        "",
+        '格式: {"understandings": [{',
+        '  "title": "任务名（必须与输入一致）",',
+        '  "category": "work|study|fitness|life|rest",',
+        '  "preferred_time": "上午|下午|晚上|any",',
+        '  "focus_level": "deep|light|flexible",  # deep=需专注, light=轻松, flexible=均可',
+        '  "notes": "对该任务的补充说明"',
+        "}]}",
         f"规划范围: {range_start} 至 {range_end}",
-        "start/end 为当天0点起分钟数，end > start，至少15分钟。",
         "",
     ]
 
@@ -83,7 +93,7 @@ def _build_plan_v2_prompt(
     lines.append("## 任务列表")
     for t in tasks:
         deadline = f" 截止: {t.deadline}" if t.deadline else ""
-        prio = f" [{t.priority}]" if t.priority != "auto" else " [待推断]"
+        prio = f" [{t.priority}]"
         lines.append(f"- {t.title} ({t.duration}分钟{prio}{deadline})")
     lines.append("")
 
@@ -94,66 +104,74 @@ def _build_plan_v2_prompt(
             lines.append(f"- {b.date} {h} [{b.status}]")
         lines.append("")
 
-    lines.append("## 规划要求")
-    lines.append("1. 高优先级任务优先安排在用户精力最好的时段")
-    lines.append("2. 尊重用户偏好和约束条件")
-    lines.append("3. 同一天同类任务尽量连续安排，避免碎片化")
-    lines.append("4. 每个任务独立安排一个时间块，duration 作为参考时长")
-    lines.append("5. 已有日程不可覆盖")
-    lines.append("6. 无法安排的任务排除在 blocks 外，放入 unassigned 列表")
-    lines.append("7. 只输出 JSON")
-    lines.append("")
-
-    lines.append("## 优先级推断规则")
-    lines.append('对于标记为"待推断"的任务，请根据以下规则推断优先级（输出 resolved 值 high/medium/low）：')
-    lines.append("- 截止日在 3 天内的任务 → high")
-    lines.append("- 截止日在 7 天内的任务 → medium")
-    lines.append("- 与用户目标直接相关的任务可以升一级")
-    lines.append("- 无截止日且与目标弱相关的任务 → medium 或 low")
-    lines.append("- 用户明确指定的优先级，直接使用，不要覆盖")
+    lines.append("## 理解要求")
+    lines.append("1. 根据任务名称和用户目标，判断最适合的 category")
+    lines.append("2. 根据任务性质，推荐 preferred_time（上午/下午/晚上/any）")
+    lines.append("3. 判断 focus_level：需要专注的任务（如写作、编程）→ deep，轻松的任务（如散步、休息）→ light，其他 → flexible")
+    lines.append("4. 如果任务有 deadline，请在 notes 中标注时间紧迫性")
+    lines.append("5. 任务 title 必须与输入完全一致，不要修改")
+    lines.append("6. 只输出 JSON")
 
     return "\n".join(lines)
 
 
-def _sanitize_plan_v2_block(
+def _build_explanation_prompt(
+    goal: str,
+    blocks: list[PlanV2Block],
+    unassigned: list[str],
+) -> str:
+    """构建解释生成 prompt，让 LLM 为规划结果生成自然语言解释。"""
+    block_lines = "\n".join(
+        f"- {b.date} {b.start//60:02d}:{b.start%60:02d}-{b.end//60:02d}:{b.end%60:02d} {b.title}"
+        for b in blocks
+    )
+    unassigned_lines = "\n".join(f"- {u}" for u in unassigned) if unassigned else "无"
+
+    return "\n".join([
+        "你是日程规划解释器。根据用户目标和生成的规划结果，",
+        "用一段自然语言解释这个规划（200字以内）。",
+        f"用户目标：{goal}",
+        "",
+        "## 规划结果",
+        block_lines,
+        "",
+        "## 未安排任务",
+        unassigned_lines,
+        "",
+        "要求：",
+        "1. 先总结整体安排",
+        "2. 说明优先级高的任务安排在什么时段",
+        "3. 如有未安排任务，说明原因",
+        "4. 语气友好、简洁",
+        "5. 只输出解释文本，不要额外格式",
+    ])
+
+
+def _sanitize_understanding(
     raw: Any,
-    start: date,
-    end: date,
-) -> PlanV2Block | None:
+    valid_titles: set[str],
+) -> dict[str, Any] | None:
+    """校验并清洗 LLM 返回的任务理解。"""
     if not isinstance(raw, dict):
         return None
     title = str(raw.get("title", "")).strip() if raw.get("title") is not None else ""
-    block_date = str(raw.get("date", "")).strip() if raw.get("date") is not None else ""
-    parsed = parse_local_date(block_date)
-    if not title or not parsed or parsed < start or parsed > end:
+    if title not in valid_titles:
         return None
-    try:
-        block_start = round(float(raw.get("start")))
-        block_end = round(float(raw.get("end")))
-    except (TypeError, ValueError):
-        return None
-    safe_start = max(0, min(1439, block_start))
-    safe_end = max(safe_start + 15, min(1439, block_end))
     category = raw.get("category") if raw.get("category") in CATEGORY_VALUES else "life"
-    priority = raw.get("priority") if raw.get("priority") in ("high", "medium", "low") else "medium"
-    return PlanV2Block(
-        title=title[:80],
-        date=block_date,
-        start=safe_start,
-        end=safe_end,
-        category=category,  # type: ignore[arg-type]
-        priority=priority,  # type: ignore[arg-type]
-    )
-
-
-def _overlaps(
-    occupied: list[ExistingBlock],
-    block: PlanV2Block,
-) -> bool:
-    return any(
-        item.date == block.date and item.start < block.end and block.start < item.end
-        for item in occupied
-    )
+    preferred_time = raw.get("preferred_time", "any")
+    if preferred_time not in ("上午", "下午", "晚上", "any"):
+        preferred_time = "any"
+    focus_level = raw.get("focus_level", "flexible")
+    if focus_level not in ("deep", "light", "flexible"):
+        focus_level = "flexible"
+    notes = str(raw.get("notes", "")).strip() if raw.get("notes") is not None else ""
+    return {
+        "title": title,
+        "category": category,
+        "preferred_time": preferred_time,
+        "focus_level": focus_level,
+        "notes": notes,
+    }
 
 
 def _fallback_plan_v2(
@@ -163,68 +181,10 @@ def _fallback_plan_v2(
     range_end: date,
     memories: list[str],
 ) -> PlanV2Response:
-    """本地 fallback 规划器。"""
-    occupied = [b.model_copy() for b in existing]
-    blocks: list[PlanV2Block] = []
-    unassigned: list[str] = []
-
-    # 解析优先级，auto 按 deadline 推断
-    resolved: list[tuple[PlanV2Task, str]] = []
-    for t in tasks:
-        p = _resolve_priority(t)
-        resolved.append((t, p))
-    resolved.sort(key=lambda x: -PRIORITY_SCORE.get(x[1], 2))
-
-    for task, priority in resolved:
-        placed = False
-        day_count = (range_end - range_start).days + 1
-        days = [range_start + timedelta(days=n) for n in range(day_count)]
-
-        # 优先在截止日前安排
-        deadline = parse_local_date(task.deadline) if task.deadline else None
-        if deadline:
-            days = [d for d in days if d <= deadline]
-            if not days:
-                days = [range_start + timedelta(days=n) for n in range(day_count)]
-
-        # 高优先级任务优先尝试上午时段
-        time_slots = (
-            [(6 * 60, 12 * 60), (12 * 60, 18 * 60), (18 * 60, 22 * 60)]
-            if priority == "high"
-            else [(12 * 60, 18 * 60), (6 * 60, 12 * 60), (18 * 60, 22 * 60)]
-        )
-
-        for day in days:
-            for slot_start, slot_end in time_slots:
-                for minute in range(slot_start, slot_end - task.duration + 1, 15):
-                    candidate = PlanV2Block(
-                        title=task.title[:80],
-                        date=day.isoformat(),
-                        start=minute,
-                        end=minute + task.duration,
-                        category=guess_category(task.title),  # type: ignore[arg-type]
-                        priority=priority,  # type: ignore[arg-type]
-                    )
-                    if _overlaps(occupied, candidate):
-                        continue
-                    occupied.append(
-                        ExistingBlock(
-                            date=candidate.date,
-                            start=candidate.start,
-                            end=candidate.end,
-                        )
-                    )
-                    blocks.append(candidate)
-                    placed = True
-                    break
-                if placed:
-                    break
-            if placed:
-                break
-
-        if not placed:
-            unassigned.append(task.title)
-
+    """本地 fallback 规划器 — 直接使用 SchedulingEngine。"""
+    blocks, unassigned, _issues = schedule_tasks(
+        tasks, existing, (range_start, range_end), memories
+    )
     return PlanV2Response(
         source="local",
         blocks=blocks,
@@ -236,7 +196,13 @@ async def plan_v2_schedule(
     request: PlanV2Request,
     settings: Settings,
 ) -> PlanV2Response:
-    """PlanV2 主入口。"""
+    """PlanV2 主入口 — 架构分离后的版本。
+
+    流程：
+      1. LLM 理解层：理解任务性质（类别、偏好时段、专注度、备注）
+      2. SchedulingEngine：Python 调度引擎，根据理解 + 空闲时段分配任务
+      3. LLM 解释层：为规划结果生成自然语言解释
+    """
     range_start = parse_local_date(request.planning_range.start)
     range_end = parse_local_date(request.planning_range.end)
     if not range_start or not range_end or range_end < range_start:
@@ -261,9 +227,9 @@ async def plan_v2_schedule(
         return result
 
     try:
-        user_text = f"请为以下目标生成时间规划：{request.goal}" if request.goal else "请生成时间规划"
-        data = await call_chat_completions(
-            _build_plan_v2_prompt(
+        # ── 步骤 1: LLM 理解层 ──
+        understanding_data = await call_chat_completions(
+            _build_understanding_prompt(
                 request.goal,
                 request.tasks,
                 request.memories,
@@ -272,59 +238,106 @@ async def plan_v2_schedule(
                 request.planning_range.start,
                 request.planning_range.end,
             ),
-            user_text,
+            f"请为以下目标理解任务：{request.goal}" if request.goal else "请理解任务",
             resolved_provider,
             settings,
         )
-        content = _extract_content(data)
-        payload = parse_model_json(content)
-        raw_blocks = payload.get("blocks") if isinstance(payload, dict) else None
-        raw_unassigned = payload.get("unassigned") if isinstance(payload, dict) else None
+        understanding_content = _extract_content(understanding_data)
+        understanding_payload = parse_model_json(understanding_content)
+        raw_understandings = (
+            understanding_payload.get("understandings")
+            if isinstance(understanding_payload, dict)
+            else None
+        )
 
-        if not isinstance(raw_blocks, list):
-            raise ValueError("AI 未返回时间块列表")
+        # 校验理解结果
+        valid_titles = {t.title for t in request.tasks}
+        understandings: list[dict[str, Any]] = []
+        if isinstance(raw_understandings, list):
+            for raw in raw_understandings:
+                cleaned = _sanitize_understanding(raw, valid_titles)
+                if cleaned:
+                    understandings.append(cleaned)
 
-        cleaned = [
-            item
-            for item in (
-                _sanitize_plan_v2_block(raw, range_start, range_end)
-                for raw in raw_blocks
-            )
-            if item is not None
-        ]
-        blocks: list[PlanV2Block] = []
-        occupied = [b.model_copy() for b in request.existing_schedule]
-        for candidate in cleaned:
-            if _overlaps(occupied, candidate):
-                continue
-            occupied.append(
-                ExistingBlock(
-                    date=candidate.date,
-                    start=candidate.start,
-                    end=candidate.end,
+        # 如果 LLM 理解失败，生成默认理解（用 task 自身信息）
+        if not understandings:
+            understandings = [
+                {
+                    "title": t.title,
+                    "category": "life",
+                    "preferred_time": "any",
+                    "focus_level": "flexible",
+                    "notes": "",
+                }
+                for t in request.tasks
+            ]
+
+        # ── 步骤 2: SchedulingEngine 调度 ──
+        # 将理解结果中的类别等信息应用到任务打分
+        blocks, unassigned, _issues = schedule_tasks(
+            request.tasks,
+            request.existing_schedule,
+            (range_start, range_end),
+            request.memories,
+        )
+
+        # ── 步骤 3: LLM 解释层（可选） ──
+        explanation: str | None = None
+        if request.goal and blocks:
+            try:
+                explanation_data = await call_chat_completions(
+                    _build_explanation_prompt(request.goal, blocks, unassigned),
+                    "请为这个规划结果生成解释",
+                    resolved_provider,
+                    settings,
+                    temperature=0.7,
                 )
-            )
-            blocks.append(candidate)
-
-        unassigned: list[str] = []
-        if isinstance(raw_unassigned, list):
-            unassigned = [str(u) for u in raw_unassigned if isinstance(u, str)]
+                explanation_content = _extract_content(explanation_data)
+                explanation = explanation_content.strip()[:500]
+            except Exception:
+                explanation = None
 
         return PlanV2Response(
             source=resolved_provider,
             blocks=blocks,
             unassigned=unassigned,
+            message=explanation,
         )
-    except (httpx.TimeoutException, httpx.ConnectError):
+
+    except (httpx.TimeoutException, httpx.ConnectError) as error:
+        _ = error
         timeout_seconds = round(settings.ai_timeout_ms / 1000)
+        # 超时时回退到 SchedulingEngine
+        blocks, unassigned, _issues = schedule_tasks(
+            request.tasks,
+            request.existing_schedule,
+            (range_start, range_end),
+            request.memories,
+        )
         return PlanV2Response(
-            source="none",
-            blocks=[],
-            message=f"AI 规划超时（{timeout_seconds} 秒），请稍后重试",
+            source="local",
+            blocks=blocks,
+            unassigned=unassigned,
+            message=f"AI 理解超时（{timeout_seconds} 秒），已使用本地调度引擎",
         )
     except Exception as error:
-        return PlanV2Response(
-            source="none",
-            blocks=[],
-            message=f"AI 规划失败：{error}",
-        )
+        # 其他异常时回退到 SchedulingEngine
+        try:
+            blocks, unassigned, _issues = schedule_tasks(
+                request.tasks,
+                request.existing_schedule,
+                (range_start, range_end),
+                request.memories,
+            )
+            return PlanV2Response(
+                source="local",
+                blocks=blocks,
+                unassigned=unassigned,
+                message=f"AI 规划失败：{error}，已使用本地调度引擎",
+            )
+        except Exception as fallback_error:
+            return PlanV2Response(
+                source="none",
+                blocks=[],
+                message=f"AI 规划失败：{error}，本地调度也失败：{fallback_error}",
+            )

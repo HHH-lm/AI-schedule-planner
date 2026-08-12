@@ -61,6 +61,7 @@ for router in (
     parse.router,
     breakdown.router,
     plan.router,
+    plan_v2.router,
     conflicts.router,
     reminders.router,
     match_task.router,

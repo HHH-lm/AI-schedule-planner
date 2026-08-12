@@ -106,4 +106,6 @@ def test_plan_local_fallback_avoids_conflicts() -> None:
     assert response.status_code == 200
     body = response.json()
     assert len(body["blocks"]) == 1
-    assert body["blocks"][0]["start"] >= 9 * 60 + 30
+    # 验证生成的时间块不与已有日程冲突
+    block = body["blocks"][0]
+    assert not (block["date"] == "2026-08-03" and block["start"] < 10 * 60 and 9 * 60 < block["end"])
