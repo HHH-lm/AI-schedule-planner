@@ -3,6 +3,12 @@ export type BlockStatus = "scheduled" | "pending";
 export type ViewMode = "today" | "week" | "board" | "stats";
 export type AiProviderSetting = "auto" | "openai" | "deepseek" | "local";
 export type TaskQuadrant = "urgent-important" | "important" | "urgent" | "neither";
+export type MemoryCategory =
+  | "time-preference"
+  | "habit"
+  | "life-preference"
+  | "long-term-constraint";
+export type MemorySource = "manual" | "ai-suggested";
 
 export interface Subtask {
   id: string;
@@ -36,10 +42,31 @@ export interface TimeBlock {
   remindAt?: string;
 }
 
+export interface Memory {
+  id: string;
+  category: MemoryCategory;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  source: MemorySource;
+  status?: "active" | "archived";
+}
+
+export interface AIMemorySuggestion {
+  id: string;
+  category: MemoryCategory;
+  content: string;
+  reasoning: string;
+  confidence: number;
+  createdAt: string;
+  status: "pending";
+}
+
 export interface AppSettings {
   obsidianVault?: string;
   aiProvider?: AiProviderSetting;
   hiddenBoardWeeks?: string[];
+  timelineCollapsedRanges?: Array<{ start: number; end: number }>;
 }
 
 export interface AppData {
@@ -47,6 +74,8 @@ export interface AppData {
   tasks: Task[];
   timeBlocks: TimeBlock[];
   settings?: AppSettings;
+  memories?: Memory[];
+  aiMemorySuggestions?: AIMemorySuggestion[];
 }
 
 export interface ParsedSchedule {

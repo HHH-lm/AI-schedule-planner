@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BookMarked, Bot, X } from "lucide-react";
+import { BookMarked, Bot, Brain, X } from "lucide-react";
 import { parseObsidianUrl } from "@/lib/obsidian";
 import type { AiProviderSetting } from "@/lib/types";
 
@@ -13,6 +13,7 @@ interface Props {
     aiProvider: AiProviderSetting;
   }) => void;
   onClose: () => void;
+  onOpenMemory?: () => void;
 }
 
 export default function SettingsModal({
@@ -20,6 +21,7 @@ export default function SettingsModal({
   aiProvider: initialProvider,
   onSave,
   onClose,
+  onOpenMemory,
 }: Props) {
   const [vault, setVault] = useState(initialVault);
   const [provider, setProvider] = useState<AiProviderSetting>(initialProvider);
@@ -87,6 +89,26 @@ export default function SettingsModal({
               <option value="deepseek">DeepSeek</option>
               <option value="local">本地规则</option>
             </select>
+          </div>
+
+          <hr className="border-t border-[var(--border-subtle)]" />
+
+          <div>
+            <div className="field-hint">
+              <Brain size={13} />
+              <span>记忆系统</span>
+            </div>
+            <p className="text-xs text-ink-muted-48 mb-2">
+              管理那些会长期影响 AI 规划的习惯、偏好和约束
+            </p>
+            <button
+              type="button"
+              onClick={onOpenMemory}
+              className="btn-ghost"
+            >
+              <Brain size={14} />
+              管理记忆
+            </button>
           </div>
         </div>
 

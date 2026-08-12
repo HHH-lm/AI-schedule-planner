@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import breakdown, conflicts, health, parse, plan, reminders
+from app.routers import breakdown, conflicts, health, match_task, memories, parse, plan, reminders
 from app.services.push import push_channel_ready
 from app.services.reminders import scan_reminders
 
@@ -57,10 +57,12 @@ app.add_middleware(
 
 for router in (
     health.router,
+    memories.router,
     parse.router,
     breakdown.router,
     plan.router,
     conflicts.router,
     reminders.router,
+    match_task.router,
 ):
     app.include_router(router, prefix="/api/v1")

@@ -20,8 +20,11 @@ import {
   User,
 } from "lucide-react";
 import type {
+  AIMemorySuggestion,
   AiProviderSetting,
   AppData,
+  Memory,
+  MemoryCategory,
   ParsedSchedule,
   Subtask,
   Task,
@@ -65,6 +68,7 @@ import SettingsModal from "@/components/SettingsModal";
 import AuthModal from "@/components/AuthModal";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ConflictModal from "@/components/ConflictModal";
+import MemoryModal from "@/components/MemoryModal";
 import AccountModal from "@/components/AccountModal";
 import { buildObsidianUrl } from "@/lib/obsidian";
 import {
@@ -91,20 +95,12 @@ type BlockDraft = Partial<TimeBlock> & { syncTask?: boolean };
 const ensureTaskForName = (
   name: string,
   tasks: Task[]
-): { tasks: Task[]; taskId: string } => {
+): { taskId: string | undefined } => {
   const trimmed = name.trim() || "未命名事项";
-  const existing = tasks.find((task) => task.name === trimmed);
-  if (existing) return { tasks, taskId: existing.id };
-  const task: Task = {
-    id: uid(),
-    name: trimmed,
-    date: null,
-    status: "todo",
-    subtasks: [],
-    priority: DEFAULT_TASK_PRIORITY,
-    pinned: false,
-  };
-  return { tasks: [...tasks, task], taskId: task.id };
+  const matched = tasks.find(
+    (task) => task.name.includes(trimmed) || trimmed.includes(task.name)
+  );
+  return { taskId: matched?.id };
 };
 
 export default function Home() {
@@ -131,6 +127,8 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [conflicts, setConflicts] = useState<ParsedSchedule[]>([]);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
+  const [memoryModalOpen, setMemoryModalOpen] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   const [focusTarget, setFocusTarget] = useState<{
@@ -324,23 +322,47 @@ export default function Home() {
   }, [commitData]);
 
   const saveBlock = useCallback(
-    (draft: BlockDraft, id?: string) => {
+    async (draft: BlockDraft, id?: string) => {
+      const current = dataRef.current;
+      if (!current) return;
+      const name = draft.name ?? "未命名事项";
+      const existingBlock = id
+        ? current.timeBlocks.find((block) => block.id === id)
+        : undefined;
+      let taskId = draft.taskId;
+      if (
+        !taskId &&
+        draft.syncTask !== false &&
+        (!existingBlock || !existingBlock.taskId)
+      ) {
+        try {
+          const result = await apiPost<{
+            source: string;
+            taskId: string | null;
+          }>("/match-task", {
+            name,
+            tasks: current.tasks.map((t) => ({ id: t.id, name: t.name })),
+            provider: current.settings?.aiProvider ?? "auto",
+          });
+          if (result.taskId) taskId = result.taskId;
+        } catch {
+          // API 失败，保持不关联
+        }
+      }
       commitData((prev) => {
         if (!prev) return prev;
-        const name = draft.name ?? "未命名事项";
-        const existingBlock = id
-          ? prev.timeBlocks.find((block) => block.id === id)
-          : undefined;
         let tasks = prev.tasks;
-        let taskId = draft.taskId;
-        if (
-          !taskId &&
-          draft.syncTask !== false &&
-          (!existingBlock || !existingBlock.taskId)
-        ) {
-          const synced = ensureTaskForName(name, tasks);
-          tasks = synced.tasks;
-          taskId = synced.taskId;
+        if (taskId && name) {
+          const taskIdx = tasks.findIndex((t) => t.id === taskId);
+          if (taskIdx >= 0) {
+            const task = tasks[taskIdx];
+            if (!task.subtasks.some((s) => s.name === name)) {
+              const newSub = { id: uid(), name, done: false };
+              tasks = tasks.map((t) =>
+                t.id === taskId ? { ...t, subtasks: [...t.subtasks, newSub] } : t
+              );
+            }
+          }
         }
         const block: TimeBlock = {
           id: id ?? uid(),
@@ -397,16 +419,45 @@ export default function Home() {
       throw error instanceof Error ? error : new Error("冲突检测失败");
     }
     if (accepted.length > 0) {
+      const matchedTaskIds = new Map<string, string | undefined>();
+      const currentTasks = current.tasks ?? [];
+      // 批量 AI 匹配，逐个调用
+      for (const block of accepted) {
+        try {
+          const result = await apiPost<{
+            source: string;
+            taskId: string | null;
+          }>("/match-task", {
+            name: block.name,
+            tasks: currentTasks.map((t) => ({ id: t.id, name: t.name })),
+            provider: current.settings?.aiProvider ?? "auto",
+          });
+          matchedTaskIds.set(block.name, result.taskId ?? undefined);
+        } catch {
+          matchedTaskIds.set(block.name, undefined);
+        }
+      }
       commitData((prev) => {
         if (!prev) return prev;
         let tasks = prev.tasks;
         const newBlocks = accepted.map<ParsedSchedule & TimeBlock>((item) => {
-          const synced = ensureTaskForName(item.name, tasks);
-          tasks = synced.tasks;
+          const itemTaskId = matchedTaskIds.get(item.name);
+          if (itemTaskId) {
+            const taskIdx = tasks.findIndex((t) => t.id === itemTaskId);
+            if (taskIdx >= 0) {
+              const task = tasks[taskIdx];
+              if (!task.subtasks.some((s) => s.name === item.name)) {
+                const newSub = { id: uid(), name: item.name, done: false };
+                tasks = tasks.map((t) =>
+                  t.id === itemTaskId ? { ...t, subtasks: [...t.subtasks, newSub] } : t
+                );
+              }
+            }
+          }
           return {
             ...item,
             id: uid(),
-            taskId: synced.taskId,
+            taskId: itemTaskId,
             done: false,
             status: "scheduled",
             remindAt: defaultRemindAtISO(item.date, item.start),
@@ -438,6 +489,120 @@ export default function Home() {
   },
   [commitData]
   );
+
+  const saveMemory = useCallback((memory: Memory) => {
+    commitData((prev) => {
+      if (!prev) return prev;
+      const existing = (prev.memories ?? []).findIndex((m) => m.id === memory.id);
+      let memories: Memory[];
+      if (existing >= 0) {
+        memories = prev.memories!.map((m) =>
+          m.id === memory.id ? memory : m
+        );
+      } else {
+        memories = [...(prev.memories ?? []), memory];
+      }
+      return { ...prev, memories };
+    });
+  }, [commitData]);
+
+  const deleteMemory = useCallback((id: string) => {
+    commitData((prev) =>
+      prev
+        ? { ...prev, memories: (prev.memories ?? []).filter((m) => m.id !== id) }
+        : prev
+    );
+  }, [commitData]);
+
+  const acceptSuggestion = useCallback(
+    (suggestion: AIMemorySuggestion) => {
+      const now = new Date().toISOString();
+      const memory: Memory = {
+        id: uid(),
+        category: suggestion.category,
+        content: suggestion.content,
+        createdAt: now,
+        updatedAt: now,
+        source: "ai-suggested",
+        status: "active",
+      };
+      commitData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          memories: [...(prev.memories ?? []), memory],
+          aiMemorySuggestions: (prev.aiMemorySuggestions ?? []).filter(
+            (s) => s.id !== suggestion.id
+          ),
+        };
+      });
+    },
+    [commitData]
+  );
+
+  const runAnalysis = useCallback(async () => {
+    if (!data) return;
+    setIsAnalyzing(true);
+    try {
+      const result = await apiPost<{
+        suggestions: Array<{
+          id: string;
+          category: string;
+          content: string;
+          reasoning: string;
+          confidence: number;
+          createdAt: string;
+        }>;
+      }>("/memories/analyze", {
+        timeBlocks: data.timeBlocks.map((block) => ({
+          id: block.id,
+          name: block.name,
+          date: block.date,
+          start: block.start,
+          end: block.end,
+          category: block.category,
+          done: block.done,
+        })),
+        horizon_days: 28,
+      });
+      const now = new Date().toISOString();
+      commitData((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          aiMemorySuggestions: [
+            ...(prev.aiMemorySuggestions ?? []),
+            ...result.suggestions.map((s) => ({
+              id: s.id,
+              category: s.category as MemoryCategory,
+              content: s.content,
+              reasoning: s.reasoning,
+              confidence: s.confidence,
+              createdAt: s.createdAt,
+              status: "pending" as const,
+            })),
+          ],
+        };
+      });
+    } catch {
+      // 分析失败时静默，不阻塞用户操作
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [data, commitData]);
+
+  const dismissSuggestion = useCallback((id: string) => {
+    commitData((prev) =>
+      prev
+        ? {
+            ...prev,
+            aiMemorySuggestions: (prev.aiMemorySuggestions ?? []).filter(
+              (s) => s.id !== id
+            ),
+          }
+        : prev
+    );
+  }, [commitData]);
 
   const saveSettings = useCallback(
     (settings: { obsidianVault: string; aiProvider: AiProviderSetting }) => {
@@ -473,6 +638,23 @@ export default function Home() {
           },
         };
       });
+    },
+    [commitData]
+  );
+
+  const saveTimelineCollapsedRanges = useCallback(
+    (ranges: Array<{ start: number; end: number }>) => {
+      commitData((prev) =>
+        prev
+          ? {
+              ...prev,
+              settings: {
+                ...prev.settings,
+                timelineCollapsedRanges: ranges.length > 0 ? ranges : undefined,
+              },
+            }
+          : prev
+      );
     },
     [commitData]
   );
@@ -1017,6 +1199,8 @@ export default function Home() {
             <WeekTimeline
               days={getWeekDays(weekOffset)}
               blocks={data.timeBlocks}
+              collapsedRanges={data.settings?.timelineCollapsedRanges ?? []}
+              onCollapsedRangesChange={saveTimelineCollapsedRanges}
               obsidianVault={data.settings?.obsidianVault}
               focusTarget={focusTarget}
               onFocusHandled={() => setFocusTarget(null)}
@@ -1095,6 +1279,13 @@ export default function Home() {
             </div>
             <div>
               <div className="site-footer-heading">工具</div>
+              <button
+                type="button"
+                onClick={() => setMemoryModalOpen(true)}
+                className="site-footer-link"
+              >
+                记忆系统
+              </button>
               <button
                 type="button"
                 onClick={() => setSettingsOpen(true)}
@@ -1189,6 +1380,10 @@ export default function Home() {
           aiProvider={data.settings?.aiProvider ?? "auto"}
           onSave={saveSettings}
           onClose={() => setSettingsOpen(false)}
+          onOpenMemory={() => {
+            setSettingsOpen(false);
+            setMemoryModalOpen(true);
+          }}
         />
       )}
 
@@ -1219,6 +1414,20 @@ export default function Home() {
           confirmLabel="确认退出"
           onConfirm={signOutUser}
           onClose={() => setSignOutConfirmOpen(false)}
+        />
+      )}
+
+      {memoryModalOpen && (
+        <MemoryModal
+          memories={data.memories ?? []}
+          suggestions={data.aiMemorySuggestions ?? []}
+          onSave={saveMemory}
+          onDelete={deleteMemory}
+          onAcceptSuggestion={acceptSuggestion}
+          onDismissSuggestion={dismissSuggestion}
+          onRunAnalysis={runAnalysis}
+          isAnalyzing={isAnalyzing}
+          onClose={() => setMemoryModalOpen(false)}
         />
       )}
 
