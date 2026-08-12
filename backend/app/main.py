@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routers import breakdown, conflicts, health, match_task, memories, parse, plan, reminders
+from app.routers import breakdown, conflicts, health, match_task, memories, parse, plan, plan_v2, reminders
 from app.services.push import push_channel_ready
 from app.services.reminders import scan_reminders
 
