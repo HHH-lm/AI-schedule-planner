@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -186,19 +186,20 @@ class MemoryAnalysisResponse(BaseModel):
     suggestions: list[MemorySuggestionOutput] = Field(
         default_factory=list, description="生成的记忆建议"
     )
-    stats: dict[str, int] = Field(
+    stats: dict[str, Any] = Field(
         default_factory=dict, description="分析统计摘要"
     )
 
 # --- Planning V2 ---
 
 Priority = Literal["low", "medium", "high"]
+PriorityInput = Literal["low", "medium", "high", "auto"]
 
 
 class PlanV2Task(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     duration: int = Field(ge=15, le=480, description="duration in minutes")
-    priority: Priority = "medium"
+    priority: PriorityInput = "auto"
     deadline: str | None = Field(default=None, description="YYYY-MM-DD")
 
 

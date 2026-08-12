@@ -1,15 +1,4 @@
-"""AI Planning V2 - 结构化规划服务。
-
-Planning Context:
-  goal + tasks (priority/duration/deadline) + memories + constraints
-  + existing_schedule + planning_range
-  -> scheduled blocks
-
-核心原则:
-  1. AI 负责理解上下文、权衡优先级、尊重记忆和约束
-  2. 本地 fallback 提供基础排期能力
-  3. 输出结构化 block 列表，不含自然语言解释
-"""
+"""AI Planning V2 - 结构化规划服务。"""
 
 from __future__ import annotations
 
@@ -41,6 +30,21 @@ CATEGORY_VALUES = ("work", "study", "fitness", "life", "rest")
 PRIORITY_SCORE: dict[str, int] = {"high": 3, "medium": 2, "low": 1}
 
 
+def _resolve_priority(task: PlanV2Task) -> str:
+    """解析任务优先级。用户手动指定则直接使用，auto 则根据 deadline 推断。"""
+    if task.priority != "auto":
+        return task.priority
+    if task.deadline:
+        deadline = parse_local_date(task.deadline)
+        if deadline:
+            days_until = (deadline - date.today()).days
+            if days_until <= 3:
+                return "high"
+            elif days_until <= 7:
+                return "medium"
+    return "medium"
+
+
 def _build_plan_v2_prompt(
     goal: str,
     tasks: list[PlanV2Task],
@@ -60,7 +64,7 @@ def _build_plan_v2_prompt(
     ]
 
     if goal:
-        lines.append(f"## 用户目标")
+        lines.append("## 用户目标")
         lines.append(goal)
         lines.append("")
 
@@ -76,11 +80,11 @@ def _build_plan_v2_prompt(
             lines.append(f"- {c}")
         lines.append("")
 
-    lines.append("## 任务列表（按优先级排序）")
-    sorted_tasks = sorted(tasks, key=lambda t: -PRIORITY_SCORE.get(t.priority, 2))
-    for t in sorted_tasks:
+    lines.append("## 任务列表")
+    for t in tasks:
         deadline = f" 截止: {t.deadline}" if t.deadline else ""
-        lines.append(f"- {t.title} ({t.duration}分钟, {t.priority}{deadline})")
+        prio = f" [{t.priority}]" if t.priority != "auto" else " [待推断]"
+        lines.append(f"- {t.title} ({t.duration}分钟{prio}{deadline})")
     lines.append("")
 
     if existing:
@@ -98,6 +102,15 @@ def _build_plan_v2_prompt(
     lines.append("5. 已有日程不可覆盖")
     lines.append("6. 无法安排的任务排除在 blocks 外，放入 unassigned 列表")
     lines.append("7. 只输出 JSON")
+    lines.append("")
+
+    lines.append("## 优先级推断规则")
+    lines.append('对于标记为"待推断"的任务，请根据以下规则推断优先级（输出 resolved 值 high/medium/low）：')
+    lines.append("- 截止日在 3 天内的任务 → high")
+    lines.append("- 截止日在 7 天内的任务 → medium")
+    lines.append("- 与用户目标直接相关的任务可以升一级")
+    lines.append("- 无截止日且与目标弱相关的任务 → medium 或 low")
+    lines.append("- 用户明确指定的优先级，直接使用，不要覆盖")
 
     return "\n".join(lines)
 
@@ -150,18 +163,19 @@ def _fallback_plan_v2(
     range_end: date,
     memories: list[str],
 ) -> PlanV2Response:
-    """本地 fallback 规划器。
-
-    按优先级排序，为每个任务找第一个可用时段。
-    偏好上午（6:00-12:00）安排高优先级任务。
-    """
+    """本地 fallback 规划器。"""
     occupied = [b.model_copy() for b in existing]
     blocks: list[PlanV2Block] = []
     unassigned: list[str] = []
 
-    sorted_tasks = sorted(tasks, key=lambda t: -PRIORITY_SCORE.get(t.priority, 2))
+    # 解析优先级，auto 按 deadline 推断
+    resolved: list[tuple[PlanV2Task, str]] = []
+    for t in tasks:
+        p = _resolve_priority(t)
+        resolved.append((t, p))
+    resolved.sort(key=lambda x: -PRIORITY_SCORE.get(x[1], 2))
 
-    for task in sorted_tasks:
+    for task, priority in resolved:
         placed = False
         day_count = (range_end - range_start).days + 1
         days = [range_start + timedelta(days=n) for n in range(day_count)]
@@ -176,7 +190,7 @@ def _fallback_plan_v2(
         # 高优先级任务优先尝试上午时段
         time_slots = (
             [(6 * 60, 12 * 60), (12 * 60, 18 * 60), (18 * 60, 22 * 60)]
-            if task.priority == "high"
+            if priority == "high"
             else [(12 * 60, 18 * 60), (6 * 60, 12 * 60), (18 * 60, 22 * 60)]
         )
 
@@ -189,7 +203,7 @@ def _fallback_plan_v2(
                         start=minute,
                         end=minute + task.duration,
                         category=guess_category(task.title),  # type: ignore[arg-type]
-                        priority=task.priority,  # type: ignore[arg-type]
+                        priority=priority,  # type: ignore[arg-type]
                     )
                     if _overlaps(occupied, candidate):
                         continue
@@ -237,7 +251,11 @@ async def plan_v2_schedule(
     )
     if not resolved_provider:
         result = _fallback_plan_v2(
-            request.tasks, request.existing_schedule, range_start, range_end, request.memories
+            request.tasks,
+            request.existing_schedule,
+            range_start,
+            range_end,
+            request.memories,
         )
         result.message = resolved_message
         return result
@@ -280,7 +298,11 @@ async def plan_v2_schedule(
             if _overlaps(occupied, candidate):
                 continue
             occupied.append(
-                ExistingBlock(date=candidate.date, start=candidate.start, end=candidate.end)
+                ExistingBlock(
+                    date=candidate.date,
+                    start=candidate.start,
+                    end=candidate.end,
+                )
             )
             blocks.append(candidate)
 

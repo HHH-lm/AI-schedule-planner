@@ -256,17 +256,18 @@ export default function MemoryModal({
 
         <div className="modal-body">
           {/* AI Suggestions section */}
-          {suggestions.length > 0 && (
-            <div className="mb-6">
+          <div className="mb-6">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Lightbulb size={14} className="text-amber-500" />
                   <span className="text-xs font-medium text-amber-700">
                     AI 建议
                   </span>
-                  <span className="text-[11px] text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded-full">
-                    {suggestions.length} 条待处理
-                  </span>
+                  {suggestions.length > 0 && (
+                    <span className="text-[11px] text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded-full">
+                      {suggestions.length} 条待处理
+                    </span>
+                  )}
                 </div>
                 <button
                   type="button"
@@ -278,6 +279,7 @@ export default function MemoryModal({
                   {isAnalyzing ? "分析中..." : "AI 分析"}
                 </button>
               </div>
+              {suggestions.length > 0 ? (
               <div className="space-y-2">
                 {suggestions.map((suggestion) => (
                   <div
@@ -358,8 +360,15 @@ export default function MemoryModal({
                   </div>
                 ))}
               </div>
+              ) : (
+                <div className="py-6 text-center">
+                  <Lightbulb size={24} className="mx-auto mb-1.5 text-ink-muted-30" />
+                  <p className="text-xs text-ink-muted-48">
+                    点击上方按钮，AI 会根据你的时间块数据生成记忆建议
+                  </p>
+                </div>
+              )}
             </div>
-          )}
 
           {/* Category sections */}
           <div className="space-y-5">
