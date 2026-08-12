@@ -1,29 +1,31 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookMarked,
   CheckCircle2,
   Circle,
+  ChevronUp,
   MapPin,
   Sparkles,
+  X,
 } from "lucide-react";
 import type { TimeBlock } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
 import { CATEGORIES } from "@/lib/categories";
 import { defaultRemindAtISO, minutesToHHMM } from "@/lib/date";
-import { pointToGridSlot } from "@/lib/grid";
-import {
-  getTimelineFocusScroll,
-  type TimelineFocusTarget,
-} from "@/lib/timeline";
+import type { TimelineFocusTarget } from "@/lib/timeline";
 
-const HOUR_HEIGHT = 48;
+const HOUR_HEIGHT = 72;
 const COL_WIDTH = 132;
 const TIME_COL_W = 56;
-const TOTAL_HEIGHT = HOUR_HEIGHT * 24;
 const LONG_PRESS_MS = 200;
 const TOUCH_MOVE_CANCEL = 10;
+
+interface CollapsedRange {
+  start: number;
+  end: number;
+}
 
 interface DragState {
   blockId: string;
@@ -62,6 +64,8 @@ interface PendingTouch {
 interface Props {
   days: WeekDay[];
   blocks: TimeBlock[];
+  collapsedRanges: CollapsedRange[];
+  onCollapsedRangesChange: (ranges: CollapsedRange[]) => void;
   obsidianVault?: string;
   focusTarget?: TimelineFocusTarget | null;
   onFocusHandled?: () => void;
@@ -75,6 +79,8 @@ interface Props {
 export default function WeekTimeline({
   days,
   blocks,
+  collapsedRanges,
+  onCollapsedRangesChange,
   obsidianVault,
   focusTarget,
   onFocusHandled,
@@ -96,6 +102,10 @@ export default function WeekTimeline({
   const containerRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const [columnWidth, setColumnWidth] = useState(COL_WIDTH);
+  const [collapseDialog, setCollapseDialog] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -111,6 +121,75 @@ export default function WeekTimeline({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
+
+  const visibleRanges = useMemo(() => {
+    const ranges: CollapsedRange[] = [{ start: 0, end: 1440 }];
+    for (const cr of collapsedRanges) {
+      for (let i = ranges.length - 1; i >= 0; i--) {
+        const r = ranges[i];
+        if (cr.start >= r.end || cr.end <= r.start) continue;
+        ranges.splice(i, 1);
+        if (r.start < cr.start) ranges.push({ start: r.start, end: cr.start });
+        if (r.end > cr.end) ranges.push({ start: cr.end, end: r.end });
+      }
+    }
+    ranges.sort((a, b) => a.start - b.start);
+    return ranges;
+  }, [collapsedRanges]);
+
+  const totalHeight = useMemo(() => {
+    const visibleMinutes = visibleRanges.reduce(
+      (s, r) => s + (r.end - r.start),
+      0
+    );
+    return (visibleMinutes / 60) * HOUR_HEIGHT;
+  }, [visibleRanges]);
+
+  const getVisibleOffset = useCallback(
+    (minutes: number): number => {
+      let offset = 0;
+      for (const r of visibleRanges) {
+        if (r.start >= minutes) break;
+        offset += Math.min(r.end, minutes) - r.start;
+      }
+      return offset;
+    },
+    [visibleRanges]
+  );
+
+  const getWallClockFromVisible = useCallback(
+    (visibleOffset: number): number => {
+      let remaining = visibleOffset;
+      for (const r of visibleRanges) {
+        const span = r.end - r.start;
+        if (remaining <= span) return r.start + remaining;
+        remaining -= span;
+      }
+      return 1440;
+    },
+    [visibleRanges]
+  );
+
+  const mergeRanges = (ranges: CollapsedRange[]): CollapsedRange[] => {
+    const sorted = [...ranges].sort((a, b) => a.start - b.start);
+    const merged: CollapsedRange[] = [];
+    for (const range of sorted) {
+      const last = merged[merged.length - 1];
+      if (last && range.start <= last.end) {
+        last.end = Math.max(last.end, range.end);
+      } else {
+        merged.push({ ...range });
+      }
+    }
+    return merged;
+  };
+
+  const addCollapsedRange = (start: number, end: number) => {
+    if (start >= end) return;
+    const s = Math.max(0, Math.min(1439, start));
+    const e = Math.max(s + 1, Math.min(1440, end));
+    onCollapsedRangesChange(mergeRanges([...collapsedRanges, { start: s, end: e }]));
+  };
 
   const scheduled = useMemo(
     () => blocks.filter((b) => b.status === "scheduled"),
@@ -148,24 +227,31 @@ export default function WeekTimeline({
     if (dayIndex < 0) return;
     const frame = requestAnimationFrame(() => {
       el.scrollIntoView({ block: "nearest" });
-      const { left, top } = getTimelineFocusScroll({
-        dayIndex,
-        columnWidth,
-        clientWidth: el.clientWidth,
-        clientHeight: el.clientHeight,
-        scrollHeight: el.scrollHeight,
-        start: focusTarget.start,
-        end: focusTarget.end,
-        timeColumnWidth: TIME_COL_W,
-        hourHeight: HOUR_HEIGHT,
-      });
+      const contentWidth = TIME_COL_W + columnWidth * 7;
+      const dayLeft = TIME_COL_W + dayIndex * columnWidth;
+      const blockHeight = Math.max(
+        22,
+        ((focusTarget.end - focusTarget.start) / 60) * HOUR_HEIGHT
+      );
+      const left = clamp(
+        dayLeft + columnWidth / 2 - el.clientWidth / 2,
+        0,
+        Math.max(0, contentWidth - el.clientWidth)
+      );
+      const top = clamp(
+        getVisibleOffset(focusTarget.start) / 60 * HOUR_HEIGHT +
+          blockHeight / 2 -
+          el.clientHeight / 2,
+        0,
+        Math.max(0, el.scrollHeight - el.clientHeight)
+      );
       el.scrollLeft = left;
       el.scrollTop = top;
       handledFocusRef.current = key;
       onFocusHandled?.();
     });
     return () => cancelAnimationFrame(frame);
-  }, [focusTarget, days, columnWidth, onFocusHandled]);
+  }, [focusTarget, days, columnWidth, onFocusHandled, getVisibleOffset]);
 
   const beginDrag = (
     block: TimeBlock,
@@ -276,27 +362,35 @@ export default function WeekTimeline({
     }, LONG_PRESS_MS);
   };
 
-  const handlePointerMove = (event: React.PointerEvent) => {
-    const pending = pendingTouchRef.current;
-    if (pending) {
-      const dx = event.clientX - pending.startX;
-      const dy = event.clientY - pending.startY;
-      if (Math.abs(dx) + Math.abs(dy) > TOUCH_MOVE_CANCEL) {
-        clearPendingTouch();
+    const handlePointerMove = (event: React.PointerEvent) => {
+      const pending = pendingTouchRef.current;
+      if (pending) {
+        const dx = event.clientX - pending.startX;
+        const dy = event.clientY - pending.startY;
+        if (Math.abs(dx) + Math.abs(dy) > TOUCH_MOVE_CANCEL) {
+          clearPendingTouch();
+        }
+        return;
       }
-      return;
-    }
 
-    const current = dragRef.current;
-    if (!current) return;
-    const dx = event.clientX - current.startX;
-    const dy = event.clientY - current.startY;
-    if (Math.abs(dx) + Math.abs(dy) > 6) movedRef.current = true;
+      const current = dragRef.current;
+      if (!current) return;
+      const dx = event.clientX - current.startX;
+      const dy = event.clientY - current.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 6) movedRef.current = true;
 
-    const deltaMinutes =
-      Math.round((dy / HOUR_HEIGHT) * 4) * 15;
-    const dayShift = Math.round(dx / columnWidth);
-    const dayIndex = clamp(current.dayIndex + dayShift, 0, 6);
+      const rect = gridRef.current?.getBoundingClientRect();
+      const gridTop = rect?.top ?? 0;
+      const startVisibleOffset = ((current.startY - gridTop) / HOUR_HEIGHT) * 60;
+      const currentVisibleOffset = ((event.clientY - gridTop) / HOUR_HEIGHT) * 60;
+      const deltaMinutes =
+        Math.round(
+          (getWallClockFromVisible(currentVisibleOffset) -
+            getWallClockFromVisible(startVisibleOffset)) /
+            15
+        ) * 15;
+      const dayShift = Math.round(dx / columnWidth);
+      const dayIndex = clamp(current.dayIndex + dayShift, 0, 6);
 
     if (current.kind === "move") {
       const start = current.originStart + deltaMinutes;
@@ -404,14 +498,21 @@ export default function WeekTimeline({
     const el = gridRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
-    return pointToGridSlot(
-      event.clientX,
-      event.clientY,
-      rect,
-      columnWidth,
-      days,
-      HOUR_HEIGHT
+    const dayIndex = Math.max(
+      0,
+      Math.min(6, Math.floor((event.clientX - rect.left) / columnWidth))
     );
+    const day = days[dayIndex];
+    if (!day) return null;
+    const visibleOffset = ((event.clientY - rect.top) / HOUR_HEIGHT) * 60;
+    const start = Math.max(
+      0,
+      Math.min(
+        1439,
+        Math.round(getWallClockFromVisible(visibleOffset) / 15) * 15
+      )
+    );
+    return { date: day.key, start };
   };
 
   const handleGridClick = (event: React.MouseEvent) => {
@@ -420,16 +521,44 @@ export default function WeekTimeline({
     const el = gridRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const position = pointToGridSlot(
-      event.clientX,
-      event.clientY,
-      rect,
-      columnWidth,
-      days,
-      HOUR_HEIGHT
+    const dayIndex = Math.max(
+      0,
+      Math.min(6, Math.floor((event.clientX - rect.left) / columnWidth))
     );
+    const day = days[dayIndex];
+    if (!day) return;
+    const visibleOffset = ((event.clientY - rect.top) / HOUR_HEIGHT) * 60;
+    const start = Math.max(
+      0,
+      Math.min(
+        1439,
+        Math.round(getWallClockFromVisible(visibleOffset) / 15) * 15
+      )
+    );
+    const position = { date: day.key, start };
     if (!position) return;
     onAddAt(position.date, position.start);
+  };
+
+  const handleTimeColClick = () => {
+    setCollapseDialog({ start: "00:00", end: "08:00" });
+  };
+
+  const timeColLongPressRef = useRef<number | null>(null);
+  const handleTimeColPointerDown = (event: React.PointerEvent) => {
+    if (event.pointerType !== "touch") return;
+    timeColLongPressRef.current = window.setTimeout(() => {
+      setCollapseDialog({ start: "00:00", end: "08:00" });
+    }, 500);
+  };
+  const handleTimeColPointerUp = () => {
+    if (timeColLongPressRef.current !== null) {
+      window.clearTimeout(timeColLongPressRef.current);
+      timeColLongPressRef.current = null;
+    }
+  };
+  const handleTimeColPointerLeave = () => {
+    handleTimeColPointerUp();
   };
 
   const handlePendingDragOver = (event: React.DragEvent) => {
@@ -461,10 +590,11 @@ export default function WeekTimeline({
   };
 
   return (
-    <div
-      ref={containerRef}
-      className="timeline-shell thin-scroll"
-    >
+    <>
+      <div
+        ref={containerRef}
+        className="timeline-shell thin-scroll"
+      >
       <div style={{ width: TIME_COL_W + columnWidth * 7 }}>
         <div className="timeline-header">
           <div className="w-14 shrink-0" />
@@ -519,37 +649,56 @@ export default function WeekTimeline({
 
         <div className="flex">
           <div
-            className="sticky left-0 z-20 shrink-0 bg-canvas"
-            style={{ width: TIME_COL_W, height: TOTAL_HEIGHT }}
+            className="sticky left-0 z-20 shrink-0 cursor-pointer bg-canvas hover:bg-canvas-parchment group"
+            style={{ width: TIME_COL_W, height: totalHeight }}
+            title="点击折叠空白时间区间"
+            onClick={handleTimeColClick}
+            onPointerDown={handleTimeColPointerDown}
+            onPointerUp={handleTimeColPointerUp}
+            onPointerLeave={handleTimeColPointerLeave}
           >
-            {Array.from({ length: 24 }, (_, hour) => (
-              <div
-                key={hour}
-                className="time-col-label"
-                style={{ top: hour * HOUR_HEIGHT }}
-              >
-                {hour}:00
-              </div>
-            ))}
+            <div className="flex items-center justify-center gap-0.5 border-b border-divider-soft px-1 py-1 opacity-0 transition group-hover:opacity-100">
+              <ChevronUp size={11} className="text-ink-muted-48" />
+              <span className="text-[9px] font-medium text-ink-muted-48 select-none">折叠</span>
+            </div>
+            {Array.from({ length: 24 }, (_, hour) => {
+              const minutes = hour * 60;
+              const top = getVisibleOffset(minutes) / 60 * HOUR_HEIGHT;
+              const nextTop = getVisibleOffset(minutes + 60) / 60 * HOUR_HEIGHT;
+              if (top === nextTop) return null;
+              return (
+                <div key={hour} className="time-col-label" style={{ top }}>
+                  {hour}:00
+                </div>
+              );
+            })}
           </div>
 
           <div
             ref={gridRef}
             className="relative"
-            style={{ width: columnWidth * 7, height: TOTAL_HEIGHT }}
+            style={{ width: columnWidth * 7, height: totalHeight }}
             onDragOver={handlePendingDragOver}
             onDrop={handlePendingDrop}
             onClick={handleGridClick}
           >
-            {Array.from({ length: 25 }, (_, hour) => (
-              <div
-                key={hour}
-                className={`absolute left-0 right-0 border-t ${
-                  hour % 3 === 0 ? "border-[#e0e0e0]" : "border-[#f0f0f0]"
-                }`}
-                style={{ top: hour * HOUR_HEIGHT }}
-              />
-            ))}
+            {Array.from({ length: 25 }, (_, hour) => {
+              const minutes = hour * 60;
+              const top = getVisibleOffset(minutes) / 60 * HOUR_HEIGHT;
+              const nextTop = hour < 24
+                ? getVisibleOffset(minutes + 60) / 60 * HOUR_HEIGHT
+                : top;
+              if (hour < 24 && top === nextTop) return null;
+              return (
+                <div
+                  key={hour}
+                  className={`absolute left-0 right-0 border-t ${
+                    hour % 3 === 0 ? "border-[#e0e0e0]" : "border-[#f0f0f0]"
+                  }`}
+                  style={{ top }}
+                />
+              );
+            })}
             {todayIndex >= 0 && (
               <div
                 className="absolute bottom-0 top-0 bg-[rgba(0,102,204,0.04)]"
@@ -572,7 +721,7 @@ export default function WeekTimeline({
                 style={{
                   left: todayIndex * columnWidth,
                   width: columnWidth,
-                  top: (nowMinutes / 60) * HOUR_HEIGHT,
+                  top: getVisibleOffset(nowMinutes) / 60 * HOUR_HEIGHT,
                 }}
                 >
                 <div className="relative border-t-2 border-primary">
@@ -593,7 +742,9 @@ export default function WeekTimeline({
                 );
                 if (!source || dayIndex < 0) return null;
                 const meta = CATEGORIES[source.category];
-                const top = (pendingDrag.start / 60) * HOUR_HEIGHT;
+                const ps = pendingDrag.start;
+                const top = getVisibleOffset(ps) / 60 * HOUR_HEIGHT;
+                const height = Math.max(22, (getVisibleOffset(Math.min(1440, ps + 60)) - getVisibleOffset(ps)) / 60 * HOUR_HEIGHT);
                 return (
                   <div
                     className="pointer-events-none absolute rounded-[8px] border-2 border-dashed border-primary/70 bg-[rgba(0,102,204,0.08)] px-1.5 py-1"
@@ -601,7 +752,7 @@ export default function WeekTimeline({
                       left: dayIndex * columnWidth + 5,
                       width: columnWidth - 10,
                       top,
-                      height: HOUR_HEIGHT,
+                      height,
                     }}
                   >
                     <div className="truncate text-xs font-semibold text-primary">
@@ -622,10 +773,10 @@ export default function WeekTimeline({
                 preview && preview.blockId === block.id ? preview : null;
               const start = activePreview?.start ?? block.start;
               const end = activePreview?.end ?? block.end;
-              const top = (start / 60) * HOUR_HEIGHT;
+              const top = getVisibleOffset(start) / 60 * HOUR_HEIGHT;
               const height = Math.max(
                 22,
-                ((end - start) / 60) * HOUR_HEIGHT
+                (getVisibleOffset(end) - getVisibleOffset(start)) / 60 * HOUR_HEIGHT
               );
               const meta = CATEGORIES[block.category];
               const dragging = drag?.blockId === block.id;
@@ -733,9 +884,97 @@ export default function WeekTimeline({
                 </div>
               );
             })}
-          </div>
+         </div>
         </div>
       </div>
-    </div>
+      </div>
+
+      {collapseDialog && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setCollapseDialog(null)}
+        >
+          <div
+            className="modal-card max-w-sm"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3 className="modal-title">折叠时间区间</h3>
+              <button
+                type="button"
+                onClick={() => setCollapseDialog(null)}
+                className="icon-btn-plain"
+                aria-label="关闭"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="modal-body space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="field-label">开始时间</label>
+                  <input
+                    type="time"
+                    className="input-rect"
+                    value={collapseDialog.start}
+                    onChange={(event) =>
+                      setCollapseDialog({
+                        ...collapseDialog,
+                        start: event.target.value,
+                      })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="field-label">结束时间</label>
+                  <input
+                    type="time"
+                    className="input-rect"
+                    value={collapseDialog.end}
+                    onChange={(event) =>
+                      setCollapseDialog({
+                        ...collapseDialog,
+                        end: event.target.value,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+              <div className="flex justify-between gap-3">
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => {
+                    onCollapsedRangesChange([]);
+                    setCollapseDialog(null);
+                  }}
+                >
+                  重置所有折叠
+                </button>
+                <button
+                  type="button"
+                  className="btn-primary-pill"
+                  onClick={() => {
+                    const [sh, sm] = collapseDialog.start.split(":").map(Number);
+                    const [eh, em] = collapseDialog.end.split(":").map(Number);
+                    if (
+                      Number.isFinite(sh) &&
+                      Number.isFinite(sm) &&
+                      Number.isFinite(eh) &&
+                      Number.isFinite(em)
+                    ) {
+                      addCollapsedRange(sh * 60 + sm, eh * 60 + em);
+                    }
+                    setCollapseDialog(null);
+                  }}
+                >
+                  确认折叠
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

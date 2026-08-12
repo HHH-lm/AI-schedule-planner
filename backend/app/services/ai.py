@@ -200,6 +200,7 @@ async def call_chat_completions(
     user_text: str,
     provider: str,
     settings: Settings,
+    temperature: float = 0.2,
 ) -> dict[str, Any]:
     config = PROVIDER_CONFIG[provider]
     base_url = (getattr(settings, config["base_url_attr"]) or config["default_base_url"]).rstrip("/")
@@ -209,7 +210,7 @@ async def call_chat_completions(
 
     body = {
         "model": model,
-        "temperature": 0.2,
+        "temperature": temperature,
         "max_tokens": settings.max_output_tokens,
         "messages": [
             {"role": "system", "content": system_prompt},

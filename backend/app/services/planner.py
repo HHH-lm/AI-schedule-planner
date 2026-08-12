@@ -138,7 +138,7 @@ def _build_plan_prompt(
             "生成的块不得与已有时间块重叠。",
             f"待排任务：\n{task_lines}",
             "每个任务安排一个时间块；有子任务时可为每个子任务安排独立块。",
-            "优先安排在工作时段 9:00-18:00，单块不超过 120 分钟，只输出 JSON。",
+            "单块不超过 120 分钟，只输出 JSON。",
         ]
     )
 
@@ -205,7 +205,7 @@ def _fallback_plan(
                 else [start + timedelta(days=n) for n in range((end - start).days + 1)]
             )
             for day in day_sequence:
-                for minute in range(9 * 60, 21 * 60, 30):
+                for minute in range(0, 24 * 60, 30):
                     candidate = PlannedBlock(
                         name=subtask_name[:80],
                         date=day.isoformat(),
@@ -213,7 +213,7 @@ def _fallback_plan(
                         end=minute + 60,
                         category=guess_category(subtask_name),  # type: ignore[arg-type]
                     )
-                    if candidate.end > 21 * 60 or _overlaps(occupied, candidate):
+                    if _overlaps(occupied, candidate):
                         continue
                     occupied.append(
                         ExistingBlock(date=candidate.date, start=candidate.start, end=candidate.end)
