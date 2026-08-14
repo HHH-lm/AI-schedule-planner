@@ -82,7 +82,7 @@ ensure_backend() {
 
   (
     cd "$ROOT/backend"
-    exec "$venv_py" -m uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT"
+    exec "$venv_py" -m uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload
   ) >"$ROOT/.backend.log" 2>&1 &
   backend_pid=$!
   echo "$backend_pid" > "$ROOT/.backend.pid"

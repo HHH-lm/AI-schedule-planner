@@ -1,0 +1,38 @@
+{
+  "taskId": "T-020",
+  "title": "风险等级升级 L2、数据分类定义、API 速率限制、README 增强、周时间轴→周计划统一命名",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "README.md",
+    ".project-to-act/PROJECT_OVERVIEW.md",
+    ".project-to-act/PROJECT_PROGRESS.md",
+    ".project-to-act/AGENT_LIFECYCLE.json",
+    "backend/app/main.py",
+    "backend/app/limiter.py",
+    "backend/app/routers/",
+    "backend/pyproject.toml",
+    "SESSION.md"
+  ],
+  "contract": "将项目风险等级从 L1 升级为 L2（对外），补充数据分类定义，为 FastAPI 后端所有路由增加 API 速率限制，增强 README 展示效果，统一命名术语（周时间轴→周计划）。",
+  "dependencies": [],
+  "invariants": [
+    "不修改任何业务逻辑行为",
+    "速率限制仅限制请求频率，不影响正常使用",
+    "所有后端测试保持通过",
+    "所有前端测试保持通过"
+  ],
+  "acceptance": [
+    "后端 pytest 95 个测试全部通过",
+    "前端 Vitest 14 个文件 82 个测试全部通过",
+    "所有路由已添加 @limiter.limit 装饰器",
+    "PROJECT_OVERVIEW 风险等级为 L2，数据分类已定义",
+    "README 包含架构概览与功能亮点",
+    "全文无剩余'周时间轴'引用"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q",
+    "cd /project && npm test"
+  ]
+}

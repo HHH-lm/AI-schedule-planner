@@ -16,7 +16,7 @@ import { CATEGORIES } from "@/lib/categories";
 import { defaultRemindAtISO, minutesToHHMM } from "@/lib/date";
 import type { TimelineFocusTarget } from "@/lib/timeline";
 
-const HOUR_HEIGHT = 72;
+const HOUR_HEIGHT = 120;
 const COL_WIDTH = 132;
 const TIME_COL_W = 56;
 const LONG_PRESS_MS = 200;
@@ -66,6 +66,8 @@ interface Props {
   blocks: TimeBlock[];
   collapsedRanges: CollapsedRange[];
   onCollapsedRangesChange: (ranges: CollapsedRange[]) => void;
+  batchMode: boolean;
+  onBatchModeChange: (mode: boolean) => void;
   obsidianVault?: string;
   focusTarget?: TimelineFocusTarget | null;
   onFocusHandled?: () => void;
@@ -74,6 +76,7 @@ interface Props {
   onEditBlock: (block: TimeBlock) => void;
   onAddAt: (date: string, start: number) => void;
   onOpenObsidian?: (block: TimeBlock) => void;
+  onDeleteBlocks?: (ids: string[]) => void;
 }
 
 export default function WeekTimeline({
@@ -81,6 +84,8 @@ export default function WeekTimeline({
   blocks,
   collapsedRanges,
   onCollapsedRangesChange,
+  batchMode,
+  onBatchModeChange,
   obsidianVault,
   focusTarget,
   onFocusHandled,
@@ -89,6 +94,7 @@ export default function WeekTimeline({
   onEditBlock,
   onAddAt,
   onOpenObsidian,
+  onDeleteBlocks,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -106,6 +112,11 @@ export default function WeekTimeline({
     start: string;
     end: string;
   } | null>(null);
+  const [selectedBlocks, setSelectedBlocks] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!batchMode) setSelectedBlocks(new Set());
+  }, [batchMode]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -788,6 +799,36 @@ export default function WeekTimeline({
               const hasObsidian = Boolean(
                 block.obsidianVault || block.obsidianNote || obsidianVault
               );
+              const batchCheckbox =
+                batchMode
+                  ? (
+                      <div
+                        className={
+                          "h-[13px] w-[13px] shrink-0 min-w-[13px] min-h-[13px] flex-none cursor-pointer rounded-[3px] border " +
+                          (selectedBlocks.has(block.id)
+                            ? "border-primary bg-primary"
+                            : "border-ink-muted-48 bg-transparent")
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedBlocks((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(block.id)) next.delete(block.id);
+                            else next.add(block.id);
+                            return next;
+                          });
+                        }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onPointerUp={(e) => e.stopPropagation()}
+                      >
+                        {selectedBlocks.has(block.id) && (
+                          <svg viewBox="0 0 13 13" className="h-full w-full">
+                            <path d="M3.5 7l2.5 2.5L9.5 3.5" stroke="white" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                      </div>
+                    )
+                  : null;
               return (
                 <div
                   key={block.id}
@@ -807,68 +848,85 @@ export default function WeekTimeline({
                     top,
                     height,
                   }}
-                  onPointerDown={(event) =>
-                    handlePointerDown(event, block, "move")
-                  }
+                  onPointerDown={(event) => {
+                    if (batchMode) {
+                      setSelectedBlocks((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(block.id)) next.delete(block.id);
+                        else next.add(block.id);
+                        return next;
+                      });
+                      return;
+                    }
+                    handlePointerDown(event, block, "move");
+                  }}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
                   onPointerCancel={handlePointerCancel}
                 >
+                  {batchCheckbox && (
+                    <div className="absolute bottom-1 right-[8.5px] z-10">
+                      {batchCheckbox}
+                    </div>
+                  )}
                   <div
                     className="resize-handle top-0"
-                    onPointerDown={(event) =>
-                      handlePointerDown(event, block, "resize-start")
-                    }
+                    onPointerDown={(event) => {
+                      if (batchMode) return;
+                      handlePointerDown(event, block, "resize-start");
+                    }}
                   />
                   <div
                     className="resize-handle bottom-0"
-                    onPointerDown={(event) =>
-                      handlePointerDown(event, block, "resize-end")
-                    }
+                    onPointerDown={(event) => {
+                      if (batchMode) return;
+                      handlePointerDown(event, block, "resize-end");
+                    }}
                   />
-                  <div className="flex h-full min-h-0 flex-col justify-between gap-1 overflow-hidden px-1.5 py-1">
-                    <div className="flex min-w-0 items-start justify-between gap-1">
-                      <div className="min-w-0 flex-1">
+                  {height < 36 ? (
+                    <div className="flex h-full min-h-0 items-start gap-1 overflow-hidden px-1">
+                      <div className="min-w-0 flex-1 truncate text-xs font-semibold leading-tight text-ink">
+                        {block.name}
+                      </div>
+                      <button
+                        type="button"
+                        title={block.done ? "标记未完成" : "标记完成"}
+                        onPointerDown={(event) => event.stopPropagation()}
+                        onPointerUp={(event) => event.stopPropagation()}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleDone(block.id);
+                        }}
+                        className="h-4 w-4 shrink-0 flex items-center justify-center rounded-full border-0 bg-transparent text-ink-muted-48 cursor-pointer"
+                      >
+                        {block.done ? (
+                          <CheckCircle2
+                            size={15}
+                            className="text-primary"
+                          />
+                        ) : (
+                          <Circle size={15} className="text-ink-muted-48" />
+                        )}
+                      </button>
+                    </div>
+                  ) : height < 42 ? (
+                    <div className="flex h-full min-h-0 flex-col justify-start gap-0 overflow-hidden px-1.5 py-0.5">
+                      <div className="flex items-center justify-between gap-1">
                         <div className="text-[10px] font-medium tabular-nums leading-tight text-ink-muted-48">
                           {minutesToHHMM(start)}-{minutesToHHMM(end)}
                         </div>
-                        <div className="truncate text-xs font-semibold leading-tight text-ink">
-                          {block.name}
-                        </div>
-                        {block.location && (
-                          <div className="mt-0.5 flex items-center gap-0.5 text-[10px] leading-tight text-ink-muted-48">
-                            <MapPin size={10} className="shrink-0" />
-                            <span className="truncate">{block.location}</span>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex shrink-0 items-center gap-0.5">
-                        {hasObsidian && (
+                        <div className="flex shrink-0 items-center gap-0.5">
                           <button
                             type="button"
-                            title="打开 Obsidian"
+                            title={block.done ? "标记未完成" : "标记完成"}
                             onPointerDown={(event) => event.stopPropagation()}
                             onPointerUp={(event) => event.stopPropagation()}
                             onClick={(event) => {
                               event.stopPropagation();
-                              onOpenObsidian?.(block);
+                              onToggleDone(block.id);
                             }}
-                            className="icon-btn-plain !h-6 !w-6"
+                            className="icon-btn-plain !h-6 !w-6 shrink-0"
                           >
-                            <BookMarked size={13} className="text-ink-muted-48" />
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          title={block.done ? "标记未完成" : "标记完成"}
-                          onPointerDown={(event) => event.stopPropagation()}
-                          onPointerUp={(event) => event.stopPropagation()}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            onToggleDone(block.id);
-                          }}
-                          className="icon-btn-plain !h-6 !w-6"
-                        >
                           {block.done ? (
                             <CheckCircle2
                               size={15}
@@ -877,10 +935,71 @@ export default function WeekTimeline({
                           ) : (
                             <Circle size={15} className="text-ink-muted-48" />
                           )}
-                        </button>
+                            </button>
+                          </div>
+                        </div>
+                      <div className="truncate text-xs font-semibold leading-tight text-ink">
+                        {block.name}
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex h-full min-h-0 flex-col justify-between gap-1 overflow-hidden px-1.5 py-1">
+                      <div className="flex min-w-0 items-start justify-between gap-1">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[10px] font-medium tabular-nums leading-tight text-ink-muted-48">
+                            {minutesToHHMM(start)}-{minutesToHHMM(end)}
+                          </div>
+                          <div className="truncate text-xs font-semibold leading-tight text-ink">
+                            {block.name}
+                          </div>
+                          {block.location && (
+                            <div className="mt-0.5 flex items-center gap-0.5 text-[10px] leading-tight text-ink-muted-48">
+                              <MapPin size={10} className="shrink-0" />
+                              <span className="truncate">{block.location}</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-0.5">
+                          {hasObsidian && (
+                            <button
+                              type="button"
+                              title="打开 Obsidian"
+                              onPointerDown={(event) => event.stopPropagation()}
+                              onPointerUp={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onOpenObsidian?.(block);
+                              }}
+                              className="icon-btn-plain !h-6 !w-6"
+                            >
+                              <BookMarked size={13} className="text-ink-muted-48" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            title={block.done ? "标记未完成" : "标记完成"}
+                            onPointerDown={(event) => event.stopPropagation()}
+                            onPointerUp={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onToggleDone(block.id);
+                            }}
+                            className="icon-btn-plain !h-6 !w-6"
+                          >
+                            {block.done ? (
+                              <CheckCircle2
+                                size={15}
+                                className="text-primary"
+                              />
+                            ) : (
+                              <Circle size={15} className="text-ink-muted-48" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -888,6 +1007,35 @@ export default function WeekTimeline({
         </div>
       </div>
       </div>
+
+
+      {batchMode && (
+        <div className="sticky bottom-0 z-30 flex items-center justify-center gap-4 border-t border-divider-soft bg-canvas px-4 py-3">
+          <span className="text-sm text-ink-muted-48">已选 {selectedBlocks.size} 项</span>
+          <button
+            type="button"
+            onClick={() => {
+              onDeleteBlocks?.(Array.from(selectedBlocks));
+              onBatchModeChange(false);
+              setSelectedBlocks(new Set());
+            }}
+            disabled={selectedBlocks.size === 0}
+            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+          >
+            删除选中
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onBatchModeChange(false);
+              setSelectedBlocks(new Set());
+            }}
+            className="rounded-lg bg-canvas-parchment px-4 py-1.5 text-sm font-medium text-ink hover:bg-divider-soft"
+          >
+            取消
+          </button>
+        </div>
+      )}
 
       {collapseDialog && (
         <div

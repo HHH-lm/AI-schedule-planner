@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.config import Settings, get_settings
+from app.limiter import limiter
 from app.services.push import push_channel_ready
 from app.services.reminders import scan_reminders
 
@@ -13,7 +14,11 @@ router = APIRouter()
 
 
 @router.get("/reminders/status")
-def reminders_status(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+@limiter.limit("30/minute")
+def reminders_status(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
     return {
         "enabled": bool(
             settings.supabase_url
@@ -26,5 +31,9 @@ def reminders_status(settings: Settings = Depends(get_settings)) -> dict[str, An
 
 
 @router.post("/reminders/run")
-async def run_reminders(settings: Settings = Depends(get_settings)) -> dict[str, Any]:
+@limiter.limit("10/minute")
+async def run_reminders(
+    request: Request,
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
     return await scan_reminders(settings)

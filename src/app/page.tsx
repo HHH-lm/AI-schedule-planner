@@ -11,6 +11,7 @@ import {
   Cloud,
   CloudOff,
   ListTodo,
+  ListChecks,
   LogIn,
   LogOut,
   Plus,
@@ -23,6 +24,7 @@ import type {
   AIMemorySuggestion,
   AiProviderSetting,
   AppData,
+  Category,
   Memory,
   MemoryCategory,
   ParsedSchedule,
@@ -33,9 +35,12 @@ import type {
   ViewMode,
 } from "@/lib/types";
 import {
+  addDays,
   formatWeekRange,
   getWeekDays,
   defaultRemindAtISO,
+  parseDateKey,
+  toDateKey,
   todayKey,
   weekOffsetForDate,
 } from "@/lib/date";
@@ -109,8 +114,17 @@ export default function Home() {
   );
   const data = historyState?.present ?? null;
   const [hydrated, setHydrated] = useState(false);
-  const [view, setView] = useState<ViewMode>("today");
+  const [view, setView] = useState<ViewMode>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("app-view");
+      if (saved === "today" || saved === "week" || saved === "board" || saved === "stats") {
+        return saved as ViewMode;
+      }
+    }
+    return "today";
+  });
   const [weekOffset, setWeekOffset] = useState(0);
+  const [batchMode, setBatchMode] = useState(false);
   const [syncState, setSyncState] = useState<"loading" | "local" | "supabase">(
     "loading"
   );
@@ -152,6 +166,11 @@ export default function Home() {
   useEffect(() => {
     dataRef.current = data;
   }, [data]);
+
+  // Persist current view across page refreshes
+  useEffect(() => {
+    localStorage.setItem("app-view", view);
+  }, [view]);
 
   useEffect(() => {
     if (!hydrated || view !== "week") return;
@@ -203,7 +222,38 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, []);
+    }, []);
+
+  // One-time sync: update subtask done status to match time blocks
+  useEffect(() => {
+    if (!data) return;
+    let needsSync = false;
+    const updatedTasks = data.tasks.map((task) => {
+      const updatedSubtasks = task.subtasks.map((sub) => {
+        // Try matching by subtaskId first, then by name
+        const matchedBlock = data.timeBlocks.find(
+          (b) =>
+            b.subtaskId === sub.id ||
+            b.name === sub.name ||
+            b.name.includes(sub.name) ||
+            sub.name.includes(b.name)
+        );
+        if (matchedBlock && matchedBlock.done !== sub.done) {
+          needsSync = true;
+          return { ...sub, done: matchedBlock.done };
+        }
+        return sub;
+      });
+      return { ...task, subtasks: updatedSubtasks };
+    });
+    if (needsSync) {
+      commitData((prev) => {
+        if (!prev) return prev;
+        return { ...prev, tasks: updatedTasks };
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
 
   useEffect(() => {
     const { unsubscribe } = onAuthStateChange((event, session) => {
@@ -308,16 +358,55 @@ export default function Home() {
   }, [commitData]);
 
   const toggleBlockDone = useCallback((id: string) => {
-    commitData((prev) =>
-      prev
-        ? {
-            ...prev,
-            timeBlocks: prev.timeBlocks.map((block) =>
-              block.id === id ? { ...block, done: !block.done } : block
+    commitData((prev) => {
+      if (!prev) return prev;
+      const block = prev.timeBlocks.find((b) => b.id === id);
+      if (!block) return prev;
+      const newDone = !block.done;
+      // Sync subtask completion status
+      if (block.subtaskId) {
+        return {
+          ...prev,
+          timeBlocks: prev.timeBlocks.map((b) =>
+            b.id === id ? { ...b, done: newDone } : b
+          ),
+          tasks: prev.tasks.map((task) => ({
+            ...task,
+            subtasks: task.subtasks.map((sub) =>
+              sub.id === block.subtaskId ? { ...sub, done: newDone } : sub
             ),
-          }
-        : prev
-    );
+          })),
+        };
+      }
+      // Fallback: match by name
+      const matchedTask = prev.tasks.find((task) =>
+        task.subtasks.some((sub) => sub.name === block.name)
+      );
+      if (matchedTask) {
+        return {
+          ...prev,
+          timeBlocks: prev.timeBlocks.map((b) =>
+            b.id === id ? { ...b, done: newDone } : b
+          ),
+          tasks: prev.tasks.map((task) =>
+            task.id === matchedTask.id
+              ? {
+                  ...task,
+                  subtasks: task.subtasks.map((sub) =>
+                    sub.name === block.name ? { ...sub, done: newDone } : sub
+                  ),
+                }
+              : task
+          ),
+        };
+      }
+      return {
+        ...prev,
+        timeBlocks: prev.timeBlocks.map((b) =>
+          b.id === id ? { ...b, done: newDone } : b
+        ),
+      };
+    });
   }, [commitData]);
 
   const deleteBlock = useCallback((id: string) => {
@@ -326,6 +415,17 @@ export default function Home() {
         ? {
             ...prev,
             timeBlocks: prev.timeBlocks.filter((block) => block.id !== id),
+          }
+        : prev
+    );
+  }, [commitData]);
+
+  const deleteBlocks = useCallback((ids: string[]) => {
+    commitData((prev) =>
+      prev
+        ? {
+            ...prev,
+            timeBlocks: prev.timeBlocks.filter((block) => !ids.includes(block.id)),
           }
         : prev
     );
@@ -359,10 +459,19 @@ export default function Home() {
           // API 失败，保持不关联
         }
       }
+      const subtaskId = draft.subtaskId ?? existingBlock?.subtaskId;
       commitData((prev) => {
         if (!prev) return prev;
         let tasks = prev.tasks;
-        if (taskId && name) {
+        if (subtaskId) {
+          // Update subtask name when block name changes
+          tasks = tasks.map((t) => ({
+            ...t,
+            subtasks: t.subtasks.map((sub) =>
+              sub.id === subtaskId ? { ...sub, name } : sub
+            ),
+          }));
+        } else if (taskId && name) {
           const taskIdx = tasks.findIndex((t) => t.id === taskId);
           if (taskIdx >= 0) {
             const task = tasks[taskIdx];
@@ -384,6 +493,7 @@ export default function Home() {
           location: draft.location,
           done: draft.done ?? false,
           status: draft.status ?? "scheduled",
+          subtaskId,
           taskId,
           obsidianVault: draft.obsidianVault,
           obsidianNote: draft.obsidianNote,
@@ -884,6 +994,11 @@ export default function Home() {
   const toggleSubtask = useCallback((taskId: string, subtaskId: string) => {
     commitData((prev) => {
       if (!prev) return prev;
+      // Find the subtask to determine new done state
+      const task = prev.tasks.find((t) => t.id === taskId);
+      const sub = task?.subtasks.find((s) => s.id === subtaskId);
+      if (!sub) return prev;
+      const newDone = !sub.done;
       return {
         ...prev,
         tasks: prev.tasks.map((task) =>
@@ -891,22 +1006,28 @@ export default function Home() {
             ? {
                 ...task,
                 subtasks: task.subtasks.map((sub) =>
-                  sub.id === subtaskId ? { ...sub, done: !sub.done } : sub
+                  sub.id === subtaskId ? { ...sub, done: newDone } : sub
                 ),
               }
             : task
+        ),
+        timeBlocks: prev.timeBlocks.map((block) =>
+          block.subtaskId === subtaskId
+            ? { ...block, done: newDone }
+            : block
         ),
       };
     });
   }, [commitData]);
 
   const addSubtaskBlock = useCallback(
-    (taskId: string, subtaskName: string, dateKey: string) => {
+    (taskId: string, subtaskId: string, subtaskName: string, dateKey: string) => {
       commitData((prev) => {
         if (!prev) return prev;
         const newBlock = {
           id: uid(),
           taskId,
+          subtaskId,
           name: subtaskName,
           date: dateKey,
           start: 9 * 60,
@@ -931,27 +1052,58 @@ export default function Home() {
     }> => {
       const current = dataRef.current;
       if (!current) return { added: 0, blockedCount: 0 };
+      const memories = (current.memories ?? [])
+        .filter((m) => m.status !== "archived")
+        .map((m) => m.content);
+      const rangeStart = todayKey();
+      const rangeEnd = toDateKey(addDays(parseDateKey(rangeStart), 13));
+      // 将任务展开为子任务进行规划：子任务是真正要执行的工作项
+      const planInputs = tasks.flatMap((task) => {
+        const items =
+          task.subtasks.length > 0
+            ? task.subtasks.map((sub) => ({
+                title: sub.name,
+                taskId: task.id,
+                subtaskId: sub.id,
+              }))
+            : [{ title: task.name, taskId: task.id, subtaskId: undefined }];
+        return items.map((item) => ({
+          title: item.title,
+          duration: 60,
+          priority: task.priority === "urgent-important" ? "high" : "auto",
+          deadline: task.date ?? undefined,
+          task_id: item.taskId,
+          subtask_id: item.subtaskId,
+        }));
+      });
+
       const result = await apiPost<{
         source: "openai" | "deepseek" | "local" | "none";
-        blocks: ParsedSchedule[];
-        blocked: ParsedSchedule[];
+        blocks: Array<{
+          title: string;
+          date: string;
+          start: number;
+          end: number;
+          category: string;
+          priority: string;
+          task_id?: string;
+          subtask_id?: string;
+        }>;
+        unassigned: string[];
         message?: string | null;
-      }>("/plan", {
-        tasks: tasks.map((task) => ({
-          name: task.name,
-          date: task.date,
-          subtasks: task.subtasks.map((subtask) => subtask.name),
-        })),
-        existing_blocks: current.timeBlocks.map((block) => ({
+      }>("/plan-v2", {
+        goal: "",
+        tasks: planInputs,
+        memories,
+        constraints: [],
+        existing_schedule: current.timeBlocks.map((block) => ({
           date: block.date,
           start: block.start,
           end: block.end,
           status: block.status,
         })),
-        start_date: todayKey(),
-        horizon_days: 14,
+        planning_range: { start: rangeStart, end: rangeEnd },
         provider: current.settings?.aiProvider ?? "auto",
-        today: todayKey(),
       });
       if (result.source === "none") {
         throw new Error(result.message ?? "AI 规划失败，请稍后重试");
@@ -963,11 +1115,18 @@ export default function Home() {
                 ...prev,
                 timeBlocks: [
                   ...prev.timeBlocks,
-                  ...result.blocks.map<ParsedSchedule & TimeBlock>((block) => ({
-                    ...block,
+                  ...result.blocks.map((block) => ({
                     id: uid(),
+                    name: block.title,
+                    date: block.date,
+                    start: block.start,
+                    end: block.end,
+                    category: block.category as Category,
+                    location: undefined,
                     done: false,
                     status: "scheduled" as const,
+                    taskId: block.task_id ?? undefined,
+                    subtaskId: block.subtask_id ?? undefined,
                     remindAt: defaultRemindAtISO(block.date, block.start),
                   })),
                 ],
@@ -977,7 +1136,7 @@ export default function Home() {
       }
       return {
         added: result.blocks.length,
-        blockedCount: result.blocked.length,
+        blockedCount: result.unassigned.length,
         message: result.message,
       };
     },
@@ -1166,6 +1325,15 @@ export default function Home() {
               </button>
               <button
                 type="button"
+                onClick={() => setBatchMode((mode) => !mode)}
+                className={`btn-ghost hide-on-mobile ${batchMode ? "btn-ghost-primary" : ""}`}
+                title={batchMode ? "退出批量操作" : "勾选多个时间块后批量删除"}
+              >
+                <ListChecks size={14} />
+                {batchMode ? "取消批量" : "批量操作"}
+              </button>
+              <button
+                type="button"
                 onClick={() =>
                   openNewBlockAt(
                     todayKey(),
@@ -1220,7 +1388,7 @@ export default function Home() {
         )}
 
         {view === "week" && (
-          <div className="flex h-[calc(150vh-354px)] min-h-[780px] flex-col gap-4">
+          <div className="flex h-[calc(100vh-120px)] flex-col gap-4">
             <QuickAdd
               onAddParsed={addParsedBlocks}
               aiProvider={data.settings?.aiProvider ?? "auto"}
@@ -1234,10 +1402,13 @@ export default function Home() {
               obsidianVault={data.settings?.obsidianVault}
               focusTarget={focusTarget}
               onFocusHandled={() => setFocusTarget(null)}
+              batchMode={batchMode}
+              onBatchModeChange={setBatchMode}
               onUpdateBlock={updateBlock}
               onToggleDone={toggleBlockDone}
               onAddAt={openNewBlockAt}
               onOpenObsidian={handleOpenObsidian}
+              onDeleteBlocks={deleteBlocks}
               onEditBlock={(block) => {
                 setEditingBlock(block);
                 setBlockModalOpen(true);

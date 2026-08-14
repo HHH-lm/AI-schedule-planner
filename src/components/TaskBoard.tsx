@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import type { AppData, Task, TimeBlock } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
-import { addDays, minutesToHHMM, toDateKey, weekdayName } from "@/lib/date";
+import { addDays, minutesToHHMM, startOfWeek, toDateKey, weekdayName } from "@/lib/date";
 import { getBoardStart } from "@/lib/board";
 import { CATEGORIES } from "@/lib/categories";
 import { apiPost } from "@/lib/api";
@@ -51,7 +51,7 @@ interface Props {
   onNewTask: () => void;
   onAddTasks: (names: Array<{ name: string; subtasks?: string[] } | string>) => void;
   onToggleSubtask: (taskId: string, subtaskId: string) => void;
-  onAddSubtaskBlock: (taskId: string, subtaskName: string, dateKey: string) => void;
+  onAddSubtaskBlock: (taskId: string, subtaskId: string, subtaskName: string, dateKey: string) => void;
   onReorderTask: (fromTaskId: string, toTaskId: string, before: boolean) => void;
   onToggleTaskPinned: (taskId: string) => void;
   onEditBlock: (block: TimeBlock) => void;
@@ -93,9 +93,20 @@ export default function TaskBoard({
   const [breakdownBusy, setBreakdownBusy] = useState(false);
   const [planBusy, setPlanBusy] = useState(false);
   const [weekCount, setWeekCount] = useState(INITIAL_WEEKS);
-  const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(
-    () => new Set()
-  );
+  const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(() => {
+    const currentMondayKey = toDateKey(startOfWeek(new Date()));
+    const collapsed = new Set<string>();
+    const keys: string[] = [];
+    for (const task of data.tasks) if (task.date) keys.push(task.date);
+    for (const block of data.timeBlocks) keys.push(block.date);
+    const earliestDateKey = keys.sort()[0];
+    const boardStart = getBoardStart(days[0].date, earliestDateKey);
+    for (let i = 0; i < INITIAL_WEEKS; i++) {
+      const weekKey = toDateKey(addDays(boardStart, i * 7));
+      if (weekKey < currentMondayKey) collapsed.add(weekKey);
+    }
+    return collapsed;
+  });
   const [hideConfirmWeek, setHideConfirmWeek] = useState<BoardWeek | null>(
     null
   );
@@ -277,12 +288,12 @@ export default function TaskBoard({
     const raw = event.dataTransfer.getData("text/plain");
     if (!raw) return;
     if (raw.startsWith("subtask:")) {
-      const name = raw.slice(8);
-      const sep = name.indexOf(":");
-      if (sep > 0) {
-        const taskId = raw.slice(8, 8 + sep);
-        const subtaskName = raw.slice(8 + sep + 1);
-        if (taskId && subtaskName) onAddSubtaskBlock(taskId, subtaskName, dayKey);
+      const parts = raw.slice(8).split(":");
+      if (parts.length >= 3) {
+        const taskId = parts[0];
+        const subtaskId = parts[1];
+        const subtaskName = parts.slice(2).join(":");
+        if (taskId && subtaskId && subtaskName) onAddSubtaskBlock(taskId, subtaskId, subtaskName, dayKey);
       }
     } else {
       onMoveTask(raw, dayKey);
@@ -378,11 +389,7 @@ export default function TaskBoard({
       >
         <div className="flex min-w-0 items-start justify-between gap-1 px-1.5 py-1">
           <div className="min-w-0 flex-1">
-            <div className="text-[10px] font-medium tabular-nums leading-tight text-ink-muted-48">
-              {compact
-                ? `${block.date.slice(5).replace("-", "/")} ${minutesToHHMM(block.start)}`
-                : `${minutesToHHMM(block.start)}-${minutesToHHMM(block.end)}`}
-            </div>
+
             <div
               className={`truncate font-semibold leading-tight text-ink ${
                 compact ? "text-[11px]" : "text-xs"
@@ -774,7 +781,7 @@ export default function TaskBoard({
                             onDragStart={(event) => {
                               event.dataTransfer.setData(
                                 "text/plain",
-                                `subtask:${task.id}:${sub.name}`
+                                `subtask:${task.id}:${sub.id}:${sub.name}`
                               );
                               setDragSubtaskId(sub.id);
                             }}
