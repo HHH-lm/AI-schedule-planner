@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import re
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.config import Settings, get_settings
+from app.limiter import limiter
 from app.schemas import MatchTaskRequest, MatchTaskResponse
 from app.services.ai import (
     call_chat_completions,
@@ -16,8 +17,11 @@ router = APIRouter()
 
 
 @router.post("/match-task", response_model=MatchTaskResponse)
+@limiter.limit("20/minute")
 async def match_task(
-    payload: MatchTaskRequest, settings: Settings = Depends(get_settings)
+    request: Request,
+    payload: MatchTaskRequest,
+    settings: Settings = Depends(get_settings),
 ) -> MatchTaskResponse:
     if not payload.tasks:
         return MatchTaskResponse(source="none", taskId=None)

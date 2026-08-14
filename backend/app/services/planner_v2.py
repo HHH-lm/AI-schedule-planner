@@ -42,7 +42,7 @@ from app.services.ai import (
     parse_model_json,
     resolve_ai_provider,
 )
-from app.services.scheduling_engine import schedule_tasks
+from app.services.scheduling_engine import parse_constraint_filters, schedule_tasks
 
 
 CATEGORY_VALUES = ("work", "study", "fitness", "life", "rest")
@@ -180,10 +180,13 @@ def _fallback_plan_v2(
     range_start: date,
     range_end: date,
     memories: list[str],
+    constraints: list[str] | None = None,
 ) -> PlanV2Response:
     """本地 fallback 规划器 — 直接使用 SchedulingEngine。"""
+    constraint_filters = parse_constraint_filters(constraints or [])
     blocks, unassigned, _issues = schedule_tasks(
-        tasks, existing, (range_start, range_end), memories
+        tasks, existing, (range_start, range_end), memories,
+        constraint_filters=constraint_filters,
     )
     return PlanV2Response(
         source="local",
@@ -222,6 +225,7 @@ async def plan_v2_schedule(
             range_start,
             range_end,
             request.memories,
+            request.constraints,
         )
         result.message = resolved_message
         return result
@@ -274,11 +278,15 @@ async def plan_v2_schedule(
 
         # ── 步骤 2: SchedulingEngine 调度 ──
         # 将理解结果中的类别等信息应用到任务打分
+        constraint_filters = parse_constraint_filters(request.constraints)
+        understandings_dict = {u["title"]: u for u in understandings}
         blocks, unassigned, _issues = schedule_tasks(
             request.tasks,
             request.existing_schedule,
             (range_start, range_end),
             request.memories,
+            understandings=understandings_dict,
+            constraint_filters=constraint_filters,
         )
 
         # ── 步骤 3: LLM 解释层（可选） ──
@@ -308,11 +316,13 @@ async def plan_v2_schedule(
         _ = error
         timeout_seconds = round(settings.ai_timeout_ms / 1000)
         # 超时时回退到 SchedulingEngine
+        constraint_filters = parse_constraint_filters(request.constraints)
         blocks, unassigned, _issues = schedule_tasks(
             request.tasks,
             request.existing_schedule,
             (range_start, range_end),
             request.memories,
+            constraint_filters=constraint_filters,
         )
         return PlanV2Response(
             source="local",
@@ -323,11 +333,13 @@ async def plan_v2_schedule(
     except Exception as error:
         # 其他异常时回退到 SchedulingEngine
         try:
+            constraint_filters = parse_constraint_filters(request.constraints)
             blocks, unassigned, _issues = schedule_tasks(
                 request.tasks,
                 request.existing_schedule,
                 (range_start, range_end),
                 request.memories,
+                constraint_filters=constraint_filters,
             )
             return PlanV2Response(
                 source="local",

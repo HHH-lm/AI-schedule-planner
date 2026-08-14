@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BookMarked, Clock, MapPin, Tag, Trash2, X } from "lucide-react";
 import type { Category, TimeBlock } from "@/lib/types";
 import { CATEGORIES, CATEGORY_ORDER } from "@/lib/categories";
@@ -109,6 +109,7 @@ export default function BlockModal({
         end,
         category,
         location: location.trim() || undefined,
+        subtaskId: block?.subtaskId,
         taskId: taskId || undefined,
         syncTask: !taskIdTouched,
         obsidianVault: resolvedVault,
@@ -125,6 +126,15 @@ export default function BlockModal({
   const inputClass =
     "input-rect";
   const labelClass = "field-label";
+
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   return (
     <div

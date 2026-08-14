@@ -29,6 +29,7 @@ export interface Task {
 export interface TimeBlock {
   id: string;
   taskId?: string;
+  subtaskId?: string;
   name: string;
   date: string;
   start: number;

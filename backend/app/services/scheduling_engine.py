@@ -9,8 +9,9 @@
           └──────┬───────────────┘
                  ↓
           Scheduling Engine（本模块）
-          SlotScorer 六维评分：
-            Memory匹配度  × 0.35
+          SlotScorer 七维评分：
+            Memory匹配度  × 0.25
+            + 理解匹配度   × 0.10
             + 时间可用性   × 0.20
             + 任务优先级   × 0.15
             + 截止日期     × 0.10
@@ -42,9 +43,171 @@ from app.services.slot_finder import (
 from app.services.validator import validate_plan_v2
 
 
+# ── 星期映射 ──
+WEEKDAY_NAMES: dict[str, int] = {
+    "周一": 0, "星期一": 0, "周二": 1, "星期二": 1,
+    "周三": 2, "星期三": 2, "周四": 3, "星期四": 3,
+    "周五": 4, "星期五": 4, "周六": 5, "星期六": 5,
+    "周日": 6, "星期日": 6,
+}
+
+
+def parse_constraint_filters(
+    constraints: list[str],
+) -> list[Any]:
+    """解析自然语言约束为 slot 过滤函数列表。
+
+    支持的格式：
+      - "不要安排在周三" / "避开周三" → 排除特定星期
+      - "不要安排在晚上" / "避开晚上" → 排除特定时段
+      - "下午三点前" / "15点前" → 排除某个时间点之后
+      - "三点后" / "15点后" → 排除某个时间点之前
+
+    Returns:
+        list of callables, 每个 callable 接受 FreeSlot 返回 bool
+        (True = 允许该时段)
+    """
+    filters: list[Any] = []
+
+    for text in constraints:
+        text_stripped = text.strip()
+        if not text_stripped:
+            continue
+
+        # 排除特定星期： "不要周三" / "避开周三" / "周三不可"
+        detected_weekday: int | None = None
+        for name, weekday in WEEKDAY_NAMES.items():
+            if name in text_stripped and any(
+                kw in text_stripped for kw in ("不要", "避开", "跳过", "不安排", "不可", "不行", "不能")
+            ):
+                detected_weekday = weekday
+                break
+
+        # 排除特定时段： "不要晚上" / "避开晚上"
+        detected_period: str | None = None
+        for period_kw, period_label in [
+            ("凌晨", "凌晨"), ("上午", "上午"), ("下午", "下午"), ("晚上", "晚上"),
+        ]:
+            if period_kw in text_stripped and any(
+                kw in text_stripped for kw in ("不要", "避开", "跳过", "不安排", "不可", "不行", "不能")
+            ):
+                detected_period = period_label
+                break
+
+        # 如果同时检测到星期和时段，创建组合过滤器（AND 逻辑）
+        if detected_weekday is not None and detected_period is not None:
+            filters.append(_make_combined_weekday_period_filter(detected_weekday, detected_period, exclude=True))
+        else:
+            if detected_weekday is not None:
+                filters.append(_make_weekday_filter(detected_weekday, exclude=True))
+            if detected_period is not None:
+                filters.append(_make_period_filter(detected_period, exclude=True))
+
+        # "X点前" 或 "X点后"（支持中文数字和阿拉伯数字，支持上午/下午前缀）
+        hour = None
+        direction = None
+        # 先尝试阿拉伯数字
+        time_match = re.search(r"(\d+)\s*点\s*(前|后)", text_stripped)
+        if time_match:
+            hour = int(time_match.group(1))
+            direction = time_match.group(2)
+        else:
+            # 尝试中文数字
+            cn_match = re.search(r"([一二三四五六七八九十\d]+)\s*点\s*(前|后)", text_stripped)
+            if cn_match:
+                cn_hour = _parse_chinese_number(cn_match.group(1))
+                if cn_hour is not None:
+                    hour = cn_hour
+                    direction = cn_match.group(2)
+        if hour is not None and direction:
+            # 处理"下午X点" → +12小时，变为 15:00（下午三点 = 15:00）
+            if "下午" in text_stripped and 1 <= hour <= 11:
+                hour += 12
+            if direction == "前":
+                filters.append(_make_time_before_filter(hour))
+            else:
+                filters.append(_make_time_after_filter(hour))
+
+    return filters
+
+
+def _make_weekday_filter(weekday: int, exclude: bool = True) -> Any:
+    def _filter(slot: FreeSlot) -> bool:
+        from datetime import date as dt_date
+        try:
+            d = dt_date.fromisoformat(slot.date)
+            is_target = d.weekday() == weekday
+            return not is_target if exclude else is_target
+        except (ValueError, TypeError):
+            return True
+    return _filter
+
+
+def _make_combined_weekday_period_filter(weekday: int, period_label: str, exclude: bool = True) -> Any:
+    """组合星期+时段过滤：仅当同时匹配星期和时段时才排除/保留。"""
+    def _filter(slot: FreeSlot) -> bool:
+        from datetime import date as dt_date
+        try:
+            d = dt_date.fromisoformat(slot.date)
+            hour = _slot_hour(slot)
+            p = _period_label(hour)
+            is_target = d.weekday() == weekday and p == period_label
+            return not is_target if exclude else is_target
+        except (ValueError, TypeError):
+            return True
+    return _filter
+
+
+def _make_period_filter(period_label: str, exclude: bool = True) -> Any:
+    def _filter(slot: FreeSlot) -> bool:
+        hour = _slot_hour(slot)
+        p = _period_label(hour)
+        is_target = p == period_label
+        return not is_target if exclude else is_target
+    return _filter
+
+
+# 中文数字映射
+_CHINESE_DIGITS: dict[str, int] = {
+    "零": 0, "一": 1, "二": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+    "十": 10, "十一": 11, "十二": 12,
+    "十三": 13, "十四": 14, "十五": 15, "十六": 16,
+    "十七": 17, "十八": 18, "十九": 19, "二十": 20,
+    "二十一": 21, "二十二": 22, "二十三": 23,
+}
+
+
+def _parse_chinese_number(text: str) -> int | None:
+    """解析中文数字，支持 '三' 或 '三点' 等格式。"""
+    # 先尝试直接匹配中文数字
+    for cn, num in sorted(_CHINESE_DIGITS.items(), key=lambda x: -len(x[0])):
+        if cn in text:
+            return num
+    return None
+
+
+def _make_time_before_filter(hour: int) -> Any:
+    """在 X 点前的时段不受限，X 点及之后的时段被排除。"""
+    def _filter(slot: FreeSlot) -> bool:
+        slot_hour = slot.start // 60
+        return slot_hour < hour
+    return _filter
+
+
+def _make_time_after_filter(hour: int) -> Any:
+    """在 X 点之后的时段不受限，X 点及之前的时段被排除。"""
+    def _filter(slot: FreeSlot) -> bool:
+        slot_hour = slot.start // 60
+        return slot_hour >= hour
+    return _filter
+
+
+
 # ── 评分权重 ──
-W_MEMORY = 0.35      # Memory匹配度
-W_TIME = 0.20        # 时间可用性
+W_MEMORY = 0.35      # 时段偏好匹配（通用时段，对所有任务统一生效）
+W_UNDERSTANDING = 0.25  # 理解匹配度（LLM preferred_time/focus_level）
+W_TIME = 0.15        # 时间可用性
 W_PRIORITY = 0.15    # 任务优先级
 W_DEADLINE = 0.10    # 截止日期（1 - 紧迫度）
 W_CONFLICT = 0.10    # 冲突风险（1 - 风险）
@@ -83,77 +246,56 @@ def score_memory_match(
     task: PlanV2Task,
     memories: list[str],
 ) -> float:
-    """Memory匹配度 (0.0-1.0)
+    """基础时段分 (0.0-1.0)
 
-    解析记忆文本中的时段偏好，与 slot 的时段做匹配。
-    同时也匹配任务类别与典型时段的关系。
+    所有记忆偏好（时段、活动类型）由 LLM understanding 层
+    通过 score_understanding 精确控制，此处仅返回基础分。
     """
     hour = _slot_hour(slot)
-    period = _period_label(hour)
 
     score = 0.3  # 基础分
-    matched = False
-
-    # 解析每条记忆，提取时段偏好关键词
-    for mem in memories:
-        mem_lower = mem.lower()
-
-        # 偏好时段检测
-        prefers_morning = any(kw in mem_lower for kw in ("上午", "早晨", "早上", "早起"))
-        prefers_afternoon = any(kw in mem_lower for kw in ("下午", "午后"))
-        prefers_evening = any(kw in mem_lower for kw in ("晚上", "傍晚", "夜间"))
-
-        # 深度工作偏好
-        deep_work = any(kw in mem_lower for kw in (
-            "深度工作", "专注", "集中", "高效", "精力"
-        ))
-
-        # 运动时间偏好
-        exercise_pref = any(kw in mem_lower for kw in (
-            "运动", "健身", "跑步", "锻炼"
-        ))
-
-        # 时段匹配
-        if prefers_morning and period == "上午":
-            score += 0.35
-            matched = True
-        elif prefers_afternoon and period == "下午":
-            score += 0.35
-            matched = True
-        elif prefers_evening and period == "晚上":
-            score += 0.35
-            matched = True
-
-        # 深度工作 → 上午加分
-        if deep_work and period == "上午":
-            score += 0.20
-            matched = True
-
-        # 运动偏好 → 早晨/傍晚加分
-        if exercise_pref and (hour < 9 or 17 <= hour <= 19):
-            score += 0.20
-            matched = True
-
-    # 任务类别匹配典型时段
-    title_lower = task.title.lower()
-    if any(kw in title_lower for kw in ("健身", "跑步", "运动", "锻炼", "瑜伽")):
-        if hour < 9 or 17 <= hour <= 19:
-            score += 0.15
-            matched = True
-    elif any(kw in title_lower for kw in ("学习", "阅读", "研究", "写作", "写文章", "深度")):
-        if 8 <= hour <= 12:
-            score += 0.15
-            matched = True
-    elif any(kw in title_lower for kw in ("开会", "会议", "客户", "需求", "讨论")):
-        if 9 <= hour <= 11 or 14 <= hour <= 17:
-            score += 0.15
-            matched = True
 
     # 午间时段降分
     if 12 <= hour <= 14:
         score -= 0.10
 
     return min(1.0, max(0.0, score))
+
+
+def score_understanding(
+    slot: FreeSlot,
+    task: PlanV2Task,
+    understanding: dict[str, str] | None,
+) -> float:
+    """Task understanding 匹配度 (0.0-1.0)
+
+    根据 LLM 理解层的 preferred_time 和 focus_level 对时段评分。
+    understanding 为 None 时返回 0.0（不改变原有评分）。
+    """
+    if not understanding:
+        return 0.0
+
+    hour = _slot_hour(slot)
+    period = _period_label(hour)
+    score = 0.0
+
+    # preferred_time 匹配
+    pref = understanding.get("preferred_time", "any")
+    if pref == "any":
+        score += 0.3
+    elif pref == period:
+        score += 0.5
+
+    # focus_level 匹配
+    focus = understanding.get("focus_level", "flexible")
+    if focus == "deep" and 8 <= hour <= 12:
+        score += 0.3
+    elif focus == "light" and (14 <= hour <= 17 or 18 <= hour <= 22):
+        score += 0.2
+    else:
+        score += 0.1  # flexible → any time is fine
+
+    return min(1.0, score)
 
 
 def score_time_availability(slot: FreeSlot) -> float:
@@ -320,9 +462,11 @@ class SlotScorer:
         task: PlanV2Task,
         priority: str,
         memories: list[str],
+        understanding: dict[str, str] | None = None,
     ) -> float:
         """计算一个空闲时段的综合评分。"""
         m = score_memory_match(slot, task, memories)
+        u = score_understanding(slot, task, understanding)
         t = score_time_availability(slot)
         p = score_priority(task, priority)
         d = score_deadline_urgency(task)
@@ -331,6 +475,7 @@ class SlotScorer:
 
         return (
             m * W_MEMORY
+            + u * W_UNDERSTANDING
             + t * W_TIME
             + p * W_PRIORITY
             + d * W_DEADLINE
@@ -344,9 +489,13 @@ class SlotScorer:
         task: PlanV2Task,
         priority: str,
         memories: list[str],
+        understanding: dict[str, str] | None = None,
     ) -> list[tuple[FreeSlot, float]]:
         """对多个空闲时段评分，按分数降序排列。"""
-        scored = [(slot, self.score(slot, task, priority, memories)) for slot in slots]
+        scored = [
+            (slot, self.score(slot, task, priority, memories, understanding))
+            for slot in slots
+        ]
         scored.sort(key=lambda x: -x[1])
         return scored
 
@@ -375,6 +524,8 @@ def schedule_tasks(
     existing_schedule: list[ExistingBlock],
     planning_range: tuple[date, date],
     memories: list[str] | None = None,
+    understandings: dict[str, dict[str, str]] | None = None,
+    constraint_filters: list[Any] | None = None,
     day_start: int = DEFAULT_DAY_START,
     day_end: int = DEFAULT_DAY_END,
     max_daily_workload: int = 480,
@@ -383,8 +534,8 @@ def schedule_tasks(
 
     流程：
       1. 解析优先级，高→低排序
-      2. 生成所有空闲时段
-      3. 对每个任务，用 SlotScorer 给所有候选时段评分
+      2. 生成所有空闲时段（应用 hard constraints 排除非法时段）
+      3. 对每个任务，用 SlotScorer 给所有候选时段评分（含 understanding）
       4. 选最高分时段，15 分钟步长微调
       5. 校验最终规划
 
@@ -393,6 +544,8 @@ def schedule_tasks(
         existing_schedule: 已有日程
         planning_range: (start_date, end_date)
         memories: 用户记忆偏好列表
+        understandings: LLM 任务理解 dict（key=任务 title）
+        constraint_filters: hard constraint 过滤函数列表（True=允许该时段）
         day_start: 每日可排起始分钟（默认 06:00）
         day_end: 每日可排结束分钟（默认 23:00）
         max_daily_workload: 每日最大工作量（分钟，默认 480=8h）
@@ -402,6 +555,8 @@ def schedule_tasks(
     """
     range_start, range_end = planning_range
     memories = memories or []
+    understandings = understandings or {}
+    constraint_filters = constraint_filters or []
 
     # 1. 解析优先级，按高→低排序
     resolved_tasks: list[tuple[PlanV2Task, str]] = []
@@ -418,6 +573,12 @@ def schedule_tasks(
         day_start=day_start,
         day_end=day_end,
     )
+    # 应用 hard constraints 排除非法时段
+    if constraint_filters:
+        all_free_slots = [
+            slot for slot in all_free_slots
+            if all(fn(slot) for fn in constraint_filters)
+        ]
 
     # 3. 逐任务分配
     blocks: list[PlanV2Block] = []
@@ -431,7 +592,8 @@ def schedule_tasks(
 
         if available:
             # 用 SlotScorer 评分并排序
-            scored = scorer.score_all(available, task, priority, memories)
+            task_understanding = understandings.get(task.title)
+            scored = scorer.score_all(available, task, priority, memories, task_understanding)
 
             placed = False
             best_candidate: PlanV2Block | None = None
@@ -443,7 +605,7 @@ def schedule_tasks(
                 for minute_start in range(slot.start, slot.end - task.duration + 1, 15):
                     # 创建候选时间块的临时 slot 用于评分
                     candidate_slot = FreeSlot(slot.date, minute_start, minute_start + task.duration)
-                    position_score = scorer.score(candidate_slot, task, priority, memories)
+                    position_score = scorer.score(candidate_slot, task, priority, memories, task_understanding)
                     if position_score <= best_score:
                         continue
                     candidate = PlanV2Block(
@@ -453,6 +615,8 @@ def schedule_tasks(
                         end=minute_start + task.duration,
                         category=guess_category(task.title),  # type: ignore[arg-type]
                         priority=priority,  # type: ignore[arg-type]
+                        task_id=task.task_id,
+                        subtask_id=task.subtask_id,
                     )
                     candidate_existing = ExistingBlock(
                         date=candidate.date,

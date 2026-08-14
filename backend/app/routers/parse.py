@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.config import Settings, get_settings
+from app.limiter import limiter
 from app.schemas import ParseRequest, ParseResponse, RejectReason
 from app.services.ai import (
     default_today,
@@ -17,8 +20,11 @@ router = APIRouter()
 
 
 @router.post("/parse", response_model=ParseResponse)
+@limiter.limit("20/minute")
 async def parse_schedule(
-    payload: ParseRequest, settings: Settings = Depends(get_settings)
+    request: Request,
+    payload: ParseRequest,
+    settings: Settings = Depends(get_settings),
 ) -> ParseResponse:
     text = payload.text.strip()
     if not text:

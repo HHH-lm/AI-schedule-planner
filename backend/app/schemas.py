@@ -202,6 +202,8 @@ class PlanV2Task(BaseModel):
     duration: int = Field(ge=15, le=480, description="duration in minutes")
     priority: PriorityInput = "auto"
     deadline: str | None = Field(default=None, description="YYYY-MM-DD")
+    task_id: str | None = Field(default=None, description="前端 task id")
+    subtask_id: str | None = Field(default=None, description="前端 subtask id")
 
 
 class PlanningRange(BaseModel):
@@ -219,6 +221,14 @@ class PlanV2Request(BaseModel):
     provider: Provider | None = None
 
 
+class TaskUnderstanding(BaseModel):
+    title: str
+    category: Category = "life"
+    preferred_time: str = "any"
+    focus_level: str = "flexible"
+    notes: str = ""
+
+
 class PlanV2Block(BaseModel):
     title: str
     date: str
@@ -226,6 +236,8 @@ class PlanV2Block(BaseModel):
     end: int
     category: Category = "life"
     priority: Priority = "medium"
+    task_id: str | None = None
+    subtask_id: str | None = None
 
 
 class PlanV2Response(BaseModel):

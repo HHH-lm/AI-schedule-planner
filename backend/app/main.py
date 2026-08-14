@@ -7,14 +7,19 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_settings
-from app.routers import breakdown, conflicts, health, match_task, memories, parse, plan, plan_v2, reminders
+from app.routers import breakdown, conflicts, health, match_task, memories, parse, plan_v2, reminders
 from app.services.push import push_channel_ready
 from app.services.reminders import scan_reminders
 
 
 settings = get_settings()
+
+limiter = Limiter(key_func=lambda: "global", default_limits=["60/minute"])
 
 
 @asynccontextmanager
@@ -55,12 +60,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
 for router in (
     health.router,
     memories.router,
     parse.router,
     breakdown.router,
-    plan.router,
     plan_v2.router,
     conflicts.router,
     reminders.router,
