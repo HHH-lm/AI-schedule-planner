@@ -1052,30 +1052,41 @@ export default function Home() {
     }> => {
       const current = dataRef.current;
       if (!current) return { added: 0, blockedCount: 0 };
-      const memories = (current.memories ?? [])
+      const allMemories = current.memories ?? [];
+      const memories = allMemories
         .filter((m) => m.status !== "archived")
+        .map((m) => m.content);
+      // 长期约束（long-term-constraint 类型记忆）作为硬约束传给规划器
+      const constraints = allMemories
+        .filter((m) => m.status !== "archived" && m.category === "long-term-constraint")
         .map((m) => m.content);
       const rangeStart = todayKey();
       const rangeEnd = toDateKey(addDays(parseDateKey(rangeStart), 13));
-      // 将任务展开为子任务进行规划：子任务是真正要执行的工作项
-      const planInputs = tasks.flatMap((task) => {
-        const items =
-          task.subtasks.length > 0
-            ? task.subtasks.map((sub) => ({
-                title: sub.name,
-                taskId: task.id,
-                subtaskId: sub.id,
-              }))
-            : [{ title: task.name, taskId: task.id, subtaskId: undefined }];
-        return items.map((item) => ({
-          title: item.title,
-          duration: 60,
-          priority: task.priority === "urgent-important" ? "high" : "auto",
-          deadline: task.date ?? undefined,
-          task_id: item.taskId,
-          subtask_id: item.subtaskId,
-        }));
-      });
+      // 只规划子任务：子任务是真正要执行的工作项
+      // - 跳过没有子任务的任务（只有任务名不规划）
+      // - 跳过已勾选完成的子任务
+      const planInputs = tasks
+        .filter((task) => task.subtasks.length > 0) // 跳过空子任务的任务
+        .flatMap((task) =>
+          task.subtasks
+            .filter((sub) => !sub.done) // 跳过已完成的子任务
+            .map((sub) => ({
+              title: sub.name,
+              duration: 60,
+              priority: task.priority === "urgent-important" ? "high" : "auto",
+              deadline: task.date ?? undefined,
+              task_id: task.id,
+              subtask_id: sub.id,
+            }))
+        );
+
+      if (planInputs.length === 0) {
+        return {
+          added: 0,
+          blockedCount: 0,
+          message: "没有需要规划的子任务（请添加未完成的子任务）",
+        };
+      }
 
       const result = await apiPost<{
         source: "openai" | "deepseek" | "local" | "none";
@@ -1095,7 +1106,7 @@ export default function Home() {
         goal: "",
         tasks: planInputs,
         memories,
-        constraints: [],
+        constraints,
         existing_schedule: current.timeBlocks.map((block) => ({
           date: block.date,
           start: block.start,

@@ -5,8 +5,10 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from app.schemas import ExistingBlock, PlanV2Task
+from app.schemas import ConstraintSpec
 from app.services.scheduling_engine import (
     SlotScorer,
+    build_constraint_filters,
     parse_constraint_filters,
     resolve_priority,
     schedule_tasks,
@@ -713,4 +715,132 @@ def test_memory_morning_preference_does_not_override_fixed_meeting() -> None:
     )
     assert not overlaps_meeting, (
         f"Memory 偏好上午不能覆盖周二 9:00-11:00 固定会议，实际排在了 {block.date} {block.start // 60}:{block.start % 60:02d}"
+    )
+
+
+
+# ============================================================
+# 8. LLM 结构化约束（build_constraint_filters）
+# ============================================================
+
+def test_build_constraint_filters_day_start() -> None:
+    """ConstrainSpec.day_start 应排除该点之前的时段。"""
+    spec = ConstraintSpec(day_start=14)
+    filters = build_constraint_filters(spec)
+    assert len(filters) == 1
+    before = FreeSlot("2026-08-14", 13 * 60 + 30, 14 * 60)
+    at = FreeSlot("2026-08-14", 14 * 60, 15 * 60)
+    assert filters[0](before) is False, "day_start 前应被排除"
+    assert filters[0](at) is True, "day_start 点应允许"
+
+
+def test_build_constraint_filters_day_end() -> None:
+    """ConstrainSpec.day_end 应排除该点之后的时段。"""
+    spec = ConstraintSpec(day_end=18)
+    filters = build_constraint_filters(spec)
+    assert len(filters) == 1
+    before = FreeSlot("2026-08-14", 17 * 60, 18 * 60)
+    after = FreeSlot("2026-08-14", 20 * 60, 21 * 60)
+    assert filters[0](before) is True
+    assert filters[0](after) is False, "day_end 后应被排除"
+
+
+def test_build_constraint_filters_exclude_weekday() -> None:
+    """ConstrainSpec.exclude_weekdays 应排除对应星期。"""
+    spec = ConstraintSpec(exclude_weekdays=[2])  # 周三
+    filters = build_constraint_filters(spec)
+    assert len(filters) == 1
+    wed = FreeSlot("2026-08-05", 10 * 60, 11 * 60)  # 2026-08-05 是周三
+    mon = FreeSlot("2026-08-03", 10 * 60, 11 * 60)  # 2026-08-03 是周一
+    assert filters[0](wed) is False
+    assert filters[0](mon) is True
+
+
+def test_build_constraint_filters_exclude_period() -> None:
+    """ConstrainSpec.exclude_periods 应排除对应时段。"""
+    spec = ConstraintSpec(exclude_periods=["晚上"])
+    filters = build_constraint_filters(spec)
+    assert len(filters) == 1
+    night = FreeSlot("2026-08-14", 20 * 60, 21 * 60)
+    morning = FreeSlot("2026-08-14", 9 * 60, 10 * 60)
+    assert filters[0](night) is False
+    assert filters[0](morning) is True
+
+
+def test_build_constraint_filters_none() -> None:
+    """None spec 应返回空列表。"""
+    assert build_constraint_filters(None) == []
+
+
+# ============================================================
+# 9. 回归：整天空闲槽 + 时间类硬约束（长期约束带条件）
+# ============================================================
+
+def test_schedule_tasks_time_after_on_full_day_slot() -> None:
+    """回归：'从14:00开始安排' 不应把整天空闲槽全部过滤掉。
+
+    此前约束在整槽（06:00-23:00）粒度按 slot.start 判断，
+    slot.start=6:00 < 14:00 恒成立 → 所有槽被排除 → 无法排期。
+    现在约束应在候选位置粒度校验，任务应排到 14:00 及之后。
+    """
+    tasks = [PlanV2Task(title="写周报", duration=60, priority="auto")]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks,
+        [],
+        (date(2026, 8, 16), date(2026, 8, 29)),
+        ["写周报"],
+        constraint_filters=parse_constraint_filters(["从14:00开始安排工作"]),
+    )
+    assert len(blocks) == 1, f"应能排出任务，实际 unassigned={unassigned}"
+    assert blocks[0].start >= 14 * 60, (
+        f"'从14:00开始安排' 应排 14:00 之后，实际 {blocks[0].start // 60}:{blocks[0].start % 60:02d}"
+    )
+
+
+def test_schedule_tasks_constraint_spec_day_start_on_full_day_slot() -> None:
+    """回归：LLM 结构化约束 day_start 不应导致全部任务无法排期。"""
+    tasks = [PlanV2Task(title="写周报", duration=60, priority="auto")]
+    spec = ConstraintSpec(day_start=14)
+    blocks, unassigned, _ = schedule_tasks(
+        tasks,
+        [],
+        (date(2026, 8, 16), date(2026, 8, 29)),
+        ["写周报"],
+        constraint_filters=build_constraint_filters(spec),
+    )
+    assert len(blocks) == 1, f"应能排出任务，实际 unassigned={unassigned}"
+    assert blocks[0].start >= 14 * 60, (
+        f"day_start=14 应排 14:00 之后，实际 {blocks[0].start // 60}:{blocks[0].start % 60:02d}"
+    )
+
+
+def test_schedule_tasks_time_before_keeps_before_hour() -> None:
+    """回归：'下午三点前' 应把任务排在 15:00 之前，且不能无法排期。"""
+    tasks = [PlanV2Task(title="写周报", duration=60, priority="auto")]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks,
+        [],
+        (date(2026, 8, 16), date(2026, 8, 29)),
+        ["写周报"],
+        constraint_filters=parse_constraint_filters(["下午三点前"]),
+    )
+    assert len(blocks) == 1, f"应能排出任务，实际 unassigned={unassigned}"
+    assert blocks[0].start < 15 * 60, (
+        f"'下午三点前' 应排 15:00 之前，实际 {blocks[0].start // 60}:{blocks[0].start % 60:02d}"
+    )
+
+
+def test_schedule_tasks_exclude_evening_never_places_evening() -> None:
+    """回归：'不要安排在晚上' 在整天空闲槽上也不得排到晚上（候选粒度校验）。"""
+    tasks = [PlanV2Task(title="写周报", duration=60, priority="auto")]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks,
+        [],
+        (date(2026, 8, 16), date(2026, 8, 29)),
+        ["写周报"],
+        constraint_filters=parse_constraint_filters(["不要安排在晚上"]),
+    )
+    assert len(blocks) == 1, f"应能排出任务，实际 unassigned={unassigned}"
+    assert blocks[0].start < 18 * 60, (
+        f"'不要安排在晚上' 不应排到晚上，实际 {blocks[0].start // 60}:{blocks[0].start % 60:02d}"
     )

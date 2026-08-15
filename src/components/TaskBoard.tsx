@@ -266,11 +266,12 @@ export default function TaskBoard({
     try {
       const result = await onPlanTasks(data.tasks);
       const message =
-        result.added > 0
+        result.message ??
+        (result.added > 0
           ? `AI 规划完成：新增 ${result.added} 个时间块${
               result.blockedCount > 0 ? `，跳过 ${result.blockedCount} 个冲突` : ""
             }`
-          : "AI 没有生成新的时间块，请调整任务或已有安排后重试";
+          : "AI 没有生成新的时间块，请调整任务或已有安排后重试");
       setFeedback(message);
     } catch (error) {
       setFeedback(

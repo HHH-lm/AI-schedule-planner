@@ -42,7 +42,12 @@ from app.services.ai import (
     parse_model_json,
     resolve_ai_provider,
 )
-from app.services.scheduling_engine import parse_constraint_filters, schedule_tasks
+from app.schemas import ConstraintSpec
+from app.services.scheduling_engine import (
+    build_constraint_filters,
+    parse_constraint_filters,
+    schedule_tasks,
+)
 
 
 CATEGORY_VALUES = ("work", "study", "fitness", "life", "rest")
@@ -111,6 +116,16 @@ def _build_understanding_prompt(
     lines.append("4. 如果任务有 deadline，请在 notes 中标注时间紧迫性")
     lines.append("5. 任务 title 必须与输入完全一致，不要修改")
     lines.append("6. 只输出 JSON")
+
+    if constraints:
+        lines.append("## 约束解析要求")
+        lines.append('7. 若存在约束，请在 JSON 顶层同时输出 "constraints" 字段：')
+        lines.append('   {"day_start": 可排最早小时(0-23)或null, "day_end": 可排最晚小时或null, ')
+        lines.append('    "exclude_weekdays": [0-6], "exclude_periods": ["上午"/"下午"/"晚上"/"凌晨"], ')
+        lines.append('    "max_daily_minutes": 数字或null}')
+        lines.append('8. 例："从14:00开始安排" → day_start=14；"周三晚上不能学习" → exclude_weekdays=[2], exclude_periods=["晚上"]')
+        lines.append('9. 最终格式：{"understandings": [...], "constraints": {...}}')
+        lines.append("")
 
     return "\n".join(lines)
 
@@ -277,8 +292,15 @@ async def plan_v2_schedule(
             ]
 
         # ── 步骤 2: SchedulingEngine 调度 ──
-        # 将理解结果中的类别等信息应用到任务打分
-        constraint_filters = parse_constraint_filters(request.constraints)
+        # 从同一次 LLM 理解输出中提取结构化约束（不再二次调用 LLM，避免前端超时）
+        spec = None
+        if isinstance(understanding_payload, dict) and understanding_payload.get("constraints"):
+            try:
+                spec = ConstraintSpec.model_validate(understanding_payload["constraints"])
+            except Exception:
+                spec = None
+        llm_filters = build_constraint_filters(spec) if spec else []
+        constraint_filters = llm_filters or parse_constraint_filters(request.constraints)
         understandings_dict = {u["title"]: u for u in understandings}
         blocks, unassigned, _issues = schedule_tasks(
             request.tasks,

@@ -211,6 +211,15 @@ class PlanningRange(BaseModel):
     end: str = Field(description="YYYY-MM-DD")
 
 
+class ConstraintSpec(BaseModel):
+    """LLM 解析长期约束后生成的结构化硬约束。"""
+    day_start: int | None = Field(default=None, ge=0, le=23, description="每日最早可排小时（X点前不排）")
+    day_end: int | None = Field(default=None, ge=0, le=23, description="每日最晚可排小时（X点后不排）")
+    exclude_weekdays: list[int] = Field(default_factory=list, description="排除的星期（0=周一 ... 6=周日）")
+    exclude_periods: list[str] = Field(default_factory=list, description="排除的时段（上午/下午/晚上/凌晨）")
+    max_daily_minutes: int | None = Field(default=None, ge=0, description="每日最大可排分钟数")
+
+
 class PlanV2Request(BaseModel):
     goal: str = Field(default="", max_length=500, description="user goal")
     tasks: list[PlanV2Task] = Field(min_length=1, max_length=50)
