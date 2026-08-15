@@ -29,7 +29,7 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
-from app.schemas import ExistingBlock, PlanV2Block, PlanV2Task
+from app.schemas import ConstraintSpec, ExistingBlock, PlanV2Block, PlanV2Task
 from app.services.ai import parse_local_date
 from app.services.conflict import overlaps_with_any
 from app.services.nlp import guess_category
@@ -103,30 +103,70 @@ def parse_constraint_filters(
             if detected_period is not None:
                 filters.append(_make_period_filter(detected_period, exclude=True))
 
-        # "X点前" 或 "X点后"（支持中文数字和阿拉伯数字，支持上午/下午前缀）
+        # 处理时点约束（支持中文数字/阿拉伯数字，上午/下午前缀）
         hour = None
-        direction = None
-        # 先尝试阿拉伯数字
-        time_match = re.search(r"(\d+)\s*点\s*(前|后)", text_stripped)
-        if time_match:
-            hour = int(time_match.group(1))
-            direction = time_match.group(2)
+        constraint_type = None  # "before" / "after" / "start"
+
+        # ① "X点前" 或 "X点后"
+        m = re.search(r"(\d+)\s*点\s*(前|后)", text_stripped)
+        if m:
+            hour = int(m.group(1))
+            constraint_type = "before" if m.group(2) == "前" else "after"
         else:
-            # 尝试中文数字
-            cn_match = re.search(r"([一二三四五六七八九十\d]+)\s*点\s*(前|后)", text_stripped)
-            if cn_match:
-                cn_hour = _parse_chinese_number(cn_match.group(1))
+            cn = re.search(r"([一二三四五六七八九十\d]+)\s*点\s*(前|后)", text_stripped)
+            if cn:
+                cn_hour = _parse_chinese_number(cn.group(1))
                 if cn_hour is not None:
                     hour = cn_hour
-                    direction = cn_match.group(2)
-        if hour is not None and direction:
-            # 处理"下午X点" → +12小时，变为 15:00（下午三点 = 15:00）
-            if "下午" in text_stripped and 1 <= hour <= 11:
-                hour += 12
-            if direction == "前":
-                filters.append(_make_time_before_filter(hour))
+                    constraint_type = "before" if cn.group(2) == "前" else "after"
+
+        # ② "从X点开始" / "X:00开始" / "X点起" / "X点后开始" → 视为"X点后开始"
+        if hour is None:
+            # 匹配 "从14:00开始"/"14:00开始"/"14点开始"/"从14点开始安排"
+            m2 = re.search(r"从\s*(\d{1,2})\s*[:：]\s*(?:00)?\s*开始", text_stripped)
+            if not m2:
+                m2 = re.search(r"(\d{1,2})\s*[:：]\s*(?:00)?\s*开始", text_stripped)
+            if not m2:
+                m2 = re.search(r"从\s*(\d{1,2})\s*点\s*(?:开始|起)", text_stripped)
+            if not m2:
+                m2 = re.search(r"(\d{1,2})\s*点\s*(?:开始|起)", text_stripped)
+            if m2:
+                hour = int(m2.group(1))
+                constraint_type = "start"
             else:
-                filters.append(_make_time_after_filter(hour))
+                cn2 = re.search(r"([一二三四五六七八九十]+)\s*点\s*(?:开始|起)", text_stripped)
+                if cn2:
+                    cn_hour = _parse_chinese_number(cn2.group(1))
+                    if cn_hour is not None:
+                        hour = cn_hour
+                        constraint_type = "start"
+
+        if hour is not None and constraint_type:
+            # 12 小时制 → 24 小时制："下午X点" / "晚上X点"（如 下午3点=15:00，晚上9点=21:00）
+            if (
+                ("下午" in text_stripped or "晚上" in text_stripped)
+                and 1 <= hour <= 11
+            ):
+                hour += 12
+            # "14点" 已按 24 小时制处理
+            # 否定式时点约束翻转方向：
+            #   "9点前安排" → 只允许 9 点前；"9点前不安排" → 排除 9 点前（允许 9 点及之后）
+            #   "9点后安排" → 只允许 9 点后；"9点后不安排" → 排除 9 点后（允许 9 点前）
+            has_negation = any(
+                kw in text_stripped
+                for kw in ("不要", "不安排", "避开", "跳过", "不可", "不行", "不能", "别安排", "勿")
+            )
+            if constraint_type == "before":
+                if has_negation:
+                    filters.append(_make_time_after_filter(hour))
+                else:
+                    filters.append(_make_time_before_filter(hour))
+            else:
+                # "X点后" 和 "从X点开始" 都默认排除这个点之前的时段
+                if has_negation:
+                    filters.append(_make_time_before_filter(hour))
+                else:
+                    filters.append(_make_time_after_filter(hour))
 
     return filters
 
@@ -517,6 +557,46 @@ def resolve_priority(task: PlanV2Task) -> str:
     return "medium"
 
 
+def build_constraint_filters(spec: ConstraintSpec | None) -> list[Any]:
+    """将 LLM 解析出的结构化 ConstraintSpec 转换为 slot 过滤函数列表。
+
+    每个过滤函数接受 FreeSlot，返回 True = 允许该时段，False = 排除。
+    """
+    if spec is None:
+        return []
+    filters: list[Any] = []
+
+    if spec.exclude_weekdays:
+        excluded = set(spec.exclude_weekdays)
+        filters.append(
+            lambda slot: _weekday_of(slot) not in excluded
+        )
+
+    if spec.exclude_periods:
+        excluded_periods = set(spec.exclude_periods)
+        filters.append(
+            lambda slot: _period_label(_slot_hour(slot)) not in excluded_periods
+        )
+
+    if spec.day_start is not None:
+        filters.append(_make_time_after_filter(spec.day_start))
+
+    if spec.day_end is not None:
+        filters.append(_make_time_before_filter(spec.day_end))
+
+    # 每日最大可排分钟：由 slot 本身不承载，需在调用处额外处理，
+    # 这里不做 slot 级别过滤。
+    return filters
+
+
+def _weekday_of(slot: FreeSlot) -> int:
+    from datetime import date as dt_date
+    try:
+        return dt_date.fromisoformat(slot.date).weekday()
+    except (ValueError, TypeError):
+        return -1
+
+
 # ── 主入口 ──
 
 def schedule_tasks(
@@ -573,12 +653,11 @@ def schedule_tasks(
         day_start=day_start,
         day_end=day_end,
     )
-    # 应用 hard constraints 排除非法时段
-    if constraint_filters:
-        all_free_slots = [
-            slot for slot in all_free_slots
-            if all(fn(slot) for fn in constraint_filters)
-        ]
+    # 注：hard constraints 不在“整天空闲槽”粒度上过滤。
+    # find_free_slots 生成的空闲槽可能横跨一整天（如 06:00-23:00），
+    # 而时间类约束（如“从14:00开始”）是按候选时段起点判断的，
+    # 若在整槽粒度过滤会把整槽误判为非法，导致所有任务都无法排期。
+    # 因此约束统一在下方候选位置（15 分钟粒度）上校验。
 
     # 3. 逐任务分配
     blocks: list[PlanV2Block] = []
@@ -605,6 +684,9 @@ def schedule_tasks(
                 for minute_start in range(slot.start, slot.end - task.duration + 1, 15):
                     # 创建候选时间块的临时 slot 用于评分
                     candidate_slot = FreeSlot(slot.date, minute_start, minute_start + task.duration)
+                    # hard constraints 在候选粒度校验（True=允许该时段）
+                    if constraint_filters and not all(fn(candidate_slot) for fn in constraint_filters):
+                        continue
                     position_score = scorer.score(candidate_slot, task, priority, memories, task_understanding)
                     if position_score <= best_score:
                         continue
