@@ -206,6 +206,7 @@ grep '"event": "ai.response"' <日志> | python3 -c \
 ## 8. 已知限制
 
 - 云同步依赖 Supabase Email Auth；未登录时仅本地模式，不读写云端数据
+- Vercel 默认 `*.vercel.app` 域名在部分网络（常见于国内运营商/防火墙环境）无法直接访问；手机打不开时先使用代理/VPN，长期无代理访问需绑定自定义域名 + Cloudflare 等 CDN 回源，或改用国内可达入口
 - 本地模式（未启动 FastAPI 后端）没有后端日志，故障排查依赖浏览器控制台与 `.backend.log`；后端运行时的结构化日志见第 4 节
 - AI 解析会把用户输入文本发送到 OpenAI / DeepSeek 服务端，涉及隐私的内容请谨慎输入；Key 仅保存在 FastAPI 后端环境变量
 - AI 解析请求默认 15 秒超时，可通过 `AI_TIMEOUT_MS` 调整；复杂长句可能需要更长响应时间，超时后请重试或简化输入
