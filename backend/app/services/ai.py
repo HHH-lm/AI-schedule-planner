@@ -82,26 +82,34 @@ def parse_local_date(date_text: str) -> date | None:
 
 
 def weekday_label(value: date) -> str:
-    return ("周日", "周一", "周二", "周三", "周四", "周五", "周六")[value.weekday()]
+    return ("周一", "周二", "周三", "周四", "周五", "周六", "周日")[value.weekday()]
 
 
 def build_system_prompt(today: str) -> str:
     today_date = parse_local_date(today) or date.today()
     tomorrow_text = (today_date + timedelta(days=1)).isoformat()
+    weekday_dates = []
+    for index, label in enumerate(("周一", "周二", "周三", "周四", "周五", "周六", "周日")):
+        offset = (index - today_date.weekday()) % 7
+        weekday_dates.append(f"{label}={ (today_date + timedelta(days=offset)).isoformat()}")
+    weekday_map_text = "，".join(weekday_dates)
     return "\n".join(
         [
-            "你是日程解析器，把中文安排解析成 JSON，只输出 JSON。",
-            '格式:{"schedules":[{"name":"事项名","date":"YYYY-MM-DD","start":分钟,"end":分钟,'
-            '"category":"work|study|fitness|life|rest","location":"地点"}],'
-            '"rejected":{"code":"garbage|invalid_weekday|missing_action|detached_location",'
-            '"message":"中文原因"}或null}',
-            f"今天={today}（{weekday_label(today_date)}），明天={tomorrow_text}；"
-            "“周X”=从今天起最近的下一个周X（含今天）。",
-            "start/end=当天0点起分钟数（14:30=870），end>start，至少15分钟。",
-            '"在/去/地点:"后的地点放location，不要混入name。',
-            "category:work=工作,study=学习,fitness=健身,life=生活,rest=休息。",
-            "同一时间段（date/start/end相同）的多个事项合并为一个schedule，name用\" + \"连接。",
-            "多句拆成多个schedule；无有效安排时schedules=[]且rejected给原因。",
+                "你是日程解析器，把中文安排解析成 JSON，只输出 JSON。",
+                '格式:{"schedules":[{"name":"事项名","date":"YYYY-MM-DD","start":分钟,"end":分钟,'
+                '"category":"work|study|fitness|life|rest","location":"地点"}],'
+                '"rejected":{"code":"garbage|invalid_weekday|missing_action|detached_location",'
+                '"message":"中文原因"}或null}',
+                f"今天={today}（{weekday_label(today_date)}），明天={tomorrow_text}；"
+                f"本周日期映射：{weekday_map_text}；"
+                "“周X”必须按上面映射选择，绝不可选已经过去的日子，也不可把“周六”当成今天。",
+                "start/end=当天0点起分钟数（14:30=870），end>start，至少15分钟。",
+                "只有一个开始时间（如“下午3点健身”“晚上8点读书”）时，end=start+60，即默认1小时，禁止输出2小时。",
+                '"在/去/地点:"后的地点放location，并从name中去掉；例如“去健身房跑步”→name="跑步"、location="健身房"。',
+                "category:work=工作/写代码/开会/项目/客户，study=学习/阅读/写文章/AI，fitness=健身/跑步/瑜伽/篮球/游泳，life=生活/吃饭/家务/通勤，rest=休息/冥想。",
+                "只有时间没有事项名（如“明天下午3点”）时，schedules=[]且rejected.code=\"missing_action\"，不要生成名称只是时间的schedule。",
+                "同一时间段（date/start/end相同）的多个事项合并为一个schedule，name用\" + \"连接。",
+                "多句拆成多个schedule；无有效安排时schedules=[]且rejected给原因。",
         ]
     )
 

@@ -116,15 +116,16 @@ def _build_understanding_prompt(
     lines.append("4. 如果任务有 deadline，请在 notes 中标注时间紧迫性")
     lines.append("5. 任务 title 必须与输入完全一致，不要修改")
     lines.append("6. 只输出 JSON")
+    lines.append("7. 记忆偏好适用于全部任务：记忆明确提到上午/下午/晚上时，所有任务的 preferred_time 都应优先遵循该记忆，除非任务名称明显冲突")
 
     if constraints:
         lines.append("## 约束解析要求")
-        lines.append('7. 若存在约束，请在 JSON 顶层同时输出 "constraints" 字段：')
+        lines.append('8. 若存在约束，请在 JSON 顶层同时输出 "constraints" 字段：')
         lines.append('   {"day_start": 可排最早小时(0-23)或null, "day_end": 可排最晚小时或null, ')
         lines.append('    "exclude_weekdays": [0-6], "exclude_periods": ["上午"/"下午"/"晚上"/"凌晨"], ')
         lines.append('    "max_daily_minutes": 数字或null}')
-        lines.append('8. 例："从14:00开始安排" → day_start=14；"周三晚上不能学习" → exclude_weekdays=[2], exclude_periods=["晚上"]')
-        lines.append('9. 最终格式：{"understandings": [...], "constraints": {...}}')
+        lines.append('9. 例："从14:00开始安排" → day_start=14；"周三晚上不能学习" → exclude_weekdays=[2], exclude_periods=["晚上"]')
+        lines.append('10. 最终格式：{"understandings": [...], "constraints": {...}}')
         lines.append("")
 
     return "\n".join(lines)

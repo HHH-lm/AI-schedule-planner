@@ -316,7 +316,7 @@ def score_understanding(
         return 0.0
 
     hour = _slot_hour(slot)
-    period = _period_label(hour)
+    period = _period_label(slot.start / 60.0)
     score = 0.0
 
     # preferred_time 匹配

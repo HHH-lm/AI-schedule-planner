@@ -35,11 +35,13 @@
 | F-018 | 定时提醒与微信推送（APScheduler 每 5 分钟扫描、reminder_log 去重、企业微信/PushPlus/Server酱） | 高 | 已完成 | F-009, F-016 | 后端 pytest 34 个测试通过 + 提醒端点探测通过 | E-T015-001 |
 | F-020 | 记忆系统（用户主动管理长期偏好、习惯、生活/工作偏好、长期约束，AI 只生成候选记忆） | 中 | 已完成 | 无 | 前端测试 + tsc + lint + build + 后端 pytest 通过 | 待补充 |
 | F-019 | 今日待办四象限（紧急/重要矩阵分组、新建任务象限选择、任务看板象限色点） | 高 | 已完成 | F-017 | 前端测试 + tsc + lint + build + 注入数据截图验证 | E-T016-001 |
+| F-021 | AI 解析质量评测与回归（30 条 golden set：10 QuickAdd + 10 Planning + 5 边界异常 + 5 Constraint/Memory） | 高 | 已完成 | F-015 | 评测命令通过 + 真实 DeepSeek 30/30 + 证据入账 | E-T022-001 |
 
 ## 功能变更历史
 
 按时间倒序追加：日期、功能 ID、变化、原因、影响、证据 ID 和确认来源。
 
+- 2026-08-16：F-021，新增 AI 解析质量评测：30 条中文 golden set（10 QuickAdd + 10 Planning + 5 边界异常 + 5 Constraint/Memory），新增 `backend/app/golden_ai_cases.py` 与 `backend/app/eval_ai_golden.py`；评测发现并修复 weekday_label 周日错标、晚上偏好按时段中点误判、记忆未应用到全部任务；真实 DeepSeek 四类均 100%，证据 E-T022-001，来源：用户指令。
 - 2026-08-11：F-018，修订 PushPlus 推送判定：PushPlus 通道从“仅看 HTTP 状态码”改为解析响应并校验 `code == 200`，`code 905`（未实名认证）等业务失败不再误记成功、不写 `reminder_log`、可自动重试；原因：用户实测 `pushed:3` 但微信收不到，直测 PushPlus 返回 905；影响：`push_wechat_message`、提醒去重与重试语义；证据 E-T019-001，来源：用户反馈定位。
 - 2026-08-11：F-018，修订 remindAt 保存链路：修复 BlockModal 保存时遗漏 `remindAt` 导致云端时间块无提醒时间的缺陷；`addParsedBlocks`、`planTasks` 生成的新块和待排期拖拽落点自动写入“开始前 5 分钟”默认提醒；原因：用户实测 `pushed:0`，云端 32 个时间块全部缺 `remindAt`；影响：`saveBlock`、WeekTimeline 落点、`defaultRemindAtISO` 工具；证据 E-T018-001，来源：用户反馈定位。
 - 2026-08-11：F-018，修订默认提醒行为：BlockModal 新建/编辑时间块时，若未设置过提醒，自动预填“开始前 5 分钟”；修改日期或开始时间且未手动触碰提醒时自动重算，跨天正确回落到前一天；手动修改后保留手动值，清空则关闭提醒；原因：用户反馈每次手动填写微信提醒时间冗余；影响：BlockModal 默认值逻辑、`remindBeforeInput` 工具、提醒输入提示文案；证据 E-T017-001，来源：用户反馈。

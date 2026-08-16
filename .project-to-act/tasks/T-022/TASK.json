@@ -1,0 +1,36 @@
+{
+  "taskId": "T-022",
+  "title": "AI 解析质量度量：30 条 golden set + 回归门禁",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "backend/app/services/ai.py",
+    "backend/app/golden_ai_cases.py",
+    "backend/app/eval_ai_golden.py",
+    "backend/tests/test_golden_ai_cases.py",
+    "package.json",
+    "README.md",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "建立 30 条 AI 解析 golden set 与评测命令，使解析质量可度量、prompt 变更可防退化，并形成简历可展示的评测证据。",
+  "dependencies": ["F-015", "F-016"],
+  "invariants": [
+    "golden set 固定锚定日期",
+    "评测不依赖 HTTP 限流",
+    "不记录密钥",
+    "门禁阈值可配置"
+  ],
+  "acceptance": [
+    "30 条 golden set 就绪（10 QuickAdd + 10 Planning + 5 边界异常 + 5 Constraint/Memory）",
+    "评测命令可通过且退出状态 0",
+    "真实 DeepSeek 评测 30/30 通过且四类均为 100%",
+    "后端与前端测试保持通过"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q",
+    "npm test",
+    "cd backend && .venv/bin/python -m app.eval_ai_golden --provider deepseek"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "taskId": "T-021",
+  "title": "真实部署环境验收清单：Supabase Auth/RLS、真实 AI 调用、微信推送端到端",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "SESSION.md",
+    ".project-to-act/",
+    "docs/operations.md"
+  ],
+  "contract": "在真实部署环境逐项执行验收清单：Supabase Auth/RLS 隔离、真实 AI 调用、微信推送端到端，并逐项记录证据。",
+  "dependencies": ["F-009", "F-015", "F-018", "T-019"],
+  "invariants": [
+    "不修改业务代码",
+    "不粘贴密钥、完整个人信息或未脱敏工具输出",
+    "验收数据与测试用户使用后清理",
+    "真实用户数据不写入、不修改"
+  ],
+  "acceptance": [
+    "Supabase Auth 创建/登录/错误密码路径真实通过",
+    "RLS 跨用户读/写/删隔离真实通过，anon 无权限",
+    "DeepSeek 真实 API 解析返回 source=deepseek 与有效 schedule",
+    "PushPlus 真实推送 pushed=1、errors=[]，reminder_log 去重生效",
+    "验收数据与测试用户已清理"
+  ],
+  "validation": [
+    "curl http://localhost:3000/api/health",
+    "curl http://localhost:8000/api/v1/health",
+    "真实 Supabase/DeepSeek/PushPlus 端到端断言（见证据）"
+  ]
+}

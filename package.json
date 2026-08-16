@@ -10,6 +10,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "vitest run",
     "scan:secrets": "bash scripts/scan-secrets.sh",
+    "eval:ai:golden": "cd backend && .venv/bin/python -m app.eval_ai_golden",
     "clean": "rm -rf .next"
   },
   "dependencies": {
