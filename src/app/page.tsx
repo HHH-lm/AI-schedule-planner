@@ -1185,7 +1185,7 @@ export default function Home() {
 
   const currentTab = TABS.find((tab) => tab.key === view);
   const subTitle =
-    view === "today" ? "今日待办" : view === "week" ? "周计划" : currentTab?.label ?? "AI 日程";
+    view === "today" ? "今日待办" : view === "week" ? "周计划" : currentTab?.label ?? "AI日程";
   const subMeta =
     view === "today"
       ? "今天要做的安排与任务"
@@ -1200,7 +1200,7 @@ export default function Home() {
           <span className="nav-brand-mark">
             <CalendarRange size={15} />
           </span>
-          <span>AI 日程</span>
+          <span>AI日程</span>
         </div>
 
         <nav className="nav-links">
@@ -1564,7 +1564,7 @@ export default function Home() {
             </div>
           </div>
           <div className="site-footer-legal">
-            © 2026 AI 日程管理系统 · 数据默认保存在本地浏览器，可选 Supabase
+            © 2026 AI日程管理与个性化规划系统 · 数据默认保存在本地浏览器，可选 Supabase
             云同步。
           </div>
         </div>

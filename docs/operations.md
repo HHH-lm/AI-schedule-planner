@@ -1,6 +1,6 @@
 # 部署与运维手册
 
-> 适用于 AI 日程管理系统 v0.1.0（Next.js 15 前端 + FastAPI/Python 后端 + Supabase 可选同步）。
+> 适用于 AI日程管理与个性化规划系统 v0.1.0（Next.js 15 前端 + FastAPI/Python 后端 + Supabase 可选同步）。
 
 ## 1. 部署前检查清单
 

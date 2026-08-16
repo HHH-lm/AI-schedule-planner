@@ -3,13 +3,13 @@ import "./globals.css";
 import AppErrorBoundary from "@/components/AppErrorBoundary";
 
 export const metadata: Metadata = {
-  title: "AI 日程管理系统",
+  title: "AI日程管理与个性化规划系统",
   description: "AI 拆解宏观计划，双视图落地微观执行",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "AI 日程",
+    title: "AI日程",
   },
 };
 

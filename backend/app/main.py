@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(
-    title="AI 日程管理系统 API",
+    title="AI日程管理与个性化规划系统 API",
     description="自然语言解析、任务拆解、时间规划与冲突检测服务",
     version=settings.version,
     lifespan=lifespan,

@@ -73,7 +73,7 @@ async def push_wechat_message(
         url = "https://www.pushplus.plus/send"
         payload = {
             "token": settings.pushplus_token,
-            "title": "AI 日程提醒",
+            "title": "AI日程提醒",
             "content": message,
         }
         as_form = False
@@ -82,7 +82,7 @@ async def push_wechat_message(
             _log_failure(channel, started, reason="channel_not_configured")
             return False
         url = f"https://sctapi.ftqq.com/{settings.serverchan_key}.send"
-        payload = {"title": "AI 日程提醒", "desp": message}
+        payload = {"title": "AI日程提醒", "desp": message}
         as_form = True
     else:
         _log_failure(channel, started, reason="channel_not_configured")
