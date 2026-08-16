@@ -13,29 +13,73 @@
 - AI 解析：确认 FastAPI 后端已启动，`AI_PROVIDER` 与 `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` 符合预期；未配置时确认后端本地 NLP 规则可用
 - 定时提醒（可选）：确认 `SUPABASE_SERVICE_ROLE_KEY`、`WECHAT_PUSH_TYPE` 与对应 webhook/token 已配置，并在 Supabase 执行 `reminder_log` 建表 SQL
 
-## 2. 部署流程
+## 2. 上线形态：Vercel + FastAPI 自托管
 
-### Vercel
+目标链路：
 
-1. 推送 `main` 分支到 Git 远端并导入 Vercel 项目
-2. 在项目设置中配置环境变量（Supabase、`BACKEND_URL` 与 AI 解析变量，见 `.env.example`）
-3. 单独部署 FastAPI 后端，确保公网可访问 `BACKEND_URL`
-4. 部署后访问 `/api/health`，确认返回 `status: "ok"`，并访问 `/api/v1/health` 确认后端代理连通
-5. 如需保留服务端日志，在 Vercel 打开 Logs 与错误监控
-
-### Node.js + FastAPI 自托管
-
-```bash
-npm ci
-npm run build
-npm run start
-cd backend
-.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```text
+Next.js (Vercel 公网 URL)
+  ↓ /api/v1/*
+FastAPI (自托管公网 API)
+  ↓
+Supabase (真实云端数据库)
 ```
 
-建议使用进程管理器（如 `pm2` / systemd）分别守护 `npm run start` 与 uvicorn，并将 `PORT` / `BACKEND_PORT` 设置为预期端口。
+### 2.1 Vercel 前端
 
-定时提醒依赖 FastAPI 进程常驻：后端启动时会注册 APScheduler 定时任务，按 `REMINDER_SCAN_SECONDS`（默认 300 秒）扫描一次；若部署在 Serverless 冷启动平台，需要改用系统 cron 定时调用 `POST /api/v1/reminders/run`。
+1. 推送 `main` 分支到 GitHub 并导入 Vercel 项目
+2. 仓库根目录已提供 `vercel.json`，Framework 选择 Next.js
+3. 在 Vercel 项目设置中配置环境变量：
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `BACKEND_URL=https://<FastAPI 公网域名>`
+4. 部署后验证 `https://<web 域名>/api/health` 返回 `status: "ok"`
+
+### 2.2 FastAPI 自托管（Docker 推荐）
+
+在服务器执行：
+
+```bash
+git clone https://github.com/HHH-lm/ai-schedule-system.git /opt/ai-schedule-system
+cd /opt/ai-schedule-system
+cp .env.example .env.local
+# 填写 .env.local 中 AI/Supabase/推送相关变量
+cd deploy
+docker compose up -d --build
+```
+
+验证：
+
+```bash
+curl -s http://localhost:8000/api/v1/health
+```
+
+如需公网 HTTPS，建议在服务器前置 Nginx/Caddy 反向代理到 `127.0.0.1:8000`，并在 `BACKEND_URL` 中使用对应公网域名。
+
+### 2.3 FastAPI 自托管（systemd）
+
+```bash
+cd /opt/ai-schedule-system/backend
+python3 -m venv .venv
+.venv/bin/pip install uv
+.venv/bin/uv sync --frozen --no-dev
+cp ../deploy/systemd/ai-schedule-backend.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now ai-schedule-backend
+```
+
+### 2.4 公网验收
+
+```bash
+curl -s https://<web 域名>/api/health
+curl -s https://<api 域名>/api/v1/health
+curl -s https://<api 域名>/api/v1/reminders/status
+```
+
+- 浏览器打开公网 Web URL，完成注册/登录并确认云端数据读写
+- 在 QuickAdd 输入自然语言，确认经公网链路完成真实 AI 解析
+- 创建带微信提醒的时间块，确认后端扫描并推送成功
+- 定时提醒依赖 FastAPI 进程常驻；若部署到 Serverless 冷启动平台，需改用系统 cron 定时调用 `POST /api/v1/reminders/run`
 
 ## 3. 健康检查与监控
 
