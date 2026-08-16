@@ -1,4 +1,4 @@
-# AI 日程管理系统 · Agent 架构健康检查报告
+# AI日程管理与个性化规划系统 · Agent 架构健康检查报告
 
 > 检查方式：只读审计 + 本地冒烟验证（`pytest` 120 通过 / `vitest` 14 文件 82 通过）。未修改任何源文件、配置或运行文件。
 > 依据：`.project-to-act/` 全部文档、`backend/app/`、`src/`、`docs/`、`scripts/`、`supabase/schema.sql`、Git 状态。

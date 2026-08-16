@@ -117,7 +117,7 @@ if [ -n "$existing" ]; then
   existing_pid="${existing##* }"
   if frontend_assets_ok "$existing_port"; then
     ensure_backend
-    echo "AI 日程 dev server 已在运行：http://localhost:${existing_port}"
+    echo "AI日程 dev server 已在运行：http://localhost:${existing_port}"
     exit 0
   fi
   echo "检测到本项目前端实例异常（PID ${existing_pid}，端口 ${existing_port}），正在停止并清理缓存后重启..."

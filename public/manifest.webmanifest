@@ -1,6 +1,6 @@
 {
-  "name": "AI 日程管理系统",
-  "short_name": "AI 日程",
+  "name": "AI日程管理与个性化规划系统",
+  "short_name": "AI日程",
   "description": "AI 拆解宏观计划，双视图落地微观执行",
   "start_url": "/",
   "display": "standalone",

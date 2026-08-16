@@ -1,4 +1,4 @@
--- AI 日程管理系统：云同步表结构（Supabase Auth 多租户版）
+-- AI日程管理与个性化规划系统：云同步表结构（Supabase Auth 多租户版）
 -- 在 Supabase SQL Editor 中执行；需先启用 Authentication > Email provider。
 
 create table if not exists public.schedule_state (

@@ -4,7 +4,7 @@
 - 验证方法：
   - `python3 <project-to-act>/scripts/init_project_management.py --project-root <项目根> --check`，退出 0，结果 `managed`
   - `python3 <project-to-act>/scripts/init_project_management.py --project-root <项目根> --validate`，退出 0，结果 `valid: true`
-  - `python3 <develop-ai-agents>/scripts/manage_lifecycle.py --project-root <项目根> init --project-id ai-schedule-system --project-name "AI 日程管理系统"`，退出 0，创建 revision 0
+  - `python3 <develop-ai-agents>/scripts/manage_lifecycle.py --project-root <项目根> init --project-id ai-schedule-system --project-name "AI日程管理与个性化规划系统"`，退出 0，创建 revision 0
   - `python3 <develop-ai-agents>/scripts/manage_lifecycle.py --project-root <项目根> adopt --stage 5 --task-id T-ADOPT-001 --evidence E-ADOPT-001 --summary ...`，退出 0，revision 1，currentStage 5，status ready
   - `find src -type f | wc -l`，结果 18
   - `git log --oneline -15`，结果：当前分支 main 没有任何提交

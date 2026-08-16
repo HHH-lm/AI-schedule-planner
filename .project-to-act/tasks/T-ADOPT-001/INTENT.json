@@ -1,5 +1,5 @@
 {
-  "intent": "为既有 AI 日程管理系统建立 Agent 生命周期事实源，并诚实采用真实当前阶段。",
+  "intent": "为既有 AI日程管理与个性化规划系统建立 Agent 生命周期事实源，并诚实采用真实当前阶段。",
   "conflicts": "无：用户已初始化 project-to-act，并要求使用 develop-ai-agents 读取阶段、阻塞和证据。",
   "assumptions": [
     "用户同意项目 ID 使用 ai-schedule-system",
