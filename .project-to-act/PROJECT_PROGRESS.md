@@ -30,6 +30,7 @@
 | T-022 AI 解析质量度量（30 条 golden set：10 QuickAdd + 10 Planning + 5 边界 + 5 Constraint/Memory + 回归门禁） | 已完成 | Codex（用户指令） | 评测命令通过 + 真实 DeepSeek 30/30 + 证据入账 | E-T022-001 | 2026-08-16 |
 | T-023 后端可观测性（结构化日志 + 关键事件：AI 慢/失败、推送失败可查） | 已完成 | Codex（用户指令） | 后端 148 测试 + 实机日志验证 + 证据入账 | E-T023-001 | 2026-08-16 |
 | T-024 Vercel Serverless 形态改造（FastAPI Python Function + Cron 端点 + GitHub Actions 定时器 + 部署手册） | 进行中 | Codex（用户指令） | 后端 152 测试 + 前端 82 测试 + 密钥扫描 5/5 PASS + 部署手册就绪；公网 Vercel 部署验收待执行 | E-T024-001 | 2026-08-16 |
+| T-025 定义阶段 7 发布清单与发布 Gate（v0.1.0） | 已完成 | Codex（用户指令） | 发布清单写入 PROJECT_VERSIONS.md + G7-001 定义待执行 + 证据入账 | E-T025-001 | 2026-08-16 |
 
 ## 阻塞项
 
@@ -48,11 +49,13 @@
 6. 后端可观测性已建立（E-T023-001）：JSON 结构化日志 + AI/推送/提醒关键事件 + request_id 关联；上线后可用日志排查 AI 慢/失败与推送失败。
 7. 后续阶段 7 发布准备可继续：外部日志平台/SLO 告警、request_id 写入响应头。
 8. Vercel Serverless 改造代码部分完成（E-T024-001）：待用户登录 Vercel 后按 `docs/operations.md` 第 2 节部署后端/前端并跑公网验收（Auth/RLS、真实 AI、微信推送）。
+9. 阶段 7 发布清单与发布 Gate 已定义（E-T025-001）：执行基准见 `PROJECT_VERSIONS.md`「v0.1.0 发布清单」，Gate 记录于 `PROJECT_ACCEPTANCE.md` G7-001（当前待执行，由项目负责人逐项勾选后确认）。
 
 ## 进度历史
 
 按时间倒序追加：日期、完成事项、证据 ID、遗留问题、下一步和确认来源。不要覆盖旧记录。
 
+- 2026-08-16：T-025 定义阶段 7 发布清单与发布 Gate：发布清单写入 `.project-to-act/PROJECT_VERSIONS.md`（A 质量门禁 / B 版本产物 / C 环境变量与密钥 / D 数据与 Supabase / E 部署拓扑 / F 真实公网验收 / G 监控可观测性 / H 回滚风险 / I 人工确认与 Gate 执行），执行指南引用 `docs/operations.md`；`PROJECT_ACCEPTANCE.md` 新增 A-008 验收标准与 G7-001 Gate 记录（状态待执行，未伪造通过）；后端 pytest、前端 Vitest 保持通过。证据 E-T025-001。遗留问题：清单未执行，G7-001 发布 Gate 待项目负责人逐项勾选后确认。下一步：按清单执行公网部署与真实验收。来源：用户指令。
 - 2026-08-16：T-024 Vercel Serverless 改造（代码部分）：新增 `ENABLE_SCHEDULER` / `CRON_SECRET` / `CORS_ORIGINS` 配置，lifespan 仅在 `enable_scheduler=True` 时启动 APScheduler；新增 `GET /api/v1/reminders/cron`（Authorization Bearer 鉴权）；`backend/pyproject.toml` 配置 `[tool.vercel] entrypoint`、`backend/vercel.json` 配置 `maxDuration=60`；新增 `deploy/github-actions/reminder-cron.yml` 示例（复制到 `.github/workflows/` 后每 5 分钟定时触发）；`docs/operations.md` 第 2 节改为 Vercel Serverless 部署指南并保留自托管第 9 节；后端 152 测试（新增 4 Serverless 测试）、前端 82 测试、密钥扫描 5/5 PASS。证据 E-T024-001。遗留问题：公网 Vercel 部署未执行（本机无 Vercel CLI/登录态）。下一步：用户登录 Vercel 后按手册部署并跑公网验收清单。来源：用户指令。
 - 2026-08-16：完成 T-023 后端可观测性：后端从“无日志可查”升级为 JSON Lines 结构化日志（`app/logging_setup.py`），HTTP 中间件记录 `http.request`（method/path/status/duration_ms，含 429），AI 调用记录 `ai.request/response/timeout/error`，推送记录 `push.request/success/failure`（含 PushPlus 业务错误码），提醒扫描记录 `reminder.scan.*`/`reminder.push.*`，`request_id` 贯穿单次请求；`match_task` 静默吞错改为记录 `match_task.error`；`reminders` fetch 异常不再 500 而是记录 `reminder.scan.error` 并安全返回；后端 148 测试（新增 16 可观测性测试）、前端 82 测试、lint/tsc 全部通过，实机 DeepSeek 解析日志含完整 request_id 链路。证据 E-T023-001。遗留问题：未接外部日志平台/SLO 告警；request_id 未写入响应头。下一步：人工验收与阶段 7 发布准备。来源：用户指令。
 - 2026-08-16：完成 T-022 AI 解析质量度量：golden set 重构为 10 QuickAdd + 10 Planning + 5 边界异常 + 5 Constraint/Memory，新增 `app.eval_ai_golden` 评测命令；评测发现并修复 weekday_label 周日错标、晚上偏好按时段中点误判、记忆未应用到全部任务；真实 DeepSeek 四类均 100%，后端 132 测试与前端 82 测试通过。证据 E-T022-001。遗留问题：无。下一步：prompt/模型变更后重跑评测，继续人工验收与阶段 7 发布准备。来源：用户指令。

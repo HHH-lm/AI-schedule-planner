@@ -1,0 +1,33 @@
+{
+  "taskId": "T-025",
+  "title": "定义阶段 7 发布清单与发布 Gate（v0.1.0）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    ".project-to-act/PROJECT_VERSIONS.md",
+    ".project-to-act/PROJECT_ACCEPTANCE.md",
+    ".project-to-act/PROJECT_OVERVIEW.md",
+    ".project-to-act/PROJECT_PROGRESS.md",
+    ".project-to-act/tasks/T-025/",
+    "SESSION.md"
+  ],
+  "contract": "为首次发布 v0.1.0 定义发布 Gate 与可逐项勾选的发布清单：质量门禁、版本产物、环境变量、数据与 Supabase、部署拓扑、真实公网验收、监控可观测性、回滚风险、人工确认；Gate 记录在未执行前必须保持“待执行”，不得伪造通过。",
+  "dependencies": ["T-021", "T-023", "T-024"],
+  "invariants": [
+    "没有新鲜公网验收证据前，G7-001 发布 Gate 不得标记为通过",
+    "不修改业务代码",
+    "发布清单不含密钥或完整个人信息",
+    "清单项必须可勾选、可验证、有明确执行位置"
+  ],
+  "acceptance": [
+    "发布清单已写入 PROJECT_VERSIONS.md 并覆盖质量门禁/环境变量/部署/公网验收/监控/回滚/人工确认",
+    "PROJECT_ACCEPTANCE.md 新增 A-007 发布 Gate 验收标准与 G7-001 记录（状态待执行）",
+    "后端与前端测试保持通过",
+    "证据 E-T025-001 入账"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q",
+    "npm test"
+  ]
+}
