@@ -21,12 +21,15 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from datetime import date, timedelta
 from typing import Any
 
 import httpx
 
 from app.config import Settings
+from app.logging_setup import get_logger, log_event
 from app.schemas import (
     ExistingBlock,
     PlanV2Block,
@@ -51,6 +54,29 @@ from app.services.scheduling_engine import (
 
 
 CATEGORY_VALUES = ("work", "study", "fitness", "life", "rest")
+
+logger = get_logger("app.planner_v2")
+
+
+def _log_plan_v2_result(
+    started: float,
+    *,
+    source: str,
+    blocks: int,
+    unassigned: int,
+    level: int = logging.INFO,
+    **extra: Any,
+) -> None:
+    log_event(
+        logger,
+        level,
+        "plan_v2.result",
+        duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        source=source,
+        blocks=blocks,
+        unassigned=unassigned,
+        **extra,
+    )
 
 
 def _build_understanding_prompt(
@@ -222,9 +248,24 @@ async def plan_v2_schedule(
       2. SchedulingEngine：Python 调度引擎，根据理解 + 空闲时段分配任务
       3. LLM 解释层：为规划结果生成自然语言解释
     """
+    started = time.perf_counter()
+    log_event(
+        logger,
+        logging.INFO,
+        "plan_v2.start",
+        tasks=len(request.tasks),
+        existing_blocks=len(request.existing_schedule),
+        memories=len(request.memories),
+        constraints=len(request.constraints or []),
+        range=f"{request.planning_range.start}..{request.planning_range.end}",
+    )
     range_start = parse_local_date(request.planning_range.start)
     range_end = parse_local_date(request.planning_range.end)
     if not range_start or not range_end or range_end < range_start:
+        _log_plan_v2_result(
+            started, source="none", blocks=0, unassigned=0,
+            level=logging.WARNING, error="invalid_range",
+        )
         return PlanV2Response(
             source="none",
             blocks=[],
@@ -244,6 +285,10 @@ async def plan_v2_schedule(
             request.constraints,
         )
         result.message = resolved_message
+        _log_plan_v2_result(
+            started, source="local", blocks=len(result.blocks),
+            unassigned=len(result.unassigned), reason="no_ai_configured",
+        )
         return result
 
     try:
@@ -261,6 +306,7 @@ async def plan_v2_schedule(
             f"请为以下目标理解任务：{request.goal}" if request.goal else "请理解任务",
             resolved_provider,
             settings,
+            operation="plan.understand",
         )
         understanding_content = _extract_content(understanding_data)
         understanding_payload = parse_model_json(understanding_content)
@@ -322,12 +368,17 @@ async def plan_v2_schedule(
                     resolved_provider,
                     settings,
                     temperature=0.7,
+                    operation="plan.explain",
                 )
                 explanation_content = _extract_content(explanation_data)
                 explanation = explanation_content.strip()[:500]
             except Exception:
                 explanation = None
 
+        _log_plan_v2_result(
+            started, source=resolved_provider, blocks=len(blocks),
+            unassigned=len(unassigned), explanation=bool(explanation),
+        )
         return PlanV2Response(
             source=resolved_provider,
             blocks=blocks,
@@ -347,6 +398,11 @@ async def plan_v2_schedule(
             request.memories,
             constraint_filters=constraint_filters,
         )
+        _log_plan_v2_result(
+            started, source="local", blocks=len(blocks),
+            unassigned=len(unassigned), level=logging.WARNING,
+            error=f"ai_timeout:{timeout_seconds}s",
+        )
         return PlanV2Response(
             source="local",
             blocks=blocks,
@@ -364,6 +420,11 @@ async def plan_v2_schedule(
                 request.memories,
                 constraint_filters=constraint_filters,
             )
+            _log_plan_v2_result(
+                started, source="local", blocks=len(blocks),
+                unassigned=len(unassigned), level=logging.WARNING,
+                error=str(error)[:200],
+            )
             return PlanV2Response(
                 source="local",
                 blocks=blocks,
@@ -371,6 +432,11 @@ async def plan_v2_schedule(
                 message=f"AI 规划失败：{error}，已使用本地调度引擎",
             )
         except Exception as fallback_error:
+            _log_plan_v2_result(
+                started, source="none", blocks=0, unassigned=0,
+                level=logging.ERROR,
+                error=f"ai_error:{str(error)[:100]} fallback:{str(fallback_error)[:100]}",
+            )
             return PlanV2Response(
                 source="none",
                 blocks=[],

@@ -4,68 +4,47 @@
 
 ## 当前目标
 
-- 完成：AI 解析质量度量（30 条 golden set + 回归门禁），证据 E-T022-001（2026-08-16）
-- 上一目标（已完成）：真实部署环境验收清单，证据 E-T021-001
+- 完成：后端可观测性 — 结构化日志 + 关键事件（AI 慢/失败、推送失败可查），证据 E-T023-001（2026-08-16）
+- 上一目标（已完成）：AI 解析质量度量（30 条 golden set + 回归门禁），证据 E-T022-001
 
 ## 文件索引
 
-### 上线准备 / T-020
-- `backend/app/limiter.py` — 速率限制实例；业务路由添加 `@limiter.limit`
-- `backend/app/main.py` — SlowAPIMiddleware、默认 60 次/分钟全局兜底、注册新路由表
-- `backend/app/routers/` — parse/plan-v2/breakdown/conflicts/memories/reminders/match-task 增加限流；`plan.py` 移除
-- `backend/pyproject.toml` + `backend/uv.lock` — 新增 slowapi 依赖
-- `README.md`、`.project-to-act/PROJECT_OVERVIEW.md`、`.project-to-act/tasks/T-020/` — L2 风险等级、数据分类、README 与任务证据
+### 后端可观测性 / T-023
+- `backend/app/logging_setup.py` — JSON Lines 格式化、`setup_logging`（幂等）、`log_event` 埋点、`request_id` ContextVar
+- `backend/app/config.py` — 新增 `LOG_LEVEL` / `LOG_FORMAT`
+- `backend/app/main.py` — 启动初始化日志；HTTP 中间件记录 `http.request`（method/path/status/duration_ms，含 429），`request_id` 贯穿
+- `backend/app/services/ai.py` — `call_chat_completions` 增加 `operation` 参数；`ai.request/response/timeout/error`
+- `backend/app/services/push.py` — `push.request/success/failure`（含 PushPlus 业务错误码）
+- `backend/app/services/reminders.py` — `reminder.scan.start/due/done`、`reminder.push.failed/skipped`、`reminder.scan.error`；fetch 异常不再 500
+- `backend/app/services/planner_v2.py`、`planner.py` — `plan_v2.start/result`、`breakdown.start/result`
+- `backend/app/routers/parse.py`、`match_task.py` — `parse.result`、`match_task.start/result/error`（消除静默吞错）
+- `backend/tests/test_observability.py` — 16 个可观测性测试
+- `.env.example`、`docs/operations.md`（新增第 4 节“日志与可观测性”）、`README.md`
 
-### 真实部署验收 / T-021
-- `.project-to-act/tasks/T-021/` — TASK.json 与 E-T021-001 验收证据
-
-### AI 解析质量评测 / T-022
-- `backend/app/golden_ai_cases.py`、`backend/app/eval_ai_golden.py`、`backend/tests/test_golden_ai_cases.py`
-- `backend/app/services/ai.py` — 提示词加固 + 修复 weekday_label 周日错标
-- `backend/app/services/scheduling_engine.py` — 晚上偏好按开始小时评分
-- `backend/app/services/planner_v2.py` — 记忆偏好适用于全部任务
-- `.project-to-act/tasks/T-022/` — TASK.json 与 E-T022-001 证据
-
-### 调度与前端联动
-- `backend/app/services/scheduling_engine.py`、`planner_v2.py`、`schemas.py` — TaskUnderstanding 评分、硬约束过滤、task_id/subtask_id 透传
-- `backend/tests/test_scheduling_engine.py`、`test_api.py` — 约束/理解/记忆优先级测试，移除旧 `/plan` 测试
-- `src/app/page.tsx`、`src/components/WeekTimeline.tsx`、`TaskBoard.tsx`、`BlockModal.tsx`、`src/lib/types.ts` — 子任务与时间块完成状态双向同步、批量删除、紧凑时间块、视图记忆
-- `scripts/dev.sh` — uvicorn 增加 `--reload`
+### 历史（本会话之外，见 SESSION 历史）
+- T-020 速率限制 / T-021 真实部署验收 / T-022 AI golden set 评测：见 `.project-to-act/PROJECT_PROGRESS.md`
 
 ## Git 状态
 
-- 当前分支 `main`；最新提交已包含 T-021/T-022 功能、修复与证据；工作树仅剩未跟踪文件 `agentops-health-check-2026-08-16.md`（非本次任务产物）。
-
-### 本次修复（2026-08-16）
-- 根因：`schedule_tasks` 把硬约束在“整天空闲槽（06:00-23:00）”粒度过滤，
-  而时间类约束（`_make_time_after_filter` 等）按 `slot.start` 判断，
-  整槽 start=6:00 恒小于约束点 → 所有槽被排除 → 全部任务无法排期。
-- 修复：删除整槽粒度预过滤，改为在候选位置（15 分钟粒度）上校验硬约束；
-  顺带增强 `parse_constraint_filters`：否定式时点约束翻转方向（“9点前不安排”→ 允许 9 点后）、
-  “晚上X点”按 24 小时制转换（晚上9点=21:00）。
-- 涉及：`backend/app/services/scheduling_engine.py`、`backend/tests/test_scheduling_engine.py`
+- 当前分支 `main`；本次改动未提交（按约定需用户批准后才 `git add`/`git commit`）。
+- 本次改动文件：backend 10 个 + tests 1 个 + `.env.example` / `docs/operations.md` / `README.md` / `.project-to-act/`（T-023 任务与证据、PROJECT_PROGRESS、PROJECT_ACCEPTANCE、PROJECT_OVERVIEW）+ `SESSION.md`。
+- 工作树另有未跟踪文件 `agentops-health-check-2026-08-16.md`（非本次任务产物）。
 
 ## 验证结果
 
-- AI 解析质量评测（T-022）：真实 DeepSeek 四类 golden set 30/30（10 QuickAdd + 10 Planning + 5 边界 + 5 Constraint/Memory），字段/拒答/检查准确率均 100%；后端 132 测试、前端 82 测试通过；证据 E-T022-001
-- 真实部署验收（T-021）：Auth/RLS 15 项、DeepSeek 解析 1 项、PushPlus 端到端 8 项全部通过；证据 E-T021-001
-- 后端 pytest：124 个测试通过（新增 4 个回归：时间条件约束可排期、day_start 不阻塞、下午三点前、排除晚上）
-- 前端 Vitest：14 个文件、82 个测试通过
-- `npm run lint`：通过；`npx tsc --noEmit` 通过
-- 实机验证：`POST /api/v1/plan-v2`（provider=local）带“从14:00开始安排工作”→ 返回 14:00-15:00 时间块；修复前返回空 blocks
+- 后端 pytest：148 个测试通过（132 存量 + 16 新增可观测性），退出状态 0
+- 前端 Vitest：14 个文件、82 个测试通过；`npm run lint`、`npx tsc --noEmit` 通过
+- 实机验证：`POST /api/v1/parse`（真实 DeepSeek）→ `.backend.log` 输出 `ai.request`(request_id=dcb71d89b7f7) → `ai.response`(1020ms) → `parse.result`(source=deepseek) → `http.request`(200)，同一 request_id 贯穿；连续第 11 次 `POST /api/v1/reminders/run` 返回 429 且被中间件记录
+- 证据：E-T023-001
 
 ## Open Questions
 
-- `app.main` 与 `app.limiter` 分别创建了 Limiter 实例，当前形成“路由级 + 全局兜底”双层限流；后续可评估合并为单一实例。
-- T-020 证据的速率限制表中仍列出 `/api/v1/plan`，与已删除路由不一致，待确认后再更新证据。
+- 后端日志未接外部日志平台/SLO 告警；`request_id` 尚未写入响应头（阶段 7 发布准备可选）。
+- `app.main` 与 `app.limiter` 双层限流（既有 Open Question，未处理）。
+- T-020 证据速率限制表仍列 `/api/v1/plan`（既有 Open Question，未处理）。
 
 ## 交接要点
 
-- AI 解析质量评测已建立：golden set 30 条（10/10/5/5）、`npm run eval:ai:golden`、prompt/模型变更后必须重跑；证据 E-T022-001
-- 真实部署验收已完成：生产模式 next start + uvicorn，真实 Supabase/DeepSeek/PushPlus 端到端全部通过，证据 E-T021-001
+- 后端结构化日志默认开启（`LOG_LEVEL=INFO`、`LOG_FORMAT=json`，JSON Lines 到 stderr）；关键事件清单与排查示例见 `docs/operations.md` 第 4 节。
+- 隐私约定：日志只记脱敏元数据，不落用户内容/密钥；后续新增埋点必须遵守。
 - 项目定义与长期状态见 `.project-to-act/PROJECT_OVERVIEW.md`
-- 长期约束时间条件导致 AI 规划无法排期的 bug 已修复；硬约束改在候选位置粒度校验
-- 已知遗留：本地解析器未映射“周末”（周六/周日）排除；`ConstraintSpec.max_daily_minutes` 解析后暂未在调度层执行
-- 速率限制已生效，旧 `/api/v1/plan` 路由已移除
-- SchedulingEngine 已支持理解层评分与自然语言硬约束
-- 周计划批量删除与子任务/时间块完成联动已合入工作树

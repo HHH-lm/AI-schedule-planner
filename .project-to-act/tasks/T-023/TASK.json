@@ -1,0 +1,47 @@
+{
+  "taskId": "T-023",
+  "title": "后端可观测性：结构化日志 + 关键事件（AI 慢/失败、推送失败可查）",
+  "status": "completed",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "backend/app/logging_setup.py",
+    "backend/app/config.py",
+    "backend/app/main.py",
+    "backend/app/services/ai.py",
+    "backend/app/services/push.py",
+    "backend/app/services/reminders.py",
+    "backend/app/services/planner_v2.py",
+    "backend/app/services/planner.py",
+    "backend/app/routers/parse.py",
+    "backend/app/routers/match_task.py",
+    "backend/tests/test_observability.py",
+    ".env.example",
+    "docs/operations.md",
+    "README.md",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "后端从“无日志可查”升级为 JSON Lines 结构化日志 + 关键事件埋点：每个 HTTP 请求、每次 AI 调用（慢/超时/失败）、微信推送（成功/失败/业务错误码）、定时提醒扫描均输出结构化事件，并用 request_id 关联一次请求的完整链路；日志只记录脱敏元数据，不落用户内容与密钥。",
+  "dependencies": ["T-007", "T-013", "T-015", "T-019", "T-020"],
+  "invariants": [
+    "不引入外部日志服务依赖",
+    "日志不得包含用户原始内容、推送令牌或 API Key",
+    "不改变现有 API 响应与业务行为",
+    "LOG_LEVEL / LOG_FORMAT 可配置"
+  ],
+  "acceptance": [
+    "根 logger 输出 JSON Lines，包含 time/level/logger/event 与事件字段",
+    "HTTP 中间件记录 method/path/status/duration_ms，覆盖 4xx/5xx 与 429",
+    "AI 调用记录 ai.request/ai.response/ai.timeout/ai.error（provider/model/operation/duration_ms）",
+    "微信推送记录 push.request/push.success/push.failure（含 PushPlus 业务错误码）",
+    "提醒扫描记录 scan/push 相关事件，fetch 异常不 500 且记录 reminder.scan.error",
+    "request_id 贯穿单次请求，可关联完整链路",
+    "后端全量测试通过"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q",
+    "npm test",
+    "实机 curl /api/v1/parse 观察 .backend.log JSON 事件与 request_id"
+  ]
+}

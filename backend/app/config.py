@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     service_name: str = "ai-schedule-backend"
     version: str = "0.1.0"
 
+    log_level: str = "INFO"
+    log_format: str = "json"
+
     ai_provider: str = "auto"
     ai_timeout_ms: int = 15000
 

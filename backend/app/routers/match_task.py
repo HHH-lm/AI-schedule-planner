@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
 import re
+import time
+from typing import Any
+
 from fastapi import APIRouter, Depends, Request
 
 from app.config import Settings, get_settings
@@ -11,9 +15,30 @@ from app.services.ai import (
     parse_model_json,
     resolve_ai_provider,
 )
+from app.logging_setup import get_logger, log_event
 
 
 router = APIRouter()
+logger = get_logger("app.api.match_task")
+
+
+def _log_match_task_result(
+    started: float,
+    *,
+    source: str,
+    matched: bool,
+    level: int = logging.INFO,
+    **extra: Any,
+) -> None:
+    log_event(
+        logger,
+        level,
+        "match_task.result",
+        duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        source=source,
+        matched=matched,
+        **extra,
+    )
 
 
 @router.post("/match-task", response_model=MatchTaskResponse)
@@ -23,7 +48,16 @@ async def match_task(
     payload: MatchTaskRequest,
     settings: Settings = Depends(get_settings),
 ) -> MatchTaskResponse:
+    started = time.perf_counter()
+    log_event(
+        logger,
+        logging.INFO,
+        "match_task.start",
+        tasks=len(payload.tasks),
+        name_chars=len(payload.name),
+    )
     if not payload.tasks:
+        _log_match_task_result(started, source="none", matched=False)
         return MatchTaskResponse(source="none", taskId=None)
 
     def _normalize(text: str) -> str:
@@ -34,11 +68,16 @@ async def match_task(
         normalized_name = _normalize(payload.name)
         for task in payload.tasks:
             if normalized_name in _normalize(task.name) or _normalize(task.name) in normalized_name:
+                _log_match_task_result(
+                    started, source="local", matched=True, reason="no_ai_configured"
+                )
                 return MatchTaskResponse(source="local", taskId=task.id)
+        _log_match_task_result(
+            started, source="local", matched=False, reason="no_ai_configured"
+        )
         return MatchTaskResponse(source="local", taskId=None)
 
     try:
-        ai_result = None
         task_lines = "\n".join(
             f"- ID: {task.id}, 名称: {task.name}" for task in payload.tasks
         )
@@ -57,7 +96,8 @@ async def match_task(
             "请输出匹配的任务ID，没有匹配则输出null。"
         )
         data = await call_chat_completions(
-            system_prompt, user_text, provider, settings, temperature=0.5
+            system_prompt, user_text, provider, settings,
+            temperature=0.5, operation="match_task",
         )
         content = data["choices"][0]["message"]["content"]
         payload_json = parse_model_json(content)
@@ -79,13 +119,26 @@ async def match_task(
                 ),
             )
             if matched:
+                _log_match_task_result(started, source=provider, matched=True)
                 return MatchTaskResponse(source=provider, taskId=matched.id)
-    except Exception:
-        pass
+    except Exception as error:
+        log_event(
+            logger,
+            logging.ERROR,
+            "match_task.error",
+            error=str(error)[:200],
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
 
     # AI 未返回匹配或抛异常时，回退到本地归一化匹配
     normalized_name = _normalize(payload.name)
     for task in payload.tasks:
         if normalized_name in _normalize(task.name) or _normalize(task.name) in normalized_name:
+            _log_match_task_result(
+                started, source="local", matched=True, reason="ai_no_match"
+            )
             return MatchTaskResponse(source="local", taskId=task.id)
+    _log_match_task_result(
+        started, source="local", matched=False, reason="ai_no_match"
+    )
     return MatchTaskResponse(source="local", taskId=None)

@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 import httpx
 
 from app.config import Settings
+from app.logging_setup import (
+    get_logger,
+    log_event,
+    reset_request_id,
+    set_request_id,
+)
 from app.services.push import push_channel_ready, push_wechat_message
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger("app.reminders")
 
 SUPABASE_TIMEOUT = 15.0
 
@@ -143,65 +150,134 @@ async def insert_reminder_log(
 
 
 async def scan_reminders(settings: Settings) -> dict[str, Any]:
-    if not settings.supabase_url or not settings.supabase_service_role_key:
-        return {
-            "enabled": False,
-            "reason": "SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY 未配置",
-            "checked": 0,
-            "pushed": 0,
-            "skipped": 0,
-            "errors": [],
-        }
-    if not push_channel_ready(settings):
-        return {
-            "enabled": False,
-            "reason": "微信推送通道未配置",
-            "checked": 0,
-            "pushed": 0,
-            "skipped": 0,
-            "errors": [],
-        }
+    scan_id = f"scan-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%f')}"
+    token = set_request_id(scan_id)
+    started = time.perf_counter()
+    try:
+        if not settings.supabase_url or not settings.supabase_service_role_key:
+            return {
+                "enabled": False,
+                "reason": "SUPABASE_URL 或 SUPABASE_SERVICE_ROLE_KEY 未配置",
+                "checked": 0,
+                "pushed": 0,
+                "skipped": 0,
+                "errors": [],
+            }
+        if not push_channel_ready(settings):
+            return {
+                "enabled": False,
+                "reason": "微信推送通道未配置",
+                "checked": 0,
+                "pushed": 0,
+                "skipped": 0,
+                "errors": [],
+            }
 
-    rows = await fetch_schedule_rows(settings)
-    due = collect_due_blocks(rows, datetime.now(timezone.utc))
-    if not due:
+        log_event(logger, logging.INFO, "reminder.scan.start", scan_id=scan_id)
+        rows = await fetch_schedule_rows(settings)
+        due = collect_due_blocks(rows, datetime.now(timezone.utc))
+        log_event(
+            logger,
+            logging.INFO,
+            "reminder.scan.due",
+            scan_id=scan_id,
+            checked=len(rows),
+            due=len(due),
+        )
+        if not due:
+            log_event(
+                logger,
+                logging.INFO,
+                "reminder.scan.done",
+                scan_id=scan_id,
+                checked=len(rows),
+                due=0,
+                pushed=0,
+                skipped=0,
+                errors=0,
+                duration_ms=round((time.perf_counter() - started) * 1000, 2),
+            )
+            return {
+                "enabled": True,
+                "checked": len(rows),
+                "pushed": 0,
+                "skipped": 0,
+                "errors": [],
+            }
+
+        pushed_keys = await fetch_pushed_reminders(settings)
+        pushed = 0
+        skipped = 0
+        errors: list[str] = []
+        for item in due:
+            user_id = str(item["user_id"])
+            block = item["block"]
+            block_id = str(block["id"])
+            remind_at = item["remind_at"].astimezone(timezone.utc)
+            key = (user_id, block_id, remind_at.isoformat())
+            if key in pushed_keys:
+                skipped += 1
+                log_event(
+                    logger,
+                    logging.INFO,
+                    "reminder.push.skipped",
+                    scan_id=scan_id,
+                    block_id=block_id,
+                )
+                continue
+            try:
+                message = format_reminder_message(block)
+                ok = await push_wechat_message(message, settings)
+                if not ok:
+                    errors.append(f"push failed: {block_id}")
+                    continue
+                await insert_reminder_log(settings, user_id, block_id, remind_at)
+                pushed += 1
+            except Exception as exc:  # noqa: BLE001 - 单条失败不影响其他提醒
+                log_event(
+                    logger,
+                    logging.ERROR,
+                    "reminder.push.failed",
+                    scan_id=scan_id,
+                    block_id=block_id,
+                    error=str(exc)[:300],
+                )
+                errors.append(f"{block_id}: {exc}")
+
+        log_event(
+            logger,
+            logging.INFO,
+            "reminder.scan.done",
+            scan_id=scan_id,
+            checked=len(rows),
+            due=len(due),
+            pushed=pushed,
+            skipped=skipped,
+            errors=len(errors),
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
         return {
             "enabled": True,
             "checked": len(rows),
+            "pushed": pushed,
+            "skipped": skipped,
+            "errors": errors,
+        }
+    except Exception as exc:  # noqa: BLE001 - 扫描失败需记录并安全返回
+        log_event(
+            logger,
+            logging.ERROR,
+            "reminder.scan.error",
+            scan_id=scan_id,
+            error=str(exc)[:300],
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        return {
+            "enabled": True,
+            "checked": 0,
             "pushed": 0,
             "skipped": 0,
-            "errors": [],
+            "errors": [str(exc)],
         }
-
-    pushed_keys = await fetch_pushed_reminders(settings)
-    pushed = 0
-    skipped = 0
-    errors: list[str] = []
-    for item in due:
-        user_id = str(item["user_id"])
-        block = item["block"]
-        block_id = str(block["id"])
-        remind_at = item["remind_at"].astimezone(timezone.utc)
-        key = (user_id, block_id, remind_at.isoformat())
-        if key in pushed_keys:
-            skipped += 1
-            continue
-        try:
-            message = format_reminder_message(block)
-            ok = await push_wechat_message(message, settings)
-            if not ok:
-                errors.append(f"push failed: {block_id}")
-                continue
-            await insert_reminder_log(settings, user_id, block_id, remind_at)
-            pushed += 1
-        except Exception as exc:  # noqa: BLE001 - 单条失败不影响其他提醒
-            logger.warning("reminder push failed: %s", exc)
-            errors.append(f"{block_id}: {exc}")
-
-    return {
-        "enabled": True,
-        "checked": len(rows),
-        "pushed": pushed,
-        "skipped": skipped,
-        "errors": errors,
-    }
+    finally:
+        reset_request_id(token)

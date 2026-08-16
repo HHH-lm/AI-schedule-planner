@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from datetime import date, timedelta
 from typing import Any
 
 import httpx
 
 from app.config import Settings
+from app.logging_setup import get_logger, log_event
 from app.schemas import ParsedSchedule, RejectReason
+
+
+logger = get_logger("app.ai")
 
 
 CATEGORY_VALUES = ("work", "study", "fitness", "life", "rest")
@@ -209,12 +215,24 @@ async def call_chat_completions(
     provider: str,
     settings: Settings,
     temperature: float = 0.2,
+    operation: str = "ai",
 ) -> dict[str, Any]:
     config = PROVIDER_CONFIG[provider]
     base_url = (getattr(settings, config["base_url_attr"]) or config["default_base_url"]).rstrip("/")
     credential = getattr(settings, config["key_attr"])
     model = getattr(settings, config["model_attr"]) or config["default_model"]
     timeout = settings.ai_timeout_ms / 1000
+    started = time.perf_counter()
+    log_event(
+        logger,
+        logging.INFO,
+        "ai.request",
+        provider=provider,
+        model=model,
+        operation=operation,
+        input_chars=len(user_text),
+        timeout_ms=settings.ai_timeout_ms,
+    )
 
     body = {
         "model": model,
@@ -225,20 +243,62 @@ async def call_chat_completions(
             {"role": "user", "content": user_text},
         ],
     }
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        response = await client.post(
-            f"{base_url}/chat/completions",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {credential}",
-            },
-            json=body,
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(
+                f"{base_url}/chat/completions",
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {credential}",
+                },
+                json=body,
+            )
+    except (httpx.TimeoutException, httpx.ConnectError) as error:
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        log_event(
+            logger,
+            logging.ERROR,
+            "ai.timeout",
+            provider=provider,
+            model=model,
+            operation=operation,
+            duration_ms=duration_ms,
+            timeout_ms=settings.ai_timeout_ms,
+            error=type(error).__name__,
         )
-        if response.status_code >= 400:
-            detail = response.text[:120]
-            suffix = f"：{detail}" if detail else ""
-            raise RuntimeError(f"AI 服务返回 {response.status_code}{suffix}")
-        return response.json()
+        raise
+
+    duration_ms = round((time.perf_counter() - started) * 1000, 2)
+    if response.status_code >= 400:
+        detail = response.text[:120]
+        suffix = f"：{detail}" if detail else ""
+        log_event(
+            logger,
+            logging.ERROR,
+            "ai.error",
+            provider=provider,
+            model=model,
+            operation=operation,
+            duration_ms=duration_ms,
+            status=response.status_code,
+            error=detail or "HTTP error",
+        )
+        raise RuntimeError(f"AI 服务返回 {response.status_code}{suffix}")
+
+    data = response.json()
+    log_event(
+        logger,
+        logging.INFO,
+        "ai.response",
+        provider=provider,
+        model=model,
+        operation=operation,
+        duration_ms=duration_ms,
+        status=response.status_code,
+        input_chars=len(user_text),
+        output_bytes=len(response.content),
+    )
+    return data
 
 
 def _extract_content(data: dict[str, Any]) -> str:
@@ -259,7 +319,9 @@ async def parse_with_ai(
     settings: Settings,
 ) -> tuple[str, list[ParsedSchedule], RejectReason | None, str | None]:
     try:
-        data = await call_chat_completions(build_system_prompt(today), text, provider, settings)
+        data = await call_chat_completions(
+            build_system_prompt(today), text, provider, settings, operation="parse"
+        )
         content = _extract_content(data)
         schedules, rejected = sanitize_model_result(parse_model_json(content))
         return provider, schedules, rejected, None

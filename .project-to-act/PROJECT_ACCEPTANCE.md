@@ -5,10 +5,10 @@
 
 ## 当前验收结论
 
-- 结论：阶段 5 自动 Gate 通过，进入阶段 6；真实部署环境核心链路验收通过（E-T021-001）；AI 解析质量评测与回归通过（E-T022-001）；A-001/A-002 人工对照验收待项目负责人最终确认
+- 结论：阶段 5 自动 Gate 通过，进入阶段 6；真实部署环境核心链路验收通过（E-T021-001）；AI 解析质量评测与回归通过（E-T022-001）；后端可观测性（结构化日志 + 关键事件）验收通过（E-T023-001）；A-001/A-002 人工对照验收待项目负责人最终确认
 - 验收范围：阶段 5（具体功能与纵向切片开发），依据 Git 基线 `2e1ad62`
-- 最后检查：2026-08-16（真实 Supabase/DeepSeek/PushPlus + AI golden set 30/30，见 E-T021-001/E-T022-001）
-- 遗留问题：Obsidian 跳转依赖本机已安装 Obsidian；ICS 导出暂缓未验收；A-001/A-002 待人工确认；阶段 7 发布准备待进行
+- 最后检查：2026-08-16（真实 Supabase/DeepSeek/PushPlus + AI golden set 30/30 + 后端可观测性，见 E-T021-001/E-T022-001/E-T023-001）
+- 遗留问题：Obsidian 跳转依赖本机已安装 Obsidian；ICS 导出暂缓未验收；A-001/A-002 待人工确认；后端日志未接外部日志平台/SLO 告警、request_id 未写入响应头（阶段 7 可选）；阶段 7 发布准备待进行
 
 ## 验收标准
 
@@ -20,6 +20,7 @@
 | A-004 | 阻塞与重大遗留问题已处理 | 通过 | 对照 `PROJECT_PROGRESS.md` | E-T004-003 |
 | A-005 | 真实部署环境核心链路（Supabase Auth/RLS、真实 AI、微信推送） | 通过 | 生产模式启动 + 真实 Supabase/DeepSeek/PushPlus 端到端 | E-T021-001 |
 | A-006 | AI 解析/规划质量可度量与回归防退化（30 条 golden set：10/10/5/5） | 通过 | 真实 DeepSeek golden set 评测命令 | E-T022-001 |
+| A-007 | 后端可观测性（结构化日志 + 关键事件：AI 慢/失败、推送失败可查） | 通过 | 后端 pytest + 实机日志验证 request_id 链路 | E-T023-001 |
 
 ## 证据索引
 
@@ -48,6 +49,7 @@
 | E-T016-001 | 2026-08-11T04:30:00Z | npm test、npm run lint、npx tsc --noEmit、npm run build、Playwright 截图 | 0 | v0.1.0，今日待办四象限 | 四象限待办：Vitest 13 文件 57 个测试通过，lint/tsc/build 通过，注入四象限+旧数据截图验证分组正常 | `.project-to-act/tasks/T-016/evidence/E-T016-001.md` | 2026-08-18 |
 | E-T021-001 | 2026-08-15T20:47:58Z | 生产模式 next start + uvicorn；真实 Supabase Auth/RLS、DeepSeek、PushPlus 端到端断言 | 0 | v0.1.0，工作树未提交 | Auth/RLS 15 项、DeepSeek 1 项、PushPlus 8 项全部通过，验收数据已清理 | `.project-to-act/tasks/T-021/evidence/E-T021-001.md` | 2026-08-22 |
 | E-T022-001 | 2026-08-16T11:09:00Z | backend pytest + npm test + app.eval_ai_golden（真实 DeepSeek 30 条） | 0 | v0.1.0，工作树未提交 | 30/30 全部通过：QuickAdd 10/10、Planning 10/10、边界 5/5、Constraint/Memory 5/5，字段/拒答/检查准确率 100%；132 后端 + 82 前端测试通过 | `.project-to-act/tasks/T-022/evidence/E-T022-001.md` | 2026-08-23 |
+| E-T023-001 | 2026-08-16T12:04:00Z | backend pytest + npm test + npm run lint + npx tsc --noEmit + 实机 curl | 0 | 关键文件 SHA-256 见证据文件 | 后端 148 测试（新增 16 可观测性）、前端 82 测试、lint/tsc 通过；实机 DeepSeek 解析日志含 ai.request/ai.response/parse.result/http.request 且 request_id 贯穿；429 可记录 | `.project-to-act/tasks/T-023/evidence/E-T023-001.md` | 2026-08-23 |
 
 ## Gate 记录
 
@@ -60,6 +62,7 @@
 
 按时间倒序追加：日期、检查范围、证据 ID、结果、遗留问题和结论。失败、跳过与过期证据也必须如实记录。
 
+- 2026-08-16：后端可观测性检查，E-T023-001，结果：`cd backend && .venv/bin/python -m pytest -q` 148 个测试（含新增 16 个可观测性测试）、`npm test` 14 文件 82 个、`npm run lint`、`npx tsc --noEmit` 全部通过；实机 `POST /api/v1/parse`（真实 DeepSeek）日志输出 `ai.request` → `ai.response`（duration_ms=1020ms）→ `parse.result` → `http.request` 且同一 `request_id` 贯穿；连续第 11 次请求返回 429 并被中间件记录。遗留问题：未接外部日志平台/SLO 告警，request_id 未写入响应头。结论：T-023 通过，后端不再“盲飞”。
 - 2026-08-16：AI 解析/规划质量评测与回归验收，E-T022-001，结果：30 条 golden set（10 QuickAdd + 10 Planning + 5 边界 + 5 Constraint/Memory）真实 DeepSeek 评测 30/30，四类均 100%，字段/拒答/检查准确率均 100%；后端 pytest 132 个、前端 Vitest 82 个全部通过；评测发现并修复三个质量问题。遗留问题：无。结论：T-022 通过，prompt/模型变更后必须重跑评测。
 - 2026-08-16：真实部署环境核心链路验收，E-T021-001，结果：生产模式启动 next start + uvicorn；真实 Supabase Auth/RLS 15 项、真实 DeepSeek 解析 1 项、真实 PushPlus 推送 8 项全部通过；跨用户读/写/删隔离与 anon 拦截生效，推送 pushed=1 且去重生效，验收数据已清理。遗留问题：A-001/A-002 人工对照待确认；阶段 7 发布准备待进行。结论：T-021 通过。
 - 2026-08-11：今日待办四象限检查，E-T016-001，结果：`npm test` 13 个文件 57 个测试、lint/tsc/build（Turbopack）全部通过；Playwright 注入五个任务（四个象限各 1 条 + 1 条无象限旧数据）截图确认移动端单列四象限区块、桌面端 2x2 网格正常，旧任务自动归入“既不紧急也不重要”。遗留问题：无。结论：T-016 通过，下一步等待人工验收与阶段 7 发布准备。

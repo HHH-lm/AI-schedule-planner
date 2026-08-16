@@ -104,19 +104,81 @@ curl -s http://localhost:3000/api/health
 - 建议配置外部 uptime 检查（如 UptimeRobot、Cloudflare Health Checks）每 5 分钟探测两个健康检查端点
 - Supabase 侧关注仪表盘中的 API 错误率、数据库连接和慢查询
 
-## 4. 回滚
+## 4. 日志与可观测性
+
+FastAPI 后端默认输出 **JSON Lines 结构化日志**（每行一个 JSON 对象），覆盖请求、AI 调用、微信推送与定时提醒扫描等关键事件，用于上线后排查“AI 慢 / 失败 / 推送失败”。
+
+### 4.1 配置
+
+| 环境变量 | 默认值 | 说明 |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL |
+| `LOG_FORMAT` | `json` | `json`（JSON Lines，推荐）或 `text`（人类可读） |
+
+日志写入 stderr：Docker 部署直接 `docker logs` / 平台日志采集；systemd 部署见 `journalctl -u <service>`；本地 dev 见 `.backend.log`。
+
+### 4.2 日志字段
+
+- `time`：UTC ISO 时间
+- `level`：INFO / WARNING / ERROR
+- `logger`：模块名（`app.ai`、`app.push`、`app.reminders`、`app.http` 等）
+- `event`：事件名
+- `request_id`：请求级关联 ID（HTTP 请求 12 位 hex；提醒扫描为 `scan-<时间戳>`），用于把一次请求的多个事件串起来
+- 其余字段为事件附加字段（provider / model / duration_ms / status / 数量等）
+
+### 4.3 关键事件
+
+| 事件 | 级别 | 关键字段 | 何时出现 |
+|---|---|---|---|
+| `http.request` | INFO（4xx WARNING，5xx ERROR） | method, path, status, duration_ms | 每个 API 请求（含 429 限流） |
+| `ai.request` / `ai.response` | INFO | provider, model, operation, input_chars, timeout_ms / duration_ms, status, output_bytes | AI 调用开始 / 成功 |
+| `ai.timeout` | ERROR | provider, model, operation, duration_ms, timeout_ms | AI 超时（默认 15 秒） |
+| `ai.error` | ERROR | provider, model, operation, duration_ms, status, error | AI 服务端错误（4xx/5xx） |
+| `parse.result` | INFO（异常 WARNING） | source, schedules, rejected | `/api/v1/parse` 结果（ai/local/none） |
+| `plan_v2.start` / `plan_v2.result` | INFO（异常 WARNING/ERROR） | tasks, blocks, unassigned, source | `/api/v1/plan-v2` 开始 / 结果 |
+| `breakdown.start` / `breakdown.result` | INFO（异常 ERROR） | plan_chars, tasks, source | `/api/v1/breakdown` 结果 |
+| `match_task.start` / `match_task.result` / `match_task.error` | INFO / ERROR | tasks, matched, source | `/api/v1/match-task` |
+| `push.request` / `push.success` / `push.failure` | INFO / ERROR | channel, status, reason, code | 微信推送（含 PushPlus 业务错误码） |
+| `reminder.scan.start` / `reminder.scan.due` / `reminder.scan.done` | INFO | checked, due, pushed, skipped, errors | 每次提醒扫描 |
+| `reminder.push.failed` / `reminder.push.skipped` | ERROR / INFO | block_id, error | 单条提醒推送失败 / 去重跳过 |
+| `reminder.scan.error` | ERROR | error | 扫描过程中 Supabase 读取失败 |
+
+### 4.4 排查示例
+
+```bash
+# 最近 30 分钟 AI 超时/失败
+grep '"event": "ai.timeout"\|"event": "ai.error"' <日志> | tail
+
+# 某次请求的完整链路（按 request_id 关联）
+grep '"request_id": "abc123"' <日志>
+
+# 推送失败与原因
+grep '"event": "push.failure"\|"event": "reminder.push.failed"' <日志>
+
+# AI 慢查询（按耗时排序，取前 20 条）
+grep '"event": "ai.response"' <日志> | python3 -c \
+  "import sys,json; rows=[json.loads(l) for l in sys.stdin]; \
+   [print(r['duration_ms'], r.get('operation'), r.get('provider')) for r in sorted(rows, key=lambda x:-x['duration_ms'])[:20]]"
+```
+
+### 4.5 隐私与安全约定
+
+- 日志只记录脱敏元数据（长度、数量、状态码、耗时、错误类型/截断信息），**不记录**自然语言输入、日程文本、推送令牌、API Key 等敏感内容。
+- `request_id` 仅用于关联日志，不包含用户身份信息。
+
+## 5. 回滚
 
 - Vercel：在 Deployment 列表选择上一个健康版本并 Redeploy；或使用 Git revert 后重新部署
 - 自托管：保留上一版本的前端构建目录与后端进程/镜像，直接切换回旧产物
 - 回滚后立即验证 `/api/health`、`/api/v1/health` 和核心流程（AI 解析、拆解、规划、周计划、云同步）
 
-## 5. 备份与恢复
+## 6. 备份与恢复
 
 - 本地模式：浏览器 localStorage 数据可通过统计周报的 Markdown 导出人工归档
 - Supabase 模式：在 Dashboard 使用 Database Backups 开启每日备份；恢复时先确认 `user_id` 作用域正确
 - 恢复演练：至少验证一次“从备份恢复后能正常加载时间块与任务”
 
-## 6. 事故处理
+## 7. 事故处理
 
 | 症状 | 处置 |
 |---|---|
@@ -124,13 +186,13 @@ curl -s http://localhost:3000/api/health
 | 云同步失败 | 确认 Supabase 配置、登录状态与表结构；本地数据仍在，可离线使用 |
 | 数据丢失 | 先停止写入，从本地存储或 Supabase 备份恢复 |
 | 多人数据串用 | 检查是否每位用户独立登录；RLS 按 `auth.uid()` 隔离，禁止共享账号 |
-| AI 解析失败 | 检查 FastAPI 后端、服务商 Key、余额与网络；接口超时（默认 15 秒）或失败时前端显示明确错误，未配置 Key 时才回退后端本地规则 |
-| 微信提醒未收到 | 确认后端常驻运行、`GET /api/v1/reminders/status` 返回 `enabled: true`；检查微信通道 webhook/token 是否有效、手机端通知权限；推送失败会自动重试 |
+| AI 解析失败或慢 | 先查日志中 `ai.timeout` / `ai.error` / `ai.response`（含 `duration_ms`）；再检查服务商 Key、余额与网络；接口超时（默认 15 秒）或失败时前端显示明确错误，未配置 Key 时才回退后端本地规则 |
+| 微信提醒未收到 | 确认后端常驻运行、`GET /api/v1/reminders/status` 返回 `enabled: true`；查日志 `push.failure` / `reminder.push.failed` 看原因与状态码；检查微信通道 webhook/token 是否有效、手机端通知权限；推送失败会自动重试 |
 
-## 7. 已知限制
+## 8. 已知限制
 
 - 云同步依赖 Supabase Email Auth；未登录时仅本地模式，不读写云端数据
-- 本地模式没有后端日志，故障排查依赖浏览器控制台与 `.backend.log`
+- 本地模式（未启动 FastAPI 后端）没有后端日志，故障排查依赖浏览器控制台与 `.backend.log`；后端运行时的结构化日志见第 4 节
 - AI 解析会把用户输入文本发送到 OpenAI / DeepSeek 服务端，涉及隐私的内容请谨慎输入；Key 仅保存在 FastAPI 后端环境变量
 - AI 解析请求默认 15 秒超时，可通过 `AI_TIMEOUT_MS` 调整；复杂长句可能需要更长响应时间，超时后请重试或简化输入
 - 定时提醒只扫描已登录并同步到 Supabase 的时间块；未登录或本地模式下的时间块不会触发微信提醒
