@@ -175,6 +175,14 @@ DEEPSEEK_MODEL=deepseek-chat
 - 也可以在应用“设置”中选择解析服务；选择的服务需要对应的服务端 Key 已配置，否则回退本地规则。
 - API Key 只保存在 FastAPI 后端环境变量中，不会下发到浏览器。
 
+### AI 解析质量评测与回归
+
+- 内置 30 条中文 golden set（固定锚定日期 2026-08-16）：10 条 QuickAdd、10 条 Planning、5 条边界/异常、5 条 Constraint/Memory。
+- 评测命令：`cd backend && .venv/bin/python -m app.eval_ai_golden --provider deepseek`
+- 指标：QuickAdd 完整精确率、Planning 排期检查通过率、边界/异常通过率、Constraint/Memory 检查通过率、字段准确率、拒答准确率。
+- 默认门禁：`full >= 0.80`、`quickadd >= 0.90`、`planning >= 0.90`、`boundary >= 1.00`、`cm >= 0.80`、`field >= 0.90`、`reject >= 1.00`、`check >= 0.90`。
+- 修改解析提示词后必须重跑评测，防止 AI 解析质量退化。
+
 ### 定时提醒（微信推送）
 
 需要同时满足三个条件：Supabase 云同步启用并登录、FastAPI 后端常驻运行、配置一个微信通道。在 `.env.local` 中配置：
