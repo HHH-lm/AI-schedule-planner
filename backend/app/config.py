@@ -44,6 +44,9 @@ class Settings(BaseSettings):
 
     reminder_scan_seconds: int = 300
     timezone: str = "Asia/Shanghai"
+    enable_scheduler: bool = True
+    cron_secret: str | None = None
+    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
     wechat_push_type: str = "none"
     wecom_webhook_url: str | None = None

@@ -39,7 +39,8 @@ http_logger = get_logger("app.http")
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduler: AsyncIOScheduler | None = None
     if (
-        settings.supabase_url
+        settings.enable_scheduler
+        and settings.supabase_url
         and settings.supabase_service_role_key
         and push_channel_ready(settings)
     ):
@@ -68,7 +69,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )

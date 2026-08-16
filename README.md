@@ -10,7 +10,7 @@ AI 拆解宏观计划，双视图落地微观执行。
 │ 周计划 / 任务看板 / 今日待办 / 四象限     │   │ NLP 自然语言解析 / 任务拆解         │
 │ Obsidian 集成 / 撤销重做 / 统计周报       │ → │ 冲突检测 / 调度引擎(SchedulingEngine)│
 │ 本地存储(localStorage) / Supabase 同步    │   │ AI 代理(OpenAI / DeepSeek)          │
-│ 微信提醒设置 / 记忆系统管理              │   │ 定时提醒(APScheduler) / 微信推送    │
+│ 微信提醒设置 / 记忆系统管理              │   │ 定时提醒(调度器/外部定时器) / 推送    │
 └──────────────────────────────────────────┘   └────────────────────────────────────┘
 ```
 
@@ -19,7 +19,7 @@ AI 拆解宏观计划，双视图落地微观执行。
 - **自然语言输入**：中文句子自动解析为日程，支持 OpenAI / DeepSeek / 本地 NLP 规则三级回退
 - **智能调度引擎**：AI 理解用户目标 + 确定性算法分配时间，不依赖模型直接生成时间块
 - **今日待办四象限**：紧急/重要矩阵分组，移动端单列 · 桌面端双栏仪表盘
-- **定时提醒**：APScheduler 后台扫描，推送至企业微信 / PushPlus / Server酱
+- **定时提醒**：自托管 APScheduler 或 Serverless 外部定时器扫描，推送至企业微信 / PushPlus / Server酱
 - **记忆系统**：用户主动管理长期偏好习惯，AI 只生成候选不做自动修改
 - **多租户安全**：Supabase Auth + RLS 行级隔离，每人一库，未登录时保持本地模式
 - **完善的工程基线**：Vitest 测试 · 安全扫描(secrets) · 前后端结构化日志（后端含 AI/推送/提醒关键事件与 request_id 关联）· 错误边界 · 运行手册
@@ -89,7 +89,8 @@ AI 拆解宏观计划，双视图落地微观执行。
 ### 定时提醒
 
 - 时间块编辑弹窗可设置“微信提醒”时间
-- FastAPI 后端每隔 5 分钟扫描到达提醒时间的时间块，推送到微信（手机锁屏可收到）
+- 自托管模式：FastAPI 后端 APScheduler 每隔 5 分钟扫描到达提醒时间的时间块
+- Serverless 模式：`ENABLE_SCHEDULER=false`，由 Vercel Cron / GitHub Actions 调用 `GET /api/v1/reminders/cron` 触发扫描
 - 支持企业微信机器人、PushPlus、Server酱三种通道；推送记录写入 `reminder_log` 去重
 
 ## 技术栈
@@ -126,6 +127,16 @@ npm run dev
 cd backend && .venv/bin/python -m uvicorn app.main:app --port 8000
 npm run dev:raw
 ```
+
+## 部署（Vercel Serverless）
+
+无服务器/域名，只用 Vercel 即可上线，适合自用与面试展示：
+
+1. 后端：Vercel 新建项目，导入本仓库，Root Directory 填 `backend`，配置 `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`、`DEEPSEEK_API_KEY`、`AI_PROVIDER`、`ENABLE_SCHEDULER=false`、`CRON_SECRET`、`WECHAT_PUSH_TYPE` 等环境变量后部署，得到 `https://<backend>.vercel.app`。
+2. 前端：Vercel 再新建项目，Root Directory 填仓库根目录，Framework 选 Next.js，配置 `NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`BACKEND_URL=https://<backend>.vercel.app` 后部署。
+3. 定时提醒：Serverless 不常驻调度器，Vercel Cron（免费版每天 1 次）或仓库内示例工作流 `deploy/github-actions/reminder-cron.yml`（启用后每 5 分钟）调用 `GET /api/v1/reminders/cron`，携带 `Authorization: Bearer <CRON_SECRET>`。
+
+详细步骤与自托管备选形态见 [docs/operations.md](docs/operations.md)。
 
 ## 质量检查
 
@@ -185,12 +196,14 @@ DEEPSEEK_MODEL=deepseek-chat
 
 ### 定时提醒（微信推送）
 
-需要同时满足三个条件：Supabase 云同步启用并登录、FastAPI 后端常驻运行、配置一个微信通道。在 `.env.local` 中配置：
+需要满足：Supabase 云同步启用并登录、配置一个微信通道；自托管模式后端常驻由 APScheduler 扫描，Serverless 模式由外部定时器触发 `/api/v1/reminders/cron`。在 `.env.local` 中配置：
 
 ```text
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 REMINDER_SCAN_SECONDS=300
+ENABLE_SCHEDULER=true
+CRON_SECRET=
 WECHAT_PUSH_TYPE=wecom
 WECOM_WEBHOOK_URL=
 ```
@@ -198,7 +211,7 @@ WECOM_WEBHOOK_URL=
 - `WECHAT_PUSH_TYPE` 可选 `none` / `wecom` / `pushplus` / `serverchan`；企业微信机器人填 `WECOM_WEBHOOK_URL`，PushPlus 填 `PUSHPLUS_TOKEN`，Server酱填 `SERVERCHAN_KEY`。
 - `SUPABASE_SERVICE_ROLE_KEY` 权限较高，只放在后端环境变量，不能写进 `NEXT_PUBLIC_*` 或提交 Git。
 - 后端推送成功后写入 `reminder_log`，同一时间块同一提醒时间不会重复推送；推送失败会自动重试。
-- 提醒依赖常驻 FastAPI 进程，部署到 Serverless 冷启动平台时无法定时扫描。
+- Serverless 部署时 `ENABLE_SCHEDULER=false` 并设置 `CRON_SECRET`，定时器必须以 `Authorization: Bearer <CRON_SECRET>` 调用 `/api/v1/reminders/cron`。
 
 ### FastAPI 后端 API
 

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 import httpx
 from fastapi.testclient import TestClient
 
-from app.config import Settings
+from app.config import Settings, get_settings
 from app.main import app
 from app.services.push import push_channel_ready, push_wechat_message
 from app.services.reminders import (
@@ -256,3 +256,86 @@ def test_reminders_run_endpoint(monkeypatch) -> None:
     response = client.post("/api/v1/reminders/run")
     assert response.status_code == 200
     assert response.json()["pushed"] == 1
+
+
+def _override_settings(settings: Settings) -> object | None:
+    previous = app.dependency_overrides.get(get_settings)
+    app.dependency_overrides[get_settings] = lambda: settings
+    return previous
+
+
+def _restore_settings(previous: object | None) -> None:
+    if previous is None:
+        app.dependency_overrides.pop(get_settings, None)
+    else:
+        app.dependency_overrides[get_settings] = previous
+
+
+def test_reminders_cron_disabled_without_secret() -> None:
+    response = client.get("/api/v1/reminders/cron")
+    assert response.status_code == 403
+
+
+def test_reminders_cron_rejects_wrong_secret() -> None:
+    previous = _override_settings(Settings(cron_secret="correct-secret"))
+    try:
+        response = client.get(
+            "/api/v1/reminders/cron",
+            headers={"Authorization": "Bearer wrong-secret"},
+        )
+        assert response.status_code == 401
+    finally:
+        _restore_settings(previous)
+
+
+def test_reminders_cron_runs_scan(monkeypatch) -> None:
+    async def fake_scan(_settings: Settings) -> dict:
+        return {"enabled": True, "checked": 1, "pushed": 1, "skipped": 0, "errors": []}
+
+    monkeypatch.setattr("app.routers.reminders.scan_reminders", fake_scan)
+    previous = _override_settings(Settings(cron_secret="correct-secret"))
+    try:
+        response = client.get(
+            "/api/v1/reminders/cron",
+            headers={"Authorization": "Bearer correct-secret"},
+        )
+        assert response.status_code == 200
+        assert response.json()["pushed"] == 1
+    finally:
+        _restore_settings(previous)
+
+
+def test_lifespan_respects_enable_scheduler(monkeypatch) -> None:
+    created: list[object] = []
+
+    class FakeScheduler:
+        def __init__(self, *args, **kwargs) -> None:
+            created.append(self)
+
+        def add_job(self, *args, **kwargs) -> None:
+            pass
+
+        def start(self) -> None:
+            pass
+
+        def shutdown(self, *args, **kwargs) -> None:
+            pass
+
+    monkeypatch.setattr("app.main.AsyncIOScheduler", FakeScheduler)
+    ready_settings = Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_service_role_key="service-key",
+        wechat_push_type="pushplus",
+        pushplus_token="demo-token",
+    )
+    monkeypatch.setattr("app.main.settings", ready_settings)
+    with TestClient(app):
+        assert len(created) == 1
+
+    created.clear()
+    monkeypatch.setattr(
+        "app.main.settings",
+        ready_settings.model_copy(update={"enable_scheduler": False}),
+    )
+    with TestClient(app):
+        assert created == []

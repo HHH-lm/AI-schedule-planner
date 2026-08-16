@@ -13,73 +13,85 @@
 - AI 解析：确认 FastAPI 后端已启动，`AI_PROVIDER` 与 `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` 符合预期；未配置时确认后端本地 NLP 规则可用
 - 定时提醒（可选）：确认 `SUPABASE_SERVICE_ROLE_KEY`、`WECHAT_PUSH_TYPE` 与对应 webhook/token 已配置，并在 Supabase 执行 `reminder_log` 建表 SQL
 
-## 2. 上线形态：Vercel + FastAPI 自托管
+## 2. 上线形态：Vercel Serverless（推荐，自用/面试展示）
 
 目标链路：
 
 ```text
 Next.js (Vercel 公网 URL)
-  ↓ /api/v1/*
-FastAPI (自托管公网 API)
+  ↓ /api/v1/*（Next.js rewrites 服务端代理）
+FastAPI Serverless (Vercel Python Function 公网 URL)
   ↓
 Supabase (真实云端数据库)
 ```
 
-### 2.1 Vercel 前端
+自托管形态仍保留在 `deploy/self-host-001` 标签与 `docs/operations.md` 第 9 节，后续需要服务器时可直接切换回自托管版本。
 
-1. 推送 `main` 分支到 GitHub 并导入 Vercel 项目
-2. 仓库根目录已提供 `vercel.json`，Framework 选择 Next.js
-3. 在 Vercel 项目设置中配置环境变量：
+### 2.1 部署 FastAPI 后端（Vercel Python Function）
+
+1. 在 Vercel 新建独立项目，导入同一 GitHub 仓库，Root Directory 填 `backend`
+2. Framework Preset 保持 Auto（Vercel 会识别 `backend/app/main.py` 的 FastAPI `app`）
+3. 配置环境变量：
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `DEEPSEEK_API_KEY` / `OPENAI_API_KEY`（按需）
+   - `AI_PROVIDER`
+   - `ENABLE_SCHEDULER=false`（Serverless 不允许常驻调度器）
+   - `CRON_SECRET`：16 位以上随机串（定时器鉴权）
+   - `WECHAT_PUSH_TYPE=pushplus` / `WECOM_WEBHOOK_URL` / `SERVERCHAN_KEY`（按需）
+   - `CORS_ORIGINS=https://<前端 Vercel 域名>`
+4. 部署后验证：`curl -s https://<backend>.vercel.app/api/v1/health` 返回 `status: "ok"`
+
+`backend/pyproject.toml` 已配置 `[tool.vercel] entrypoint = "app.main:app"`，`backend/vercel.json` 已设置函数 `maxDuration=60`，无需额外 adapter。
+
+### 2.2 部署前端（Next.js）
+
+1. 在 Vercel 新建项目，Root Directory 使用仓库根目录，Framework 选择 Next.js
+2. 配置环境变量：
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - `BACKEND_URL=https://<FastAPI 公网域名>`
-4. 部署后验证 `https://<web 域名>/api/health` 返回 `status: "ok"`
+   - `BACKEND_URL=https://<backend>.vercel.app`
+3. 部署后验证 `https://<web 域名>/api/health` 返回 `status: "ok"`
 
-### 2.2 FastAPI 自托管（Docker 推荐）
+### 2.3 定时提醒（Serverless 模式）
 
-在服务器执行：
+Serverless 不常驻进程，因此调度器必须在外部触发，由受保护端点执行扫描：
 
-```bash
-git clone https://github.com/HHH-lm/ai-schedule-system.git /opt/ai-schedule-system
-cd /opt/ai-schedule-system
-cp .env.example .env.local
-# 填写 .env.local 中 AI/Supabase/推送相关变量
-cd deploy
-docker compose up -d --build
+```text
+Vercel Cron 或 GitHub Actions
+  ↓ GET https://<backend>.vercel.app/api/v1/reminders/cron
+  Authorization: Bearer <CRON_SECRET>
+  ↓
+scan_reminders → PushPlus / 企业微信 / Server酱
 ```
 
-验证：
+- Vercel Cron（Hobby 免费版每天最多 1 次）：在 Vercel 项目 Cron Jobs 页面配置，请求会自动带 `Authorization: Bearer <CRON_SECRET>`；Hobby 版无法满足 5 分钟级提醒，适合日级兜底。
+- GitHub Actions（推荐，支持 5 分钟级）：仓库提供示例 `deploy/github-actions/reminder-cron.yml`，复制到 `.github/workflows/` 后每 5 分钟调用该端点；在 GitHub 仓库 Settings → Secrets 配置 `BACKEND_URL=https://<backend>.vercel.app` 与 `CRON_SECRET`（与后端环境变量相同），未配置时工作流自动跳过。
+
+### 2.4 自托管形态（备选，保留版本）
+
+`deploy/self-host-001` 标签保留了 Docker + systemd 部署产物（`Dockerfile`、`docker-compose.yml`、`deploy/systemd/`），切换回自托管时只需：
 
 ```bash
-curl -s http://localhost:8000/api/v1/health
+git checkout deploy/self-host-001 -- Dockerfile docker-compose.yml deploy/systemd 2>/dev/null || true
+# 或直接从标签新建分支部署
 ```
 
-如需公网 HTTPS，建议在服务器前置 Nginx/Caddy 反向代理到 `127.0.0.1:8000`，并在 `BACKEND_URL` 中使用对应公网域名。
+自托管部署步骤见 README“部署”章节与历史版本 `docs/operations.md`；核心差异是 `ENABLE_SCHEDULER=true`（默认），由 APScheduler 常驻扫描，无需外部定时器。
 
-### 2.3 FastAPI 自托管（systemd）
-
-```bash
-cd /opt/ai-schedule-system/backend
-python3 -m venv .venv
-.venv/bin/pip install uv
-.venv/bin/uv sync --frozen --no-dev
-cp ../deploy/systemd/ai-schedule-backend.service /etc/systemd/system/
-systemctl daemon-reload
-systemctl enable --now ai-schedule-backend
-```
-
-### 2.4 公网验收
+### 2.5 公网验收
 
 ```bash
 curl -s https://<web 域名>/api/health
-curl -s https://<api 域名>/api/v1/health
-curl -s https://<api 域名>/api/v1/reminders/status
+curl -s https://<backend>.vercel.app/api/v1/health
+curl -s https://<backend>.vercel.app/api/v1/reminders/status
+curl -s -H "Authorization: Bearer <CRON_SECRET>" https://<backend>.vercel.app/api/v1/reminders/cron
 ```
 
-- 浏览器打开公网 Web URL，完成注册/登录并确认云端数据读写
+- 浏览器打开公网 Web URL，完成注册/登录并确认云端数据读写（Supabase Auth/RLS）
 - 在 QuickAdd 输入自然语言，确认经公网链路完成真实 AI 解析
-- 创建带微信提醒的时间块，确认后端扫描并推送成功
-- 定时提醒依赖 FastAPI 进程常驻；若部署到 Serverless 冷启动平台，需改用系统 cron 定时调用 `POST /api/v1/reminders/run`
+- 创建带微信提醒的时间块，用 `curl` 触发 cron 端点或等待定时器，确认推送成功
+- Serverless 冷启动首请求可能较慢，属正常现象
 
 ## 3. 健康检查与监控
 
@@ -88,6 +100,7 @@ curl -s https://<api 域名>/api/v1/reminders/status
 - 前端：`GET /api/health`
 - 后端：`GET /api/v1/health`
 - 提醒状态：`GET /api/v1/reminders/status`
+- 提醒手动/定时触发：`GET /api/v1/reminders/cron`（需 `Authorization: Bearer <CRON_SECRET>`）
 
 ```bash
 curl -s http://localhost:3000/api/health
@@ -183,11 +196,12 @@ grep '"event": "ai.response"' <日志> | python3 -c \
 | 症状 | 处置 |
 |---|---|
 | `/api/health` 或 `/api/v1/health` 不可用 | 查对应服务日志；确认环境变量与端口；必要时回滚 |
+| Serverless 后端冷启动慢或偶发超时 | 属正常现象；确认 Vercel 函数 `maxDuration` 配置与日志；定时任务可容忍重试 |
 | 云同步失败 | 确认 Supabase 配置、登录状态与表结构；本地数据仍在，可离线使用 |
 | 数据丢失 | 先停止写入，从本地存储或 Supabase 备份恢复 |
 | 多人数据串用 | 检查是否每位用户独立登录；RLS 按 `auth.uid()` 隔离，禁止共享账号 |
 | AI 解析失败或慢 | 先查日志中 `ai.timeout` / `ai.error` / `ai.response`（含 `duration_ms`）；再检查服务商 Key、余额与网络；接口超时（默认 15 秒）或失败时前端显示明确错误，未配置 Key 时才回退后端本地规则 |
-| 微信提醒未收到 | 确认后端常驻运行、`GET /api/v1/reminders/status` 返回 `enabled: true`；查日志 `push.failure` / `reminder.push.failed` 看原因与状态码；检查微信通道 webhook/token 是否有效、手机端通知权限；推送失败会自动重试 |
+| 微信提醒未收到 | 确认定时器已触发 `GET /api/v1/reminders/cron`（Serverless）或后端常驻运行（自托管）、`/api/v1/reminders/status` 返回 `enabled: true`；查日志 `push.failure` / `reminder.push.failed` 看原因与状态码；检查微信通道 webhook/token 是否有效、手机端通知权限；推送失败会自动重试 |
 
 ## 8. 已知限制
 
@@ -197,4 +211,37 @@ grep '"event": "ai.response"' <日志> | python3 -c \
 - AI 解析请求默认 15 秒超时，可通过 `AI_TIMEOUT_MS` 调整；复杂长句可能需要更长响应时间，超时后请重试或简化输入
 - 定时提醒只扫描已登录并同步到 Supabase 的时间块；未登录或本地模式下的时间块不会触发微信提醒
 - 微信通道需要用户自行申请：企业微信机器人、PushPlus 或 Server酱任一即可，手机端需开启对应应用通知
+- Serverless 模式不常驻 APScheduler：`ENABLE_SCHEDULER=false`，提醒由外部定时器触发；Hobby 版 Vercel Cron 每天最多 1 次，需要 5 分钟级提醒请使用 GitHub Actions
+- 后端速率限制（slowapi）是进程内存态，Serverless 多实例下为近似限流，不作为精确安全边界
 - ICS 导出暂缓，不参与发布验收
+
+## 9. 自托管形态（备选，保留版本）
+
+`deploy/self-host-001` 标签保留了完整自托管产物：`Dockerfile`、`docker-compose.yml`、`deploy/systemd/` 与历史部署文档。切换回自托管时，`ENABLE_SCHEDULER` 保持 `true`（默认），由 APScheduler 常驻扫描，无需外部定时器。
+
+### 9.1 Docker Compose
+
+```bash
+git clone https://github.com/HHH-lm/ai-schedule-system.git /opt/ai-schedule-system
+cd /opt/ai-schedule-system
+cp .env.example .env.local
+# 填写 .env.local 中 AI/Supabase/推送相关变量，ENABLE_SCHEDULER=true
+cd deploy
+docker compose up -d --build
+```
+
+验证：`curl -s http://localhost:8000/api/v1/health`
+
+如需公网 HTTPS，建议在服务器前置 Nginx/Caddy 反向代理到 `127.0.0.1:8000`，并在 `BACKEND_URL` 中使用对应公网域名。
+
+### 9.2 systemd
+
+```bash
+cd /opt/ai-schedule-system/backend
+python3 -m venv .venv
+.venv/bin/pip install uv
+.venv/bin/uv sync --frozen --no-dev
+cp ../deploy/systemd/ai-schedule-backend.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now ai-schedule-backend
+```
