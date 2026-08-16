@@ -5,6 +5,7 @@
 ## 当前目标
 
 - 已完成：Vercel Serverless 公网部署与验收（E-T024-002，2026-08-17）
+- 进行中：README.md 与 docs/operations.md 更新（已上线状态 + 国内访问说明，2026-08-17）
 - 上一目标：T-024 代码/测试部分（E-T024-001）；T-025 发布清单定义（E-T025-001）
 
 ## 文件索引
@@ -23,7 +24,7 @@
 ## Git 状态
 
 - 当前分支 `codex/vercel-serverless`；本次公网验收后的改动未提交（按约定需用户批准后才 git add/commit）。
-- 待提交：`backend/vercel.json`（新增 Vercel Cron）、`backend/.gitignore`、`.project-to-act/`（T-024 TASK 状态、E-T024-002、PROJECT_PROGRESS、PROJECT_ACCEPTANCE）+ `SESSION.md`。
+- 待提交：`README.md`、`docs/operations.md`（最新上线状态 + 国内访问说明）、`backend/vercel.json`（新增 Vercel Cron）、`backend/.gitignore`、`.project-to-act/`（T-024 TASK 状态、E-T024-002、PROJECT_PROGRESS、PROJECT_ACCEPTANCE）+ `SESSION.md`。
 - 自托管版本保留在 `deploy/self-host-001`（`c9e00d9`），`main` 未改动。
 
 ## 验证结果

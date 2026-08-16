@@ -26,9 +26,11 @@ AI 拆解宏观计划，双视图落地微观执行。
 
 ## 项目状态
 
-- 当前阶段：阶段 6（评测、安全测试与调优 — 上线准备中）
-- 版本：`0.1.0`（准备发布）
-- 前端测试：Vitest 82 个测试通过；后端测试：pytest 95 个测试通过（2026-08-13）
+- 阶段：阶段 6 自动验收已完成，进入阶段 7 发布准备（v0.1.0 首次发布）
+- 版本：`0.1.0`（公网演示已上线，G7-001 发布 Gate 待项目负责人确认）
+- 公网地址：前端 https://ai-schedule-web-ten.vercel.app · 后端 https://ai-schedule-backend.vercel.app
+- 公网验收：真实 Supabase Auth/RLS、真实 DeepSeek 解析、PushPlus 微信推送端到端全部通过（E-T024-002）
+- 质量基线：前端 Vitest 82 个测试、后端 pytest 152 个测试、密钥扫描 5/5 PASS；AI golden set 30/30（2026-08-17）
 
 ## 核心功能
 
@@ -90,7 +92,7 @@ AI 拆解宏观计划，双视图落地微观执行。
 
 - 时间块编辑弹窗可设置“微信提醒”时间
 - 自托管模式：FastAPI 后端 APScheduler 每隔 5 分钟扫描到达提醒时间的时间块
-- Serverless 模式：`ENABLE_SCHEDULER=false`，由 Vercel Cron / GitHub Actions 调用 `GET /api/v1/reminders/cron` 触发扫描
+- Serverless 模式：`ENABLE_SCHEDULER=false`，由 Vercel Cron（每日 0 点 UTC，已配置在 `backend/vercel.json`）或 GitHub Actions 调用 `GET /api/v1/reminders/cron` 触发扫描
 - 支持企业微信机器人、PushPlus、Server酱三种通道；推送记录写入 `reminder_log` 去重
 
 ## 技术栈
@@ -131,6 +133,19 @@ npm run dev:raw
 ## 部署（Vercel Serverless）
 
 无服务器/域名，只用 Vercel 即可上线，适合自用与面试展示：
+
+### 当前线上实例
+
+- 前端：https://ai-schedule-web-ten.vercel.app
+- 后端：https://ai-schedule-backend.vercel.app
+- Vercel Cron：每日 0 点 UTC 触发 `/api/v1/reminders/cron` 作为提醒兜底
+
+### 国内访问说明
+
+- `vercel.app` 默认域名在当前网络（常见于国内运营商/防火墙环境）下可能无法直连，手机上打不开时请先开启代理/VPN 后访问。
+- 需要无代理访问时：注册一个自己的域名，绑定到 Vercel 项目并通过 Cloudflare 等 CDN 回源；或把前端放到国内可达的托管/服务器。
+
+### 重新部署步骤
 
 1. 后端：Vercel 新建项目，导入本仓库，Root Directory 填 `backend`，配置 `SUPABASE_URL`、`SUPABASE_SERVICE_ROLE_KEY`、`DEEPSEEK_API_KEY`、`AI_PROVIDER`、`ENABLE_SCHEDULER=false`、`CRON_SECRET`、`WECHAT_PUSH_TYPE` 等环境变量后部署，得到 `https://<backend>.vercel.app`。
 2. 前端：Vercel 再新建项目，Root Directory 填仓库根目录，Framework 选 Next.js，配置 `NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`BACKEND_URL=https://<backend>.vercel.app` 后部署。
@@ -224,12 +239,15 @@ WECOM_WEBHOOK_URL=
 - `POST /api/v1/conflicts/check`：冲突检测
 - `GET /api/v1/reminders/status`：提醒任务状态
 - `POST /api/v1/reminders/run`：手动触发一次提醒扫描
+- `GET /api/v1/reminders/cron`：Serverless 定时触发入口（需 `Authorization: Bearer <CRON_SECRET>`）
 
 后端代码在 `backend/`，依赖由 `uv sync --project backend --extra dev` 安装。
 
-## 部署
+## 上线形态
 
-本项目分为 Next.js 前端与 FastAPI 后端两个服务。前端可部署到任意支持 Node.js 的平台（如 Vercel），后端以 `uvicorn app.main:app` 运行，并通过 `BACKEND_URL` 让前端代理到后端。部署前检查、健康检查、监控、回滚与备份请阅读 [docs/operations.md](docs/operations.md)。
+- 当前线上形态：Next.js 前端与 FastAPI 后端均部署为 Vercel Serverless 项目，前端通过 `/api/v1/*` 服务端代理到后端。
+- 自托管备选：Docker/systemd 版本保留在 `deploy/self-host-001` 标签，需要服务器时可按 [docs/operations.md](docs/operations.md) 第 9 节切回。
+- 部署前检查、健康检查、监控、回滚与备份详见 [docs/operations.md](docs/operations.md)。
 
 ## 目录结构
 
