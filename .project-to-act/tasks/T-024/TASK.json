@@ -1,0 +1,44 @@
+{
+  "taskId": "T-024",
+  "title": "Vercel Serverless 形态改造（FastAPI Python Function + Cron 端点 + GitHub Actions 定时器 + 部署手册）",
+  "status": "in_progress",
+  "stage": 6,
+  "owner": "Codex（用户指令）",
+  "allowedPaths": [
+    "backend/app/config.py",
+    "backend/app/main.py",
+    "backend/app/routers/reminders.py",
+    "backend/pyproject.toml",
+    "backend/vercel.json",
+    "backend/tests/test_reminders.py",
+    ".env.example",
+    "deploy/github-actions/reminder-cron.yml",
+    "docs/operations.md",
+    "README.md",
+    "scripts/scan-secrets.sh",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "项目从“Vercel + FastAPI 自托管”改为只用 Vercel 的 Serverless 形态：Next.js 前端与 FastAPI 后端均部署为 Vercel 项目，后端不再依赖常驻进程，提醒扫描由 Vercel Cron 或 GitHub Actions 定时触发受保护端点；自托管版本保留在 deploy/self-host-001，可随时切回。",
+  "dependencies": ["T-013", "T-015", "T-021"],
+  "invariants": [
+    "不修改 deploy/self-host-001 自托管产物",
+    "密钥只从环境变量读取，不写入 Git",
+    "Serverless 模式不启动常驻 APScheduler",
+    "定时触发端点必须有鉴权（Authorization: Bearer <CRON_SECRET>）",
+    "自托管默认行为不变（ENABLE_SCHEDULER 默认 true）"
+  ],
+  "acceptance": [
+    "ENABLE_SCHEDULER / CRON_SECRET / CORS_ORIGINS 可配置且默认保持自托管行为",
+    "GET /api/v1/reminders/cron 无 CRON_SECRET 返回 403，错误 Bearer 返回 401，正确 Bearer 执行扫描",
+    "enable_scheduler=false 时 lifespan 不创建调度器",
+    "backend 可被 Vercel 识别：pyproject.toml [tool.vercel] entrypoint、backend/vercel.json maxDuration",
+    "GitHub Actions 定时器工作流存在且未配置 Secrets 时安全跳过",
+    "部署手册覆盖 Vercel 后端/前端/定时器配置与公网验收步骤",
+    "后端全量测试通过"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q",
+    "人工按 docs/operations.md 第 2 节在 Vercel 部署并跑公网验收"
+  ]
+}

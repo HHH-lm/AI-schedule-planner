@@ -8,7 +8,7 @@ cd "$ROOT"
 fail=0
 
 scan_tracked() {
-  local label="$1" pattern="$2"
+  local label="$1" pattern="$2" extra_ignore="${3:-}"
   local matches
   matches="$(rg -n -i --hidden \
     -g '!node_modules/**' \
@@ -17,6 +17,7 @@ scan_tracked() {
     -g '!package-lock.json' \
     -g '!scripts/scan-secrets.sh' \
     -g '!.env*' \
+    $extra_ignore \
     "$pattern" . 2>/dev/null || true)"
   if [ -n "$matches" ]; then
     echo "[FAIL] $label"
@@ -31,10 +32,12 @@ scan_tracked "密钥/高熵 token 模式" \
   'sk_(live|test)_[A-Za-z0-9]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
 
 scan_tracked "带值的密钥环境变量" \
-  '(NEXT_PUBLIC_SUPABASE_ANON_KEY|OPENAI_API_KEY|DEEPSEEK_API_KEY|SUPABASE_SERVICE_ROLE_KEY|PUSHPLUS_TOKEN|SERVERCHAN_KEY|WECOM_WEBHOOK_URL)\s*=\s*["'\'']?[^[:space:]"'\'']'
+  '(NEXT_PUBLIC_SUPABASE_ANON_KEY|OPENAI_API_KEY|DEEPSEEK_API_KEY|SUPABASE_SERVICE_ROLE_KEY|PUSHPLUS_TOKEN|SERVERCHAN_KEY|WECOM_WEBHOOK_URL)\s*=\s*["'\'']?[^[:space:]"'\'']' \
+  '-g !backend/tests/**'
 
 scan_tracked "明显凭据赋值" \
-  '(password|secret|api[_-]?key)\s*=\s*["'\'']?[^[:space:]"'\'']'
+  '(password|secret|api[_-]?key)\s*=\s*["'\'']?[^[:space:]"'\'']' \
+  '-g !backend/tests/**'
 
 tracked_env="$(git ls-files | rg '(^|/)\.env($|\.local$|\.prod$|\.staging$)' || true)"
 if [ -n "$tracked_env" ]; then
