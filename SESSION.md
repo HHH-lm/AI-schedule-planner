@@ -4,41 +4,42 @@
 
 ## 当前目标
 
-- 完成：定义阶段 7 发布清单与发布 Gate（v0.1.0），证据 E-T025-001（2026-08-16）
-- 上一目标（已完成）：后端可观测性 — 结构化日志 + 关键事件，证据 E-T023-001
+- 已完成：Vercel Serverless 公网部署与验收（E-T024-002，2026-08-17）
+- 上一目标：T-024 代码/测试部分（E-T024-001）；T-025 发布清单定义（E-T025-001）
 
 ## 文件索引
 
-### 发布清单与发布 Gate / T-025
-- `.project-to-act/PROJECT_VERSIONS.md` — v0.1.0 发布清单（A~I 九组，可逐项勾选）与下一版本计划
-- `.project-to-act/PROJECT_ACCEPTANCE.md` — 新增验收标准 A-008、Gate 记录 G7-001（状态待执行）、验收记录条目、证据索引 E-T025-001
-- `.project-to-act/PROJECT_OVERVIEW.md` — 当前焦点更新为阶段 7 发布准备（v0.1.0）
-- `.project-to-act/PROJECT_PROGRESS.md` — 任务表新增 T-025、下一步追加第 9 条、进度历史追加
-- `.project-to-act/tasks/T-025/` — TASK.json 与证据 E-T025-001
+### 公网部署验收 / T-024
+- 前端：`https://ai-schedule-web-ten.vercel.app`（Vercel 项目 `hhh-lm1/ai-schedule-web`）
+- 后端：`https://ai-schedule-backend.vercel.app`（Vercel 项目 `hhh-lm1/ai-schedule-backend`，Root Directory=`backend`）
+- `backend/vercel.json` — FastAPI 函数 `maxDuration=60` + 每日 Vercel Cron `0 0 * * *`
+- `deploy/github-actions/reminder-cron.yml` — 5 分钟定时器示例；PAT 无 workflow scope，未推入 `.github/workflows/`
+- `.project-to-act/tasks/T-024/evidence/E-T024-002.md` — 公网验收证据
+- `backend/.gitignore` — Vercel CLI 自动生成，忽略 `.vercel` 与 `.env*`
 
-### 前置已完成（本会话之外）
-- T-024 Vercel Serverless 改造（E-T024-001，公网部署验收待执行）
-- T-023 后端可观测性（E-T023-001）；T-021 真实部署验收；T-022 AI golden set
-- 历史任务见 `.project-to-act/PROJECT_PROGRESS.md`
+### 历史（本会话之外，见 SESSION 历史）
+- T-024 代码部分、T-025、T-023、T-022、T-021：见 `.project-to-act/PROJECT_PROGRESS.md`
 
 ## Git 状态
 
-- 当前分支 `main`；最新提交 `a7a1bfd`（T-024 Vercel Serverless 改造）。
-- 本次 T-025 改动未提交（按约定需用户批准后才 git add/commit）：`.project-to-act/PROJECT_VERSIONS.md`、`PROJECT_ACCEPTANCE.md`、`PROJECT_OVERVIEW.md`、`PROJECT_PROGRESS.md`、`SESSION.md`、`.project-to-act/tasks/T-025/`。
+- 当前分支 `codex/vercel-serverless`；本次公网验收后的改动未提交（按约定需用户批准后才 git add/commit）。
+- 待提交：`backend/vercel.json`（新增 Vercel Cron）、`backend/.gitignore`、`.project-to-act/`（T-024 TASK 状态、E-T024-002、PROJECT_PROGRESS、PROJECT_ACCEPTANCE）+ `SESSION.md`。
+- 自托管版本保留在 `deploy/self-host-001`（`c9e00d9`），`main` 未改动。
 
 ## 验证结果
 
-- 后端 pytest：152 个测试通过
-- 前端 Vitest：14 个文件 82 个测试通过
-- 证据：E-T025-001（G7-001 Gate 状态为待执行，未伪造通过）
+- 公网健康检查、Next.js → FastAPI 代理、CORS 全部通过。
+- Supabase Auth/RLS 11/11 PASS；cron 鉴权 3/3 PASS；PushPlus 推送与去重 3/3 PASS；清理 4/4 PASS。
+- 真实 DeepSeek 解析：`source=deepseek`，`2026-08-19 15:00-16:00`，`category=fitness`，`location=世纪公园`。
+- 后端 pytest 152 个、前端 Vitest 82 个测试此前通过（E-T024-001）。
 
 ## Open Questions
 
-- G7-001 发布 Gate 待项目负责人逐项勾选发布清单后执行（当前无公网验收环境，未到执行时机）。
-- T-024 公网 Vercel 部署验收待用户登录 Vercel 后执行（既有遗留）。
+- GitHub PAT 无 workflow scope：`deploy/github-actions/reminder-cron.yml` 无法直接推入 `.github/workflows/`，需要用户加权限或网页端创建，并配置 `BACKEND_URL` / `CRON_SECRET` Secrets。
+- Hobby 版 Vercel Cron 每天最多 1 次；5 分钟级提醒用 GitHub Actions。
+- 阶段 7 发布 Gate G7-001 仍待项目负责人逐项确认（E-T025-001 已定义）。
 
 ## 交接要点
 
-- 发布执行基准 = `.project-to-act/PROJECT_VERSIONS.md` 的 v0.1.0 发布清单；执行指南见 `docs/operations.md`。
-- Gate 结果只记录在 `.project-to-act/PROJECT_ACCEPTANCE.md`；无新鲜证据不得写"通过"。
-- 项目定义与长期状态见 `.project-to-act/PROJECT_OVERVIEW.md`
+- 公网验收全部完成，验收测试用户与数据已清理；DeepSeek 余额已恢复，真实 AI 调用通过。
+- 后续若重新部署：后端项目固定 Root Directory=`backend`，必须从仓库根目录执行 `vercel deploy --project ai-schedule-backend`，不能从 `backend/` 内再部署。

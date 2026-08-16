@@ -1,7 +1,7 @@
 {
   "taskId": "T-024",
   "title": "Vercel Serverless 形态改造（FastAPI Python Function + Cron 端点 + GitHub Actions 定时器 + 部署手册）",
-  "status": "in_progress",
+  "status": "completed",
   "stage": 6,
   "owner": "Codex（用户指令）",
   "allowedPaths": [
@@ -10,6 +10,7 @@
     "backend/app/routers/reminders.py",
     "backend/pyproject.toml",
     "backend/vercel.json",
+    "backend/.gitignore",
     "backend/tests/test_reminders.py",
     ".env.example",
     "deploy/github-actions/reminder-cron.yml",

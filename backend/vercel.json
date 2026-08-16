@@ -4,5 +4,11 @@
     "app/main.py": {
       "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/v1/reminders/cron",
+      "schedule": "0 0 * * *"
+    }
+  ]
 }

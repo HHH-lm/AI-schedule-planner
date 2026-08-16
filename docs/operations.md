@@ -65,7 +65,7 @@ Vercel Cron 或 GitHub Actions
 scan_reminders → PushPlus / 企业微信 / Server酱
 ```
 
-- Vercel Cron（Hobby 免费版每天最多 1 次）：在 Vercel 项目 Cron Jobs 页面配置，请求会自动带 `Authorization: Bearer <CRON_SECRET>`；Hobby 版无法满足 5 分钟级提醒，适合日级兜底。
+- Vercel Cron（Hobby 免费版每天最多 1 次）：`backend/vercel.json` 已配置每日 0 点 UTC 调用 `/api/v1/reminders/cron`，部署后可在 Vercel 项目 Cron Jobs 页面查看；请求会自动带 `Authorization: Bearer <CRON_SECRET>`；Hobby 版无法满足 5 分钟级提醒，适合日级兜底。
 - GitHub Actions（推荐，支持 5 分钟级）：仓库提供示例 `deploy/github-actions/reminder-cron.yml`，复制到 `.github/workflows/` 后每 5 分钟调用该端点；在 GitHub 仓库 Settings → Secrets 配置 `BACKEND_URL=https://<backend>.vercel.app` 与 `CRON_SECRET`（与后端环境变量相同），未配置时工作流自动跳过。
 
 ### 2.4 自托管形态（备选，保留版本）
