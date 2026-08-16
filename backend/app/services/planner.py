@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
 from datetime import date, timedelta
 from typing import Any
 
 import httpx
 
 from app.config import Settings
+from app.logging_setup import get_logger, log_event
 from app.schemas import (
     BreakdownResponse,
     BreakdownTask,
@@ -29,6 +32,28 @@ from app.services.ai import (
 )
 from app.services.conflict import overlaps, overlaps_with_any
 from app.services.nlp import guess_category
+
+
+logger = get_logger("app.planner")
+
+
+def _log_breakdown_result(
+    started: float,
+    *,
+    source: str,
+    tasks: int,
+    level: int = logging.INFO,
+    **extra: Any,
+) -> None:
+    log_event(
+        logger,
+        level,
+        "breakdown.result",
+        duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        source=source,
+        tasks=tasks,
+        **extra,
+    )
 
 
 CATEGORY_VALUES = ("work", "study", "fitness", "life", "rest")
@@ -73,12 +98,20 @@ async def breakdown_tasks(
     settings: Settings,
 ) -> BreakdownResponse:
     plan = plan.strip()
+    started = time.perf_counter()
+    log_event(logger, logging.INFO, "breakdown.start", plan_chars=len(plan))
     if not plan:
+        _log_breakdown_result(
+            started, source="none", tasks=0, error="empty_input"
+        )
         return BreakdownResponse(source="none", tasks=[], message="输入为空")
 
     resolved_provider, resolved_message = resolve_ai_provider(provider, settings)
     if not resolved_provider:
         tasks = [BreakdownTask(name=name) for name in _split_plan_text(plan)]
+        _log_breakdown_result(
+            started, source="local", tasks=len(tasks), reason="no_ai_configured"
+        )
         return BreakdownResponse(source="local", tasks=tasks, message=resolved_message)
 
     try:
@@ -86,7 +119,8 @@ async def breakdown_tasks(
         prompt_today = (anchor or date.today()).isoformat()
         user_text = f"今天={prompt_today}。请拆解：\n{plan}"
         data = await call_chat_completions(
-            _build_breakdown_prompt(), user_text, resolved_provider, settings
+            _build_breakdown_prompt(), user_text, resolved_provider, settings,
+            operation="breakdown",
         )
         content = _extract_content(data)
         payload = parse_model_json(content)
@@ -100,14 +134,25 @@ async def breakdown_tasks(
         ][:15]
         if not tasks:
             raise ValueError("AI 返回的任务列表为空")
+        _log_breakdown_result(
+            started, source=resolved_provider, tasks=len(tasks)
+        )
         return BreakdownResponse(source=resolved_provider, tasks=tasks)
     except (httpx.TimeoutException, httpx.ConnectError) as error:
         _ = error
         timeout_seconds = round(settings.ai_timeout_ms / 1000)
+        _log_breakdown_result(
+            started, source="none", tasks=0, level=logging.ERROR,
+            error=f"ai_timeout:{timeout_seconds}s",
+        )
         return BreakdownResponse(
             source="none", tasks=[], message=f"AI 拆解超时（{timeout_seconds} 秒），请稍后重试"
         )
     except Exception as error:
+        _log_breakdown_result(
+            started, source="none", tasks=0, level=logging.ERROR,
+            error=str(error)[:200],
+        )
         return BreakdownResponse(source="none", tasks=[], message=f"AI 拆解失败：{error}")
 
 
@@ -243,6 +288,7 @@ async def plan_schedule(
             user_text,
             resolved_provider,
             settings,
+            operation="plan",
         )
         content = _extract_content(data)
         payload = parse_model_json(content)

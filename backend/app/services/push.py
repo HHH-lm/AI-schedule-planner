@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+import time
+
 import httpx
 
 from app.config import Settings
+from app.logging_setup import get_logger, log_event
 
+
+logger = get_logger("app.push")
 
 PUSH_TIMEOUT = 10.0
 
@@ -21,6 +27,26 @@ def push_channel_ready(settings: Settings) -> bool:
     return False
 
 
+def _log_failure(
+    channel: str,
+    started: float,
+    *,
+    reason: str,
+    status: int | None = None,
+    code: object = None,
+) -> None:
+    log_event(
+        logger,
+        logging.ERROR,
+        "push.failure",
+        channel=channel,
+        reason=reason,
+        status=status,
+        code=code,
+        duration_ms=round((time.perf_counter() - started) * 1000, 2),
+    )
+
+
 async def push_wechat_message(
     message: str,
     settings: Settings,
@@ -28,8 +54,11 @@ async def push_wechat_message(
 ) -> bool:
     """向配置的微信通道发送文本消息，返回是否发送成功。"""
     channel = settings.wechat_push_type
+    started = time.perf_counter()
+    log_event(logger, logging.INFO, "push.request", channel=channel)
     if channel == "wecom":
         if not settings.wecom_webhook_url:
+            _log_failure(channel, started, reason="channel_not_configured")
             return False
         url = settings.wecom_webhook_url
         payload: dict[str, object] = {
@@ -39,6 +68,7 @@ async def push_wechat_message(
         as_form = False
     elif channel == "pushplus":
         if not settings.pushplus_token:
+            _log_failure(channel, started, reason="channel_not_configured")
             return False
         url = "https://www.pushplus.plus/send"
         payload = {
@@ -49,11 +79,13 @@ async def push_wechat_message(
         as_form = False
     elif channel == "serverchan":
         if not settings.serverchan_key:
+            _log_failure(channel, started, reason="channel_not_configured")
             return False
         url = f"https://sctapi.ftqq.com/{settings.serverchan_key}.send"
         payload = {"title": "AI 日程提醒", "desp": message}
         as_form = True
     else:
+        _log_failure(channel, started, reason="channel_not_configured")
         return False
 
     async with httpx.AsyncClient(timeout=PUSH_TIMEOUT, transport=transport) as client:
@@ -64,6 +96,36 @@ async def push_wechat_message(
         try:
             body = response.json()
         except ValueError:
+            _log_failure(channel, started, reason="invalid_response", status=response.status_code)
             return False
-        return response.status_code < 400 and isinstance(body, dict) and body.get("code") == 200
-    return response.status_code < 400
+        if not (response.status_code < 400 and isinstance(body, dict) and body.get("code") == 200):
+            _log_failure(
+                channel,
+                started,
+                reason="business_error",
+                status=response.status_code,
+                code=body.get("code") if isinstance(body, dict) else None,
+            )
+            return False
+        log_event(
+            logger,
+            logging.INFO,
+            "push.success",
+            channel=channel,
+            status=response.status_code,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        return True
+
+    if response.status_code < 400:
+        log_event(
+            logger,
+            logging.INFO,
+            "push.success",
+            channel=channel,
+            status=response.status_code,
+            duration_ms=round((time.perf_counter() - started) * 1000, 2),
+        )
+        return True
+    _log_failure(channel, started, reason="http_error", status=response.status_code)
+    return False
