@@ -36,6 +36,23 @@ def test_parse_local() -> None:
     assert body["schedules"][0]["date"] == "2026-08-04"
 
 
+def test_parse_local_cross_day() -> None:
+    response = client.post(
+        "/api/v1/parse",
+        json={
+            "text": "今晚10点到明天早上8点值班",
+            "today": "2026-08-03",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "local"
+    schedule = body["schedules"][0]
+    assert schedule["date"] == "2026-08-03"
+    assert schedule["start"] == 22 * 60
+    assert schedule["end"] == 1440 + 8 * 60
+
+
 def test_parse_empty_input() -> None:
     response = client.post("/api/v1/parse", json={"text": "   "})
     assert response.status_code == 200
@@ -58,6 +75,34 @@ def test_conflicts_check() -> None:
     body = response.json()
     assert body["accepted"] == []
     assert body["blocked"][0]["name"] == "写代码"
+
+
+def test_conflicts_check_cross_day() -> None:
+    response = client.post(
+        "/api/v1/conflicts/check",
+        json={
+            "schedules": [
+                {
+                    "name": "跨天值班",
+                    "date": "2026-08-03",
+                    "start": 22 * 60,
+                    "end": 1440 + 8 * 60,
+                }
+            ],
+            "existing_blocks": [
+                {
+                    "date": "2026-08-04",
+                    "start": 7 * 60,
+                    "end": 9 * 60,
+                    "status": "scheduled",
+                }
+            ],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["accepted"] == []
+    assert body["blocked"][0]["name"] == "跨天值班"
 
 
 def test_breakdown_local_fallback() -> None:

@@ -14,14 +14,14 @@ from app.golden_ai_cases import GOLDEN_AI_CASES
 from app.services.ai import build_system_prompt
 
 
-def test_golden_set_has_30_cases_with_expected_distribution() -> None:
-    assert len(GOLDEN_AI_CASES) == 30
+def test_golden_set_has_33_cases_with_expected_distribution() -> None:
+    assert len(GOLDEN_AI_CASES) == 33
     ids = [case["id"] for case in GOLDEN_AI_CASES]
-    assert len(set(ids)) == 30
+    assert len(set(ids)) == 33
     counts = Counter(case["kind"] for case in GOLDEN_AI_CASES)
-    assert counts["quickadd"] == 10
+    assert counts["quickadd"] == 12
     assert counts["planning"] == 10
-    assert counts["boundary"] == 5
+    assert counts["boundary"] == 6
     assert counts["constraint_memory"] == 5
 
 
@@ -38,7 +38,7 @@ def test_golden_case_structures_are_valid() -> None:
                 assert schedules
                 for item in schedules:
                     date.fromisoformat(item["date"])
-                    assert 0 <= item["start"] < item["end"] <= 1440
+                    assert 0 <= item["start"] < item["end"] <= 14 * 1440
                     assert item["category"] in ("work", "study", "fitness", "life", "rest")
         else:
             plan = case["planning"]
@@ -129,7 +129,7 @@ def test_compute_metrics_passes_with_perfect_results() -> None:
     }
     metrics = compute_metrics(results, GOLDEN_AI_CASES, thresholds)
     assert metrics["passed"] is True
-    assert metrics["total_cases"] == 30
+    assert metrics["total_cases"] == 33
     assert metrics["case_full_rate"] == 1.0
 
 

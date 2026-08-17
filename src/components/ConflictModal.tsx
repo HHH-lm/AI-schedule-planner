@@ -2,7 +2,8 @@
 
 import { AlertCircle, X } from "lucide-react";
 import type { ParsedSchedule } from "@/lib/types";
-import { minutesToHHMM, parseDateKey, weekdayName } from "@/lib/date";
+import { parseDateKey, weekdayName } from "@/lib/date";
+import { formatBlockRange } from "@/lib/blockTime";
 
 interface Props {
   conflicts: ParsedSchedule[];
@@ -11,7 +12,7 @@ interface Props {
 
 function conflictLabel(item: ParsedSchedule): string {
   const date = parseDateKey(item.date);
-  return `${weekdayName(date)} ${date.getMonth() + 1}/${date.getDate()} ${minutesToHHMM(item.start)}-${minutesToHHMM(item.end)}`;
+  return `${weekdayName(date)} ${date.getMonth() + 1}/${date.getDate()} ${formatBlockRange(item)}`;
 }
 
 export default function ConflictModal({ conflicts, onClose }: Props) {

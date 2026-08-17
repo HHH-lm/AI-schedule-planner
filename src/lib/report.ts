@@ -2,6 +2,7 @@ import type { AppData, TimeBlock, WeekStat } from "./types";
 import type { WeekDay } from "./date";
 import { CATEGORIES, CATEGORY_ORDER } from "./categories";
 import { isoWeekNumber, minutesToDuration, minutesToHHMM } from "./date";
+import { blockOverlapsDate, splitBlockByDays } from "./blockTime";
 
 const WEEKDAY_LABELS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
 
@@ -12,8 +13,12 @@ export function computeWeekStats(data: AppData, days: WeekDay[]): WeekStat[] {
     let doneMinutes = 0;
     let count = 0;
     for (const block of data.timeBlocks) {
-      if (block.status !== "scheduled" || !keys.has(block.date) || block.category !== category) continue;
-      const duration = Math.max(0, block.end - block.start);
+      if (block.status !== "scheduled" || block.category !== category) continue;
+      let duration = 0;
+      for (const segment of splitBlockByDays(block)) {
+        if (keys.has(segment.dateKey)) duration += segment.end - segment.start;
+      }
+      if (duration <= 0) continue;
       minutes += duration;
       if (block.done) doneMinutes += duration;
       count += 1;
@@ -24,7 +29,7 @@ export function computeWeekStats(data: AppData, days: WeekDay[]): WeekStat[] {
 
 function blocksForDay(data: AppData, dayKey: string): TimeBlock[] {
   return data.timeBlocks
-    .filter((b) => b.date === dayKey && b.status === "scheduled")
+    .filter((b) => b.status === "scheduled" && blockOverlapsDate(b, dayKey))
     .sort((a, b) => a.start - b.start);
 }
 
@@ -53,13 +58,20 @@ function buildTimeDistributionTable(data: AppData, days: WeekDay[]): string {
   slots.forEach((slot, index) => {
     const cells = [slot[1]];
     for (const day of days) {
-      const dayBlocks = blocksForDay(data, day.key).filter(
-        (b) => b.start < slotRanges[index][1] && b.end > slotRanges[index][0]
-      );
-      const summary = dayBlocks
-        .map((b) => `${CATEGORIES[b.category].label}${Math.round((Math.min(b.end, slotRanges[index][1]) - Math.max(b.start, slotRanges[index][0])) / 60)}h`)
-        .join("、");
-      cells.push(summary || "-");
+      const dayBlocks = blocksForDay(data, day.key);
+      const summary: string[] = [];
+      for (const block of dayBlocks) {
+        for (const segment of splitBlockByDays(block)) {
+          if (segment.dateKey !== day.key) continue;
+          const overlapStart = Math.max(segment.start, slotRanges[index][0]);
+          const overlapEnd = Math.min(segment.end, slotRanges[index][1]);
+          if (overlapStart >= overlapEnd) continue;
+          summary.push(
+            `${CATEGORIES[block.category].label}${Math.round((overlapEnd - overlapStart) / 60)}h`
+          );
+        }
+      }
+      cells.push(summary.join("、") || "-");
     }
     rows.push(cells.join(" | "));
   });
@@ -101,9 +113,14 @@ export function buildWeeklyReport(data: AppData, days: WeekDay[]): string {
     for (const block of dayBlocks) {
       const location = block.location || "-";
       const status = block.done ? "完成" : "待办";
-      lines.push(
-        `| ${minutesToHHMM(block.start)}-${minutesToHHMM(block.end)} | ${block.name} | ${CATEGORIES[block.category].label} | ${location} | ${status} |`
-      );
+      for (const segment of splitBlockByDays(block)) {
+        if (segment.dateKey !== days[i].key) continue;
+        const endLabel =
+          segment.end === 1440 ? "24:00" : minutesToHHMM(segment.end);
+        lines.push(
+          `| ${minutesToHHMM(segment.start)}-${endLabel} | ${block.name} | ${CATEGORIES[block.category].label} | ${location} | ${status} |`
+        );
+      }
     }
     lines.push("");
   }

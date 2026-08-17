@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -77,7 +77,20 @@ def format_reminder_message(block: dict[str, Any]) -> str:
         safe = max(0, min(1439, minutes))
         return f"{safe // 60:02d}:{safe % 60:02d}"
 
-    lines = [f"日程提醒：{name}", f"日期：{date}", f"时间：{clock(start)}-{clock(end)}"]
+    def end_label() -> str:
+        if end <= 1440:
+            return clock(end)
+        day_offset = end // 1440
+        end_clock = clock(end % 1440)
+        if day_offset == 1:
+            return f"次日{end_clock}"
+        try:
+            end_day = date.fromisoformat(date) + timedelta(days=day_offset)
+            return f"{end_day.isoformat()} {end_clock}"
+        except ValueError:
+            return f"+{day_offset}天{end_clock}"
+
+    lines = [f"日程提醒：{name}", f"日期：{date}", f"时间：{clock(start)}-{end_label()}"]
     if location:
         lines.append(f"地点：{location}")
     return "\n".join(lines)
