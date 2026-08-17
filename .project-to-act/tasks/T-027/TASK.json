@@ -1,0 +1,51 @@
+{
+  "taskId": "T-027",
+  "title": "v0.1.0 首次发布执行（阶段 7 发布清单 + G7-001 发布 Gate）",
+  "status": "in_progress",
+  "stage": 7,
+  "owner": "Codex（用户指令）；发布确认人：项目负责人",
+  "allowedPaths": [
+    ".project-to-act/",
+    "docs/operations.md",
+    "README.md",
+    ".github/workflows/",
+    "deploy/github-actions/reminder-cron.yml",
+    "backend/vercel.json",
+    "backend/.gitignore",
+    ".env.example",
+    "package.json",
+    "backend/pyproject.toml",
+    "SESSION.md"
+  ],
+  "contract": "按 PROJECT_VERSIONS.md「v0.1.0 发布清单」A-I 逐项执行并记录结果：质量门禁、版本产物、环境变量与密钥、数据与 Supabase、部署拓扑、真实公网验收、监控可观测性、回滚与风险、人工确认；在项目负责人确认后执行 G7-001 发布 Gate 并写入 PROJECT_ACCEPTANCE.md。",
+  "dependencies": [
+    "T-021",
+    "T-022",
+    "T-023",
+    "T-024",
+    "T-025",
+    "T-026"
+  ],
+  "invariants": [
+    "构建前必须停止 dev server 并 npm run clean，构建后恢复 dev",
+    "密钥只通过环境变量注入，不写入 Git",
+    "G7-001 未获项目负责人逐项确认前不得标记通过",
+    "不扩大范围，不新增未在发布清单中的功能"
+  ],
+  "acceptance": [
+    "PROJECT_VERSIONS.md 发布清单 A-I 全部勾选",
+    "真实公网验收证据 E-T027-001 入账",
+    "PROJECT_ACCEPTANCE.md 记录 G7-001 结果（通过或带风险通过及责任人）",
+    "PROJECT_OVERVIEW/PROJECT_PROGRESS/PROJECT_VERSIONS/SESSION 同步",
+    "两套 validate 通过"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q",
+    "npm test",
+    "npm run lint",
+    "npx tsc --noEmit",
+    "npm run scan:secrets",
+    "npm run eval:ai:golden",
+    "npm run clean && npm run build"
+  ]
+}

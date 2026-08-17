@@ -1,0 +1,9 @@
+{
+  "revision": 1,
+  "ledger": ".project-to-act/AGENT_LIFECYCLE.json",
+  "currentStage": "7",
+  "stageStatus": "ready",
+  "intentSource": "用户指令：提交改动后创建 T-027",
+  "contextFreshness": "2026-08-17，阶段 6 Gate 通过后",
+  "modificationIntent": "启动阶段 7 并执行 v0.1.0 首次发布清单与 G7-001 Gate"
+}

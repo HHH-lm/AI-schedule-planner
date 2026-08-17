@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "projectId": "ai-schedule-system",
   "projectName": "AI日程管理与个性化规划系统",
-  "revision": 8,
+  "revision": 9,
   "projectStatus": "active",
   "currentStage": "7",
-  "updatedAt": "2026-08-17T10:55:56.729Z",
+  "updatedAt": "2026-08-17T11:03:44.850Z",
   "historicalLimitations": [
     "采用既有实现：核心功能代码已存在（18 个源文件，package.json v0.1.0），但无自动测试、无 Git 提交、无 Gate 文档；阶段 0-4 标记 legacy_unverified，不能追溯为已通过。"
   ],
@@ -207,18 +207,20 @@
     {
       "id": "7",
       "name": "定型发布与产品化",
-      "status": "ready",
+      "status": "in_progress",
       "expectedArtifacts": [
         "版本与发布清单",
         "SLO 与监控",
         "灰度、停止和回滚方案"
       ],
-      "taskIds": [],
+      "taskIds": [
+        "T-027"
+      ],
       "evidenceIds": [],
       "artifacts": [],
       "decisions": [],
-      "startedAt": null,
-      "updatedAt": "2026-08-17T10:55:56.729Z"
+      "startedAt": "2026-08-17T11:03:44.850Z",
+      "updatedAt": "2026-08-17T11:03:44.850Z"
     },
     {
       "id": "8",
@@ -362,6 +364,20 @@
       ],
       "summary": "阶段 6 Gate 通过：质量门禁 A 组全部通过（pytest 152、Vitest 82、lint、tsc、scan 5/5、真实 DeepSeek golden 30/30、生产构建通过），进入阶段 7 发布准备",
       "revision": 8
+    },
+    {
+      "at": "2026-08-17T11:03:44.850Z",
+      "action": "start",
+      "fromStage": "7",
+      "toStage": "7",
+      "fromStatus": "ready",
+      "toStatus": "in_progress",
+      "taskId": "T-027",
+      "decision": null,
+      "evidenceIds": [],
+      "artifacts": [],
+      "summary": "启动阶段 7：定型发布与产品化（T-027 v0.1.0 首次发布执行）",
+      "revision": 9
     }
   ]
 }

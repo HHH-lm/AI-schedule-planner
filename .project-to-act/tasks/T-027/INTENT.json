@@ -1,0 +1,14 @@
+{
+  "intent": "执行 v0.1.0 首次发布：按发布清单完成质量门禁、版本、环境、数据、部署、公网验收、监控、回滚与人工确认，并执行 G7-001。",
+  "conflicts": "G7-001 必须在项目负责人逐项确认后执行，不得以自动化结果替代发布授权。",
+  "assumptions": [
+    "Vercel 前端/后端项目已存在并可继续部署（E-T024-002）",
+    "Supabase 生产项目已配置 Auth/RLS，DeepSeek/PushPlus 凭据有效",
+    "GitHub PAT 需要用户补充 workflow scope 或网页端创建 workflow"
+  ],
+  "risks": [
+    "Hobby 版 Vercel Cron 每天 1 次，5 分钟提醒依赖 GitHub Actions",
+    "国内网络访问 *.vercel.app 可能受限",
+    "备份恢复演练需要访问真实 Supabase 数据，需避免影响真实用户数据"
+  ]
+}
