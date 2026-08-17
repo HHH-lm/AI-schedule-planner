@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -315,6 +315,9 @@ def _async_fake(value):
 
 def test_scan_reminders_emits_events(caplog, monkeypatch) -> None:
     settings = _reminder_settings()
+    recent = datetime.now(timezone.utc)
+    b1_remind_at = (recent - timedelta(minutes=4)).isoformat()
+    b2_remind_at = (recent - timedelta(minutes=2)).isoformat()
     rows = [
         _row(
             "u1",
@@ -325,7 +328,7 @@ def test_scan_reminders_emits_events(caplog, monkeypatch) -> None:
                     "date": "2026-08-11",
                     "start": 600,
                     "end": 720,
-                    "remindAt": "2020-01-01T00:00:00Z",
+                    "remindAt": b1_remind_at,
                 },
                 {
                     "id": "b2",
@@ -333,7 +336,7 @@ def test_scan_reminders_emits_events(caplog, monkeypatch) -> None:
                     "date": "2026-08-11",
                     "start": 480,
                     "end": 540,
-                    "remindAt": "2020-01-02T00:00:00Z",
+                    "remindAt": b2_remind_at,
                 },
             ],
         )
@@ -341,7 +344,7 @@ def test_scan_reminders_emits_events(caplog, monkeypatch) -> None:
     monkeypatch.setattr("app.services.reminders.fetch_schedule_rows", _async_fake(rows))
     monkeypatch.setattr(
         "app.services.reminders.fetch_pushed_reminders",
-        _async_fake({("u1", "b1", "2020-01-01T00:00:00+00:00")}),
+        _async_fake({("u1", "b1", b1_remind_at)}),
     )
     monkeypatch.setattr("app.services.reminders.push_wechat_message", _async_fake(True))
     monkeypatch.setattr("app.services.reminders.insert_reminder_log", _async_fake(None))
@@ -374,7 +377,7 @@ def test_scan_reminders_logs_push_failure(caplog, monkeypatch) -> None:
                     "date": "2026-08-11",
                     "start": 600,
                     "end": 720,
-                    "remindAt": "2020-01-01T00:00:00Z",
+                    "remindAt": (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat(),
                 }
             ],
         )

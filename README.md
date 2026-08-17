@@ -93,6 +93,7 @@ AI 拆解宏观计划，双视图落地微观执行。
 - 时间块编辑弹窗可设置“微信提醒”时间
 - 自托管模式：FastAPI 后端 APScheduler 每隔 5 分钟扫描到达提醒时间的时间块
 - Serverless 模式：`ENABLE_SCHEDULER=false`，由 Vercel Cron（每日 0 点 UTC，已配置在 `backend/vercel.json`）或 GitHub Actions 调用 `GET /api/v1/reminders/cron` 触发扫描
+- 提醒时间已过去超过 10 分钟时不再补发，避免补录历史时间块或服务恢复后推送过期提醒
 - 支持企业微信机器人、PushPlus、Server酱三种通道；推送记录写入 `reminder_log` 去重
 
 ## 技术栈
@@ -225,7 +226,7 @@ WECOM_WEBHOOK_URL=
 
 - `WECHAT_PUSH_TYPE` 可选 `none` / `wecom` / `pushplus` / `serverchan`；企业微信机器人填 `WECOM_WEBHOOK_URL`，PushPlus 填 `PUSHPLUS_TOKEN`，Server酱填 `SERVERCHAN_KEY`。
 - `SUPABASE_SERVICE_ROLE_KEY` 权限较高，只放在后端环境变量，不能写进 `NEXT_PUBLIC_*` 或提交 Git。
-- 后端推送成功后写入 `reminder_log`，同一时间块同一提醒时间不会重复推送；推送失败会自动重试。
+- 后端推送成功后写入 `reminder_log`，同一时间块同一提醒时间不会重复推送；提醒时间已过去超过 10 分钟不再补发（含推送失败后的重试）。
 - Serverless 部署时 `ENABLE_SCHEDULER=false` 并设置 `CRON_SECRET`，定时器必须以 `Authorization: Bearer <CRON_SECRET>` 调用 `/api/v1/reminders/cron`。
 
 ### FastAPI 后端 API

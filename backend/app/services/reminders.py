@@ -23,6 +23,9 @@ logger = get_logger("app.reminders")
 
 SUPABASE_TIMEOUT = 15.0
 
+# 提醒时间已过去超过该窗口时不再补发，避免推送早已过期的日程。
+STALE_REMINDER_WINDOW = timedelta(minutes=10)
+
 
 def parse_remind_at(value: Any) -> datetime | None:
     if not isinstance(value, str):
@@ -55,14 +58,15 @@ def collect_due_blocks(
             remind_at = parse_remind_at(block.get("remindAt"))
             if remind_at is None:
                 continue
-            if remind_at <= now:
-                due.append(
-                    {
-                        "user_id": user_id,
-                        "block": block,
-                        "remind_at": remind_at,
-                    }
-                )
+            if remind_at > now or now - remind_at > STALE_REMINDER_WINDOW:
+                continue
+            due.append(
+                {
+                    "user_id": user_id,
+                    "block": block,
+                    "remind_at": remind_at,
+                }
+            )
     return due
 
 

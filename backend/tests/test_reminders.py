@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi.testclient import TestClient
@@ -39,6 +39,10 @@ def make_row(user_id: str = "u1", blocks: list[dict] | None = None) -> dict:
     return {"user_id": user_id, "data": {"timeBlocks": blocks or []}}
 
 
+def _recent_remind_at(minutes_ago: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat()
+
+
 def async_fake(value):
     async def fake(*args, **kwargs):
         return value
@@ -60,9 +64,10 @@ def test_collect_due_blocks_filters_due() -> None:
         make_row(
             "u1",
             [
-                {"id": "b1", "name": "开会", "remindAt": "2026-08-11T01:00:00Z"},
+                {"id": "b1", "name": "开会", "remindAt": "2026-08-11T01:55:00Z"},
                 {"id": "b2", "name": "健身", "remindAt": "2026-08-11T03:00:00Z"},
                 {"id": "b3", "name": "写代码"},
+                {"id": "b5", "name": "旧提醒", "remindAt": "2026-08-11T01:00:00Z"},
             ],
         ),
         {"user_id": "u2", "data": {"timeBlocks": [{"id": "b4", "remindAt": "bad"}]}},
@@ -70,6 +75,21 @@ def test_collect_due_blocks_filters_due() -> None:
     ]
     due = collect_due_blocks(rows, now)
     assert [item["block"]["id"] for item in due] == ["b1"]
+
+
+def test_collect_due_blocks_skips_reminders_older_than_10_minutes() -> None:
+    now = datetime(2026, 8, 11, 2, 0, tzinfo=timezone.utc)
+    rows = [
+        make_row(
+            "u1",
+            [
+                {"id": "exact", "name": "正好 10 分钟", "remindAt": "2026-08-11T01:50:00Z"},
+                {"id": "stale", "name": "已过期 11 分钟", "remindAt": "2026-08-11T01:49:00Z"},
+            ],
+        )
+    ]
+    due = collect_due_blocks(rows, now)
+    assert [item["block"]["id"] for item in due] == ["exact"]
 
 
 def test_format_reminder_message() -> None:
@@ -154,6 +174,8 @@ def test_scan_reminders_disabled_without_channel() -> None:
 
 def test_scan_reminders_pushes_and_dedupes(monkeypatch) -> None:
     settings = make_settings()
+    b1_remind_at = _recent_remind_at(4)
+    b2_remind_at = _recent_remind_at(2)
     rows = [
         make_row(
             "u1",
@@ -164,7 +186,7 @@ def test_scan_reminders_pushes_and_dedupes(monkeypatch) -> None:
                     "date": "2026-08-11",
                     "start": 600,
                     "end": 720,
-                    "remindAt": "2020-01-01T00:00:00Z",
+                    "remindAt": b1_remind_at,
                 },
                 {
                     "id": "b2",
@@ -172,7 +194,7 @@ def test_scan_reminders_pushes_and_dedupes(monkeypatch) -> None:
                     "date": "2026-08-11",
                     "start": 480,
                     "end": 540,
-                    "remindAt": "2020-01-02T00:00:00Z",
+                    "remindAt": b2_remind_at,
                 },
             ],
         )
@@ -180,7 +202,7 @@ def test_scan_reminders_pushes_and_dedupes(monkeypatch) -> None:
     monkeypatch.setattr("app.services.reminders.fetch_schedule_rows", async_fake(rows))
     monkeypatch.setattr(
         "app.services.reminders.fetch_pushed_reminders",
-        async_fake({("u1", "b1", "2020-01-01T00:00:00+00:00")}),
+        async_fake({("u1", "b1", b1_remind_at)}),
     )
     pushed_messages: list[str] = []
 
@@ -218,7 +240,7 @@ def test_scan_reminders_keeps_error_on_push_failure(monkeypatch) -> None:
                     "date": "2026-08-11",
                     "start": 600,
                     "end": 720,
-                    "remindAt": "2020-01-01T00:00:00Z",
+                    "remindAt": _recent_remind_at(2),
                 }
             ],
         )
