@@ -32,6 +32,7 @@
 | T-023 后端可观测性（结构化日志 + 关键事件：AI 慢/失败、推送失败可查） | 已完成 | Codex（用户指令） | 后端 148 测试 + 实机日志验证 + 证据入账 | E-T023-001 | 2026-08-16 |
 | T-024 Vercel Serverless 形态改造（FastAPI Python Function + Cron 端点 + GitHub Actions 定时器 + 部署手册） | 已完成 | Codex（用户指令） | 后端 152 测试 + 前端 82 测试 + 密钥扫描 5/5 PASS + 公网 Vercel 部署与 Auth/RLS/AI/推送验收全部通过 | E-T024-001, E-T024-002 | 2026-08-17 |
 | T-025 定义阶段 7 发布清单与发布 Gate（v0.1.0） | 已完成 | Codex（用户指令） | 发布清单写入 PROJECT_VERSIONS.md + G7-001 定义待执行 + 证据入账 | E-T025-001 | 2026-08-16 |
+| T-026 生命周期账本一致性修复（阶段 5 状态、阶段 6 任务/证据、验收/进度/功能索引） | 已完成 | Codex（用户指令） | 两套 validate 通过并写入证据 | E-T026-001 | 2026-08-17 |
 
 ## 阻塞项
 
@@ -41,15 +42,15 @@
 
 ## 下一步
 
-1. T-026 生命周期账本一致性修复已完成（E-T026-001）：阶段 5 状态修正为 passed，阶段 6 任务与证据补录至 T-025，两套 validate 通过。
-2. 下一步执行阶段 6 Gate（G6-001）并启动阶段 7；随后按 `PROJECT_VERSIONS.md`「v0.1.0 发布清单」执行 G7-001（当前待项目负责人逐项勾选）。
-3. 发布前待办：启用 GitHub Actions 5 分钟定时器（PAT 增加 workflow scope + 配置 `BACKEND_URL`/`CRON_SECRET`）、Supabase 每日备份与恢复演练、外部健康探测、SLO 基线记录、A-001/A-002 人工对照确认。
-4. AI 解析 golden set 已建立（E-T022-001）：后续 prompt/模型变更必须重跑 `npm run eval:ai:golden`。
+1. 阶段 6 Gate 已通过（G6-001，E-G6-001），阶段 7 ready；下一步创建 T-027 并启动阶段 7，按 `PROJECT_VERSIONS.md`「v0.1.0 发布清单」执行首次发布（G7-001 待项目负责人逐项勾选）。
+2. 发布前待办：启用 GitHub Actions 5 分钟定时器（PAT 增加 workflow scope + 配置 `BACKEND_URL`/`CRON_SECRET`）、Supabase 每日备份与恢复演练、外部健康探测、SLO 基线记录、A-001/A-002 人工对照确认。
+3. AI 解析 golden set 已建立（E-T022-001）：后续 prompt/模型变更必须重跑 `npm run eval:ai:golden`。
 
 ## 进度历史
 
 按时间倒序追加：日期、完成事项、证据 ID、遗留问题、下一步和确认来源。不要覆盖旧记录。
 
+- 2026-08-17：阶段 6 Gate 通过（G6-001）：后端 pytest 152、前端 Vitest 82、lint、tsc、密钥扫描 5/5、真实 DeepSeek golden 30/30、生产构建全部通过；构建前已停止 dev server 并执行 clean；生命周期账本 revision 8、阶段 6 passed、阶段 7 ready。证据 E-G6-001。遗留问题：A-001/A-002 人工对照待确认；G7-001 发布 Gate 与发布清单待执行。下一步：创建 T-027 启动阶段 7，执行 v0.1.0 首次发布。来源：用户指令。
 - 2026-08-17：T-026 生命周期账本一致性修复完成：修正 AGENT_LIFECYCLE.json 阶段 5 非法状态 completed 为 passed 并补工件 E-T004-003 证据文件；revision 从失配的 14 对齐到 6 条既有转换记录后由 CLI 补记阶段 6 启动转换（rev 7）；阶段 6 taskIds/evidenceIds 补录 T-005 至 T-025 与对应 E-T 证据；PROJECT_ACCEPTANCE 补 E-T017-001 至 E-T020-001 索引，PROJECT_PROGRESS 补 T-020 行，PROJECT_FEATURES F-020 证据改为 E-T020-001；manage_lifecycle validate 与 Project-to-Act validate 均通过。证据 E-T026-001。遗留问题：G7-001 发布 Gate 待执行；GitHub Actions 定时器、备份演练、外部探测、SLO、A-001/A-002 待办。下一步：阶段 6 Gate 与阶段 7 发布执行。来源：用户指令。
 - 2026-08-17：T-024 公网部署验收完成（补记 UTC 2026-08-16T19:20Z）：Vercel CLI 登录后创建 `ai-schedule-backend`（Root Directory=backend）与 `ai-schedule-web` 两个项目并生产部署；公网健康检查、Next.js → FastAPI 代理、CORS；真实 Supabase Auth/RLS 11 项、cron 鉴权 3 项、PushPlus 推送与去重 3 项、清理 4 项全部 PASS；DeepSeek 充值后真实解析返回 `source=deepseek`；`backend/vercel.json` 增加每日 Vercel Cron 兜底并重新部署；测试用户与数据已清理。证据 E-T024-002。遗留问题：GitHub Actions 5 分钟定时器因 PAT 无 workflow scope 未推入 `.github/workflows/`，示例在 `deploy/github-actions/reminder-cron.yml`；Hobby 版 Vercel Cron 每天 1 次。下一步：用户给 PAT 加 workflow scope 或网页端创建 workflow，并配置 `BACKEND_URL`/`CRON_SECRET` Secrets。来源：用户指令（执行部署检查 + DeepSeek 充值后真实 AI 调用）。
 - 2026-08-16：T-025 定义阶段 7 发布清单与发布 Gate：发布清单写入 `.project-to-act/PROJECT_VERSIONS.md`（A 质量门禁 / B 版本产物 / C 环境变量与密钥 / D 数据与 Supabase / E 部署拓扑 / F 真实公网验收 / G 监控可观测性 / H 回滚风险 / I 人工确认与 Gate 执行），执行指南引用 `docs/operations.md`；`PROJECT_ACCEPTANCE.md` 新增 A-008 验收标准与 G7-001 Gate 记录（状态待执行，未伪造通过）；后端 pytest、前端 Vitest 保持通过。证据 E-T025-001。遗留问题：清单未执行，G7-001 发布 Gate 待项目负责人逐项勾选后确认。下一步：按清单执行公网部署与真实验收。来源：用户指令。

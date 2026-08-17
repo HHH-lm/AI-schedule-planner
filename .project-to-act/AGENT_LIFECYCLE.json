@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "projectId": "ai-schedule-system",
   "projectName": "AI日程管理与个性化规划系统",
-  "revision": 7,
+  "revision": 8,
   "projectStatus": "active",
-  "currentStage": "6",
-  "updatedAt": "2026-08-17T10:32:14.944Z",
+  "currentStage": "7",
+  "updatedAt": "2026-08-17T10:55:56.729Z",
   "historicalLimitations": [
     "采用既有实现：核心功能代码已存在（18 个源文件，package.json v0.1.0），但无自动测试、无 Git 提交、无 Gate 文档；阶段 0-4 标记 legacy_unverified，不能追溯为已通过。"
   ],
@@ -123,7 +123,7 @@
     {
       "id": "6",
       "name": "评测、安全测试与调优",
-      "status": "in_progress",
+      "status": "passed",
       "expectedArtifacts": [
         "分切片评测",
         "红队报告",
@@ -150,7 +150,8 @@
         "T-022",
         "T-023",
         "T-024",
-        "T-025"
+        "T-025",
+        "T-026"
       ],
       "evidenceIds": [
         "E-T005-001",
@@ -177,17 +178,36 @@
         "E-T023-001",
         "E-T024-001",
         "E-T024-002",
-        "E-T025-001"
+        "E-T025-001",
+        "E-G6-001"
       ],
-      "artifacts": [],
-      "decisions": [],
+      "artifacts": [
+        ".project-to-act/PROJECT_ACCEPTANCE.md"
+      ],
+      "decisions": [
+        {
+          "at": "2026-08-17T10:55:56.729Z",
+          "decision": "passed",
+          "evidenceIds": [
+            "E-G6-001",
+            "E-T022-001",
+            "E-T023-001",
+            "E-T024-002"
+          ],
+          "artifacts": [
+            ".project-to-act/PROJECT_ACCEPTANCE.md"
+          ],
+          "summary": "阶段 6 Gate 通过：质量门禁 A 组全部通过（pytest 152、Vitest 82、lint、tsc、scan 5/5、真实 DeepSeek golden 30/30、生产构建通过），进入阶段 7 发布准备",
+          "nextStage": null
+        }
+      ],
       "startedAt": "2026-08-09T17:28:23Z",
-      "updatedAt": "2026-08-17T10:32:14.944Z"
+      "updatedAt": "2026-08-17T10:55:56.729Z"
     },
     {
       "id": "7",
       "name": "定型发布与产品化",
-      "status": "pending",
+      "status": "ready",
       "expectedArtifacts": [
         "版本与发布清单",
         "SLO 与监控",
@@ -198,7 +218,7 @@
       "artifacts": [],
       "decisions": [],
       "startedAt": null,
-      "updatedAt": null
+      "updatedAt": "2026-08-17T10:55:56.729Z"
     },
     {
       "id": "8",
@@ -323,6 +343,25 @@
       "artifacts": [],
       "summary": "启动阶段 6：评测、安全测试与调优（T-026 受控迁移补录阶段 6 启动转换）",
       "revision": 7
+    },
+    {
+      "at": "2026-08-17T10:55:56.729Z",
+      "action": "decision",
+      "fromStage": "6",
+      "toStage": "7",
+      "taskId": "T-026",
+      "decision": "passed",
+      "evidenceIds": [
+        "E-G6-001",
+        "E-T022-001",
+        "E-T023-001",
+        "E-T024-002"
+      ],
+      "artifacts": [
+        ".project-to-act/PROJECT_ACCEPTANCE.md"
+      ],
+      "summary": "阶段 6 Gate 通过：质量门禁 A 组全部通过（pytest 152、Vitest 82、lint、tsc、scan 5/5、真实 DeepSeek golden 30/30、生产构建通过），进入阶段 7 发布准备",
+      "revision": 8
     }
   ]
 }

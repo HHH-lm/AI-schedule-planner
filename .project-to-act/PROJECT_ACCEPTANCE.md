@@ -5,9 +5,9 @@
 
 ## 当前验收结论
 
-- 结论：阶段 5 自动 Gate 通过，进入阶段 6；真实部署环境核心链路验收通过（E-T021-001）；Vercel Serverless 公网部署核心链路验收通过（E-T024-002）；AI 解析质量评测与回归通过（E-T022-001）；后端可观测性（结构化日志 + 关键事件）验收通过（E-T023-001）；阶段 7 发布清单与发布 Gate 已定义（E-T025-001），G7-001 待执行；A-001/A-002 人工对照验收待项目负责人最终确认
+- 结论：阶段 6 Gate 通过（G6-001，E-G6-001），阶段 7 ready；阶段 5 Gate 通过；真实部署环境核心链路验收通过（E-T021-001）；Vercel Serverless 公网部署核心链路验收通过（E-T024-002）；AI 解析质量评测与回归通过（E-T022-001）；后端可观测性（结构化日志 + 关键事件）验收通过（E-T023-001）；阶段 7 发布清单与发布 Gate 已定义（E-T025-001），G7-001 待执行；A-001/A-002 人工对照验收待项目负责人最终确认
 - 验收范围：阶段 5（具体功能与纵向切片开发），依据 Git 基线 `2e1ad62`
-- 最后检查：2026-08-17（Vercel Serverless 公网 Auth/RLS、真实 DeepSeek、PushPlus 端到端，见 E-T024-002；此前见 E-T021-001/E-T022-001/E-T023-001）
+- 最后检查：2026-08-17（阶段 6 Gate 质量门禁复跑，见 E-G6-001；Vercel Serverless 公网 Auth/RLS、真实 DeepSeek、PushPlus 端到端见 E-T024-002；此前见 E-T021-001/E-T022-001/E-T023-001）
 - 遗留问题：Obsidian 跳转依赖本机已安装 Obsidian；ICS 导出暂缓未验收；A-001/A-002 待人工确认；后端日志未接外部日志平台/SLO 告警、request_id 未写入响应头（阶段 7 可选）；阶段 7 发布清单已定义（E-T025-001）但未执行，G7-001 发布 Gate 待项目负责人执行
 
 ## 验收标准
@@ -58,12 +58,14 @@
 | E-T024-001 | 2026-08-16T12:50:00Z | backend pytest + npm test + npm run scan:secrets | 0 | 关键文件 SHA-256 见证据文件 | Serverless 配置、cron 端点、CORS、GitHub Actions 示例与部署手册就绪；后端 152 测试、前端 82 测试、密钥扫描 5/5 PASS | `.project-to-act/tasks/T-024/evidence/E-T024-001.md` | 2026-08-23 |
 | E-T024-002 | 2026-08-16T19:20:00Z | Vercel CLI 部署 + 公网 curl + Supabase REST/Auth + PushPlus + DeepSeek | 0 | 公网前端/后端 URL | 公网健康检查、Auth/RLS 11 项、cron 鉴权 3 项、PushPlus 推送与去重 3 项、真实 DeepSeek 解析全部 PASS；测试数据已清理 | `.project-to-act/tasks/T-024/evidence/E-T024-002.md` | 2026-08-24 |
 | E-T025-001 | 2026-08-16T12:30:00Z | 文档审查 + backend pytest + npm test | 0 | 发布清单与 Gate 定义（未执行） | 发布清单写入 PROJECT_VERSIONS.md；A-008/G7-001 待执行；后端 152 + 前端 82 测试通过 | `.project-to-act/tasks/T-025/evidence/E-T025-001.md` | 2026-08-23 |
+| E-G6-001 | 2026-08-17T10:55:20Z | 质量门禁复跑 + 真实 DeepSeek golden + 生产构建 + 双验证 | 0 | v0.1.0，Git 基线 5c6fe28，工作树含未提交 Gate 改动 | pytest 152、Vitest 82、lint/tsc、scan 5/5、golden 30/30、生产构建全部通过；阶段 6 passed、阶段 7 ready | `.project-to-act/tasks/T-026/evidence/E-G6-001.md` | 2026-08-24 |
 
 ## Gate 记录
 
 | Gate ID | 日期 | Gate | 对象 | 结果 | 证据 ID | 豁免与确认人 |
 |---|---|---|---|---|---|---|
 | G5-001 | 2026-08-09T17:28:23Z | 阶段 5 功能开发与纵向切片 | 阶段 5 | 通过 | E-T004-003 | 用户指示执行 Gate；A-001/A-002 人工对照待确认 |
+| G6-001 | 2026-08-17 | 阶段 6 评测、安全测试与调优 | 阶段 6 | 通过 | E-G6-001、E-T022-001、E-T023-001、E-T024-002 | 用户指令执行 Gate；A-001/A-002 人工对照仍待确认 |
 | G-ADOPT-001 | 2026-08-08 | 既有项目采用 | 阶段 0-5 | legacy_unverified / ready | E-ADOPT-001 | 无（采用不是正式 Gate 通过） |
 | G7-001 | 2026-08-16 | 阶段 7 发布 Gate（v0.1.0 首次发布） | v0.1.0 | 待执行 | E-T025-001（清单定义） | 需项目负责人逐项勾选发布清单后执行确认 |
 
@@ -71,6 +73,7 @@
 
 按时间倒序追加：日期、检查范围、证据 ID、结果、遗留问题和结论。失败、跳过与过期证据也必须如实记录。
 
+- 2026-08-17：阶段 6 Gate 执行检查，E-G6-001，结果：后端 pytest 152、前端 Vitest 82、lint、tsc、密钥扫描 5/5、真实 DeepSeek golden 30/30、生产构建全部通过；dev server 已按约定停止并清理后构建。遗留问题：A-001/A-002 人工对照待确认；阶段 7 发布清单未执行，G7-001 待执行。结论：阶段 6 passed，阶段 7 ready。
 - 2026-08-17：T-026 生命周期账本一致性修复检查，E-T026-001，结果：阶段 5 状态由非法 completed 修正为 passed 并补工件 E-T004-003；revision 由失配的 14 对齐为 6 条既有转换记录，CLI 补记阶段 6 启动转换 rev 7；阶段 6 补录 T-005 至 T-025 任务与对应证据；Acceptance/Progress/Features 缺项补齐；manage_lifecycle validate 与 Project-to-Act validate 均通过。遗留问题：G7-001 发布 Gate 仍待项目负责人逐项执行；GitHub Actions 定时器、备份演练、外部探测、SLO、A-001/A-002 待办。结论：T-026 完成，未改变阶段 6 in_progress 与阶段 7 pending。
 - 2026-08-17：T-024 Vercel Serverless 公网部署验收检查，E-T024-002，结果：公网前端 `https://ai-schedule-web-ten.vercel.app` / 后端 `https://ai-schedule-backend.vercel.app` 健康检查与 Next.js 代理均 200；真实 Supabase Auth/RLS 11 项（创建/登录/跨用户读改删隔离/anon 拦截/service_role 审计）全 PASS；`GET /api/v1/reminders/cron` 鉴权 3 项全 PASS；PushPlus 真实推送 `errors=[]`、`reminder_log` 去重生效；DeepSeek 充值后真实解析 `source=deepseek`；验收数据与测试用户已清理。遗留问题：GitHub Actions 定时器示例未推入 `.github/workflows/`（PAT 无 workflow scope）；Hobby 版 Vercel Cron 每日 1 次。结论：T-024 完成，阶段 7 发布 Gate G7-001 仍待项目负责人逐项确认。
 - 2026-08-16：阶段 7 发布清单与发布 Gate 定义检查，E-T025-001，结果：发布清单写入 `PROJECT_VERSIONS.md`（A 质量门禁 / B 版本产物 / C 环境变量与密钥 / D 数据与 Supabase / E 部署拓扑 / F 真实公网验收 / G 监控可观测性 / H 回滚风险 / I 人工确认与 Gate 执行）；`PROJECT_ACCEPTANCE.md` 新增 A-008 验收标准与 G7-001 Gate 记录（状态待执行）；后端 pytest、前端 Vitest 保持通过。遗留问题：清单未执行，公网部署与真实验收待项目负责人按清单执行。结论：T-025 定义通过，G7-001 待执行。
