@@ -15,6 +15,12 @@ import type { WeekDay } from "@/lib/date";
 import { CATEGORIES } from "@/lib/categories";
 import { defaultRemindAtISO, minutesToHHMM } from "@/lib/date";
 import type { TimelineFocusTarget } from "@/lib/timeline";
+import {
+  endDateKey,
+  formatBlockRange,
+  MINUTES_PER_DAY,
+  splitBlockByDays,
+} from "@/lib/blockTime";
 
 const HOUR_HEIGHT = 120;
 const COL_WIDTH = 132;
@@ -58,6 +64,7 @@ interface PendingTouch {
   target: HTMLElement;
   startX: number;
   startY: number;
+  dayIndex: number;
   timer: number;
 }
 
@@ -240,9 +247,10 @@ export default function WeekTimeline({
       el.scrollIntoView({ block: "nearest" });
       const contentWidth = TIME_COL_W + columnWidth * 7;
       const dayLeft = TIME_COL_W + dayIndex * columnWidth;
+      const focusEnd = Math.min(focusTarget.end, MINUTES_PER_DAY);
       const blockHeight = Math.max(
         22,
-        ((focusTarget.end - focusTarget.start) / 60) * HOUR_HEIGHT
+        ((focusEnd - focusTarget.start) / 60) * HOUR_HEIGHT
       );
       const left = clamp(
         dayLeft + columnWidth / 2 - el.clientWidth / 2,
@@ -270,7 +278,8 @@ export default function WeekTimeline({
     startX: number,
     startY: number,
     target: HTMLElement,
-    pointerId: number
+    pointerId: number,
+    dayIndex: number
   ) => {
     target.setPointerCapture(pointerId);
     dragTargetRef.current = target;
@@ -284,10 +293,7 @@ export default function WeekTimeline({
       originDate: block.date,
       originStart: block.start,
       originEnd: block.end,
-      dayIndex: Math.max(
-        0,
-        Math.min(6, days.findIndex((d) => d.key === block.date))
-      ),
+      dayIndex: Math.max(0, Math.min(6, dayIndex)),
     };
     dragRef.current = next;
     setDrag(next);
@@ -304,7 +310,8 @@ export default function WeekTimeline({
   const startDrag = (
     event: React.PointerEvent,
     block: TimeBlock,
-    kind: DragState["kind"]
+    kind: DragState["kind"],
+    dayIndex: number
   ) => {
     event.preventDefault();
     event.stopPropagation();
@@ -314,7 +321,8 @@ export default function WeekTimeline({
       event.clientX,
       event.clientY,
       event.currentTarget as HTMLElement,
-      event.pointerId
+      event.pointerId,
+      dayIndex
     );
   };
 
@@ -341,10 +349,11 @@ export default function WeekTimeline({
   const handlePointerDown = (
     event: React.PointerEvent,
     block: TimeBlock,
-    kind: DragState["kind"]
+    kind: DragState["kind"],
+    dayIndex: number
   ) => {
     if (event.pointerType === "mouse") {
-      startDrag(event, block, kind);
+      startDrag(event, block, kind, dayIndex);
       return;
     }
     event.stopPropagation();
@@ -355,6 +364,7 @@ export default function WeekTimeline({
       target: event.currentTarget as HTMLElement,
       startX: event.clientX,
       startY: event.clientY,
+      dayIndex,
       timer: 0,
     };
     pendingTouchRef.current = pending;
@@ -368,7 +378,8 @@ export default function WeekTimeline({
         pending.startX,
         pending.startY,
         pending.target,
-        pending.pointerId
+        pending.pointerId,
+        pending.dayIndex
       );
     }, LONG_PRESS_MS);
   };
@@ -404,13 +415,18 @@ export default function WeekTimeline({
       const dayIndex = clamp(current.dayIndex + dayShift, 0, 6);
 
     if (current.kind === "move") {
-      const start = current.originStart + deltaMinutes;
-      const end = current.originEnd + deltaMinutes;
+      const duration = current.originEnd - current.originStart;
+      const start = clamp(current.originStart + deltaMinutes, 0, 1439);
+      let end = start + duration;
+      if (current.originEnd <= MINUTES_PER_DAY) {
+        end = Math.min(MINUTES_PER_DAY, end);
+      }
+      end = Math.max(start + 15, end);
       const nextPreview: Preview = {
         blockId: current.blockId,
         date: days[dayIndex].key,
-        start: clamp(start, 0, 1439),
-        end: clamp(end, 15, 1440),
+        start,
+        end,
       };
       previewRef.current = nextPreview;
       setPreview(nextPreview);
@@ -419,7 +435,10 @@ export default function WeekTimeline({
         blockId: current.blockId,
         date: current.originDate,
         start: current.originStart,
-        end: clamp(current.originEnd + deltaMinutes, current.originStart + 15, 1440),
+        end: Math.max(
+          current.originStart + 15,
+          Math.min(14 * MINUTES_PER_DAY, current.originEnd + deltaMinutes)
+        ),
       };
       previewRef.current = nextPreview;
       setPreview(nextPreview);
@@ -427,7 +446,11 @@ export default function WeekTimeline({
       const nextPreview: Preview = {
         blockId: current.blockId,
         date: current.originDate,
-        start: clamp(current.originStart + deltaMinutes, 0, current.originEnd - 15),
+        start: clamp(
+          current.originStart + deltaMinutes,
+          0,
+          Math.min(1439, current.originEnd - 15)
+        ),
         end: current.originEnd,
       };
       previewRef.current = nextPreview;
@@ -778,27 +801,20 @@ export default function WeekTimeline({
               })()}
 
             {scheduled.map((block) => {
-              const dayIndex = days.findIndex((d) => d.key === block.date);
-              if (dayIndex < 0) return null;
               const activePreview =
                 preview && preview.blockId === block.id ? preview : null;
-              const start = activePreview?.start ?? block.start;
-              const end = activePreview?.end ?? block.end;
-              const top = getVisibleOffset(start) / 60 * HOUR_HEIGHT;
-              const height = Math.max(
-                22,
-                (getVisibleOffset(end) - getVisibleOffset(start)) / 60 * HOUR_HEIGHT
-              );
+              const display = {
+                date: activePreview?.date ?? block.date,
+                start: activePreview?.start ?? block.start,
+                end: activePreview?.end ?? block.end,
+              };
+              const segments = splitBlockByDays(display);
               const meta = CATEGORIES[block.category];
               const dragging = drag?.blockId === block.id;
-              const focused =
-                focusTarget &&
-                block.date === focusTarget.date &&
-                start === focusTarget.start &&
-                end === focusTarget.end;
               const hasObsidian = Boolean(
                 block.obsidianVault || block.obsidianNote || obsidianVault
               );
+              const blockRangeLabel = formatBlockRange(display);
               const batchCheckbox =
                 batchMode
                   ? (
@@ -829,9 +845,29 @@ export default function WeekTimeline({
                       </div>
                     )
                   : null;
-              return (
+              return segments.map((segment) => {
+                const dayIndex = days.findIndex(
+                  (day) => day.key === segment.dateKey
+                );
+                if (dayIndex < 0) return null;
+                const top =
+                  getVisibleOffset(segment.start) / 60 * HOUR_HEIGHT;
+                const height = Math.max(
+                  22,
+                  (getVisibleOffset(segment.end) -
+                    getVisibleOffset(segment.start)) /
+                    60 *
+                    HOUR_HEIGHT
+                );
+                const focused =
+                  segment.isStart &&
+                  focusTarget &&
+                  block.date === focusTarget.date &&
+                  display.start === focusTarget.start &&
+                  display.end === focusTarget.end;
+                return (
                 <div
-                  key={block.id}
+                  key={`${block.id}:${segment.dateKey}`}
                   data-time-block
                   className={`time-block-card ${meta.bg} ${meta.border} ${
                     block.done ? "done" : ""
@@ -858,31 +894,35 @@ export default function WeekTimeline({
                       });
                       return;
                     }
-                    handlePointerDown(event, block, "move");
+                    handlePointerDown(event, block, "move", dayIndex);
                   }}
                   onPointerMove={handlePointerMove}
                   onPointerUp={handlePointerUp}
                   onPointerCancel={handlePointerCancel}
                 >
-                  {batchCheckbox && (
+                  {segment.isStart && batchCheckbox && (
                     <div className="absolute bottom-1 right-[8.5px] z-10">
                       {batchCheckbox}
                     </div>
                   )}
-                  <div
-                    className="resize-handle top-0"
-                    onPointerDown={(event) => {
-                      if (batchMode) return;
-                      handlePointerDown(event, block, "resize-start");
-                    }}
-                  />
-                  <div
-                    className="resize-handle bottom-0"
-                    onPointerDown={(event) => {
-                      if (batchMode) return;
-                      handlePointerDown(event, block, "resize-end");
-                    }}
-                  />
+                  {segment.isStart && (
+                    <div
+                      className="resize-handle top-0"
+                      onPointerDown={(event) => {
+                        if (batchMode) return;
+                        handlePointerDown(event, block, "resize-start", dayIndex);
+                      }}
+                    />
+                  )}
+                  {segment.isEnd && (
+                    <div
+                      className="resize-handle bottom-0"
+                      onPointerDown={(event) => {
+                        if (batchMode) return;
+                        handlePointerDown(event, block, "resize-end", dayIndex);
+                      }}
+                    />
+                  )}
                   {height < 36 ? (
                     <div className="flex h-full min-h-0 items-start gap-1 overflow-hidden px-1">
                       <div className="min-w-0 flex-1 truncate text-xs font-semibold leading-tight text-ink">
@@ -913,7 +953,7 @@ export default function WeekTimeline({
                     <div className="flex h-full min-h-0 flex-col justify-start gap-0 overflow-hidden px-1.5 py-0.5">
                       <div className="flex items-center justify-between gap-1">
                         <div className="text-[10px] font-medium tabular-nums leading-tight text-ink-muted-48">
-                          {minutesToHHMM(start)}-{minutesToHHMM(end)}
+                          {blockRangeLabel}
                         </div>
                         <div className="flex shrink-0 items-center gap-0.5">
                           <button
@@ -947,7 +987,7 @@ export default function WeekTimeline({
                       <div className="flex min-w-0 items-start justify-between gap-1">
                         <div className="min-w-0 flex-1">
                           <div className="text-[10px] font-medium tabular-nums leading-tight text-ink-muted-48">
-                            {minutesToHHMM(start)}-{minutesToHHMM(end)}
+                            {blockRangeLabel}
                           </div>
                           <div className="truncate text-xs font-semibold leading-tight text-ink">
                             {block.name}
@@ -1002,6 +1042,7 @@ export default function WeekTimeline({
                   )}
                 </div>
               );
+              });
             })}
          </div>
         </div>

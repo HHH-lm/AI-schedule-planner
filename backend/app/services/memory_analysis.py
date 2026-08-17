@@ -29,6 +29,7 @@ HIGH_CONF_SAMPLES = 10   # 10+ 为正常置信度
 MORNING_START = 6 * 60     # 06:00
 MORNING_END = 12 * 60      # 12:00
 AFTERNOON_END = 18 * 60    # 18:00
+MINUTES_PER_DAY = 1440
 
 
 def _period_label(minutes: int) -> str:
@@ -74,7 +75,7 @@ def analyze_completion_by_period(
     for block in blocks:
         # 取时间块的中点作为时段判断依据
         mid = (block.start + block.end) // 2
-        label = _period_label(mid)
+        label = _period_label(mid % MINUTES_PER_DAY)
         if label in period_data:
             period_data[label].append(block.done)
 
@@ -238,7 +239,9 @@ def run_analysis(
     total_blocks = len(blocks)
     done_blocks = sum(1 for b in blocks if b.done)
     category_dist = Counter(b.category for b in blocks)
-    period_dist = Counter(_period_label((b.start + b.end) // 2) for b in blocks)
+    period_dist = Counter(
+        _period_label(((b.start + b.end) // 2) % MINUTES_PER_DAY) for b in blocks
+    )
 
     stats = {
         "total_blocks": total_blocks,

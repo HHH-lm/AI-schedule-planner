@@ -20,6 +20,7 @@ WEEKDAY_INDEX: dict[str, int] = {
 }
 
 TIME_MODIFIERS = ("凌晨", "早上", "早晨", "上午", "中午", "下午", "傍晚", "晚上")
+MINUTES_PER_DAY = 1440
 
 CATEGORY_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"写代码|编程|开发|代码|工作|开会|会议|客户|需求|办公|文案|项目|周报|代码评审", re.I), "work"),
@@ -46,6 +47,16 @@ def guess_category(text: str) -> str:
 
 
 def normalize_time_notation(text: str) -> str:
+    text = re.sub(r"今晚", "今天晚上", text)
+    text = re.sub(r"明早", "明天早上", text)
+    text = re.sub(r"明晚", "明天晚上", text)
+    text = re.sub(r"明凌晨", "明天凌晨", text)
+    text = re.sub(r"明上午", "明天上午", text)
+    text = re.sub(r"明下午", "明天下午", text)
+    text = re.sub(r"明中午", "明天中午", text)
+    text = re.sub(r"明傍晚", "明天傍晚", text)
+    text = re.sub(r"明晚上", "明天晚上", text)
+    text = re.sub(r"(周[一二三四五六日天]|今天|明天|后天)晚(?!上)", r"\1晚上", text)
     text = re.sub(r"(\d{1,2})\s*点", r"\1点", text)
     text = re.sub(r"(\d{1,2})点半", r"\1:30", text)
     text = re.sub(r"(\d{1,2})点(\d{1,2})分", r"\1:\2", text)
@@ -55,7 +66,9 @@ def normalize_time_notation(text: str) -> str:
 
 def parse_clock(hour_text: str, minute_text: str | None, modifier: str) -> int:
     hour = int(hour_text)
-    if modifier in ("下午", "晚上", "傍晚") and hour < 12:
+    if modifier in ("晚上", "傍晚") and hour == 12:
+        hour = 0
+    elif modifier in ("下午", "晚上", "傍晚") and hour < 12:
         hour += 12
     if modifier == "凌晨" and hour == 12:
         hour = 0
@@ -63,21 +76,126 @@ def parse_clock(hour_text: str, minute_text: str | None, modifier: str) -> int:
     return max(0, min(1439, hour * 60 + minute))
 
 
+_DAY_MARKER = (
+    r"今天|明天|明日|后天|次日|第二天|明早|明晚|明凌晨|明上午|明下午|"
+    r"明中午|明傍晚|明晚上|(?:周|星期)(?P<day_weekday>[一二三四五六日天])"
+)
+
 _TIME_RANGE_RE = re.compile(
-    r"(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上)?\s*(\d{1,2})(?:[:：点](?:(\d{1,2}))?)?\s*"
+    r"(?P<start_modifier>凌晨|早上|早晨|上午|中午|下午|傍晚|晚上)?\s*"
+    r"(?P<start_h>\d{1,2})(?:[:：点](?:(?P<start_m>\d{1,2}))?)?\s*"
     r"[到至~\-—–]\s*"
-    r"(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上)?\s*(\d{1,2})(?:[:：点](?:(\d{1,2}))?)?"
+    r"(?P<day_marker>" + _DAY_MARKER + r")?"
+    r"\s*(?P<end_modifier>凌晨|早上|早晨|上午|中午|下午|傍晚|晚上)?\s*"
+    r"(?P<end_h>\d{1,2})(?:[:：点](?:(?P<end_m>\d{1,2}))?)?"
 )
 
 
-def match_time_range(segment: str) -> dict[str, object] | None:
+def _parse_date_key(key: str) -> date:
+    return date.fromisoformat(key)
+
+
+def _day_offset_from_marker(
+    marker: str | None, weekday_char: str | None, anchor: date
+) -> date | None:
+    if not marker:
+        return None
+    if marker == "今天":
+        return anchor
+    if marker in (
+        "明天",
+        "明日",
+        "次日",
+        "第二天",
+        "明早",
+        "明晚",
+        "明凌晨",
+        "明上午",
+        "明下午",
+        "明中午",
+        "明傍晚",
+        "明晚上",
+    ):
+        return add_days(anchor, 1)
+    if marker == "后天":
+        return add_days(anchor, 2)
+    if weekday_char:
+        target = WEEKDAY_INDEX[weekday_char]
+        offset = (target - anchor.weekday()) % 7
+        return add_days(anchor, offset)
+    return None
+
+
+def _modifier_from_marker(marker: str | None) -> str:
+    return {
+        "明早": "早上",
+        "明晚": "晚上",
+        "明凌晨": "凌晨",
+        "明上午": "上午",
+        "明下午": "下午",
+        "明中午": "中午",
+        "明傍晚": "傍晚",
+        "明晚上": "晚上",
+    }.get(marker or "", "")
+
+
+def match_time_range(segment: str, start_date: date) -> dict[str, object] | None:
     match = _TIME_RANGE_RE.search(segment)
     if not match:
         return None
-    start = parse_clock(match.group(2), match.group(3), match.group(1) or "")
-    end_modifier = match.group(4) or match.group(1) or ""
-    end = parse_clock(match.group(5), match.group(6), end_modifier)
-    return {"start": start, "end": max(start + 15, end), "raw": match.group(0)}
+    groups = match.groupdict()
+    start = parse_clock(
+        groups["start_h"], groups["start_m"], groups["start_modifier"] or ""
+    )
+    raw_end_hour = int(groups["end_h"])
+    raw_end_minute = int(groups["end_m"]) if groups["end_m"] else 0
+    end_modifier = groups["end_modifier"] or ""
+    marker = groups["day_marker"]
+    marker_modifier = _modifier_from_marker(marker)
+    if end_modifier:
+        end = parse_clock(groups["end_h"], groups["end_m"], end_modifier)
+    elif marker_modifier:
+        end = parse_clock(groups["end_h"], groups["end_m"], marker_modifier)
+    elif marker:
+        # 显式日期但没写时段词（如“明天8点”）按 24 小时制处理
+        end = raw_end_hour * 60 + raw_end_minute
+    else:
+        if (
+            groups["start_modifier"] in ("晚上", "傍晚")
+            and int(groups["start_h"]) == 12
+        ):
+            end = raw_end_hour * 60 + raw_end_minute
+        else:
+            end = parse_clock(
+                groups["end_h"], groups["end_m"], groups["start_modifier"] or ""
+            )
+            if end <= start:
+                if int(groups["end_h"]) == 12 and groups["start_modifier"] in (
+                    "晚上",
+                    "傍晚",
+                ):
+                    end = MINUTES_PER_DAY
+                else:
+                    end = raw_end_hour * 60 + raw_end_minute + MINUTES_PER_DAY
+
+    end_date = _day_offset_from_marker(marker, groups["day_weekday"], start_date)
+    if end_date is None:
+        end_date = start_date
+    elif end_date < start_date:
+        end_date = add_days(end_date, 7)
+    elif end_date == start_date and end <= start:
+        end_date = add_days(end_date, 1)
+    elif end <= start and not marker:
+        end_date = add_days(end_date, 1)
+
+    day_offset = (end_date - start_date).days
+    end_offset = max(start + 15, day_offset * MINUTES_PER_DAY + end)
+    return {
+        "start": start,
+        "end": end_offset,
+        "raw": match.group(0),
+        "match_start": match.start(),
+    }
 
 
 _SINGLE_TIME_RE = re.compile(
@@ -104,10 +222,17 @@ def find_date(segment: str, anchor: date) -> dict[str, str] | None:
     if weekday_match:
         index = WEEKDAY_INDEX[weekday_match.group(1)]
         return {"key": to_date_key(next_weekday_date(index, anchor)), "raw": weekday_match.group(0)}
+    if "今晚" in segment:
+        return {"key": to_date_key(anchor), "raw": "今晚"}
     if "今天" in segment:
         return {"key": to_date_key(anchor), "raw": "今天"}
-    if "明天" in segment:
+    for marker in ("明早", "明晚", "明凌晨", "明上午", "明下午", "明中午", "明傍晚", "明晚上"):
+        if marker in segment:
+            return {"key": to_date_key(add_days(anchor, 1)), "raw": marker}
+    if "明天" in segment or "明日" in segment:
         return {"key": to_date_key(add_days(anchor, 1)), "raw": "明天"}
+    if "后天" in segment:
+        return {"key": to_date_key(add_days(anchor, 2)), "raw": "后天"}
     return None
 
 
@@ -153,8 +278,12 @@ def detect_reject_reason(raw_segment: str, anchor: date) -> RejectReason | None:
         )
 
     normalized_segment = normalize_time_notation(segment)
-    range_match = match_time_range(normalized_segment) or match_single_time(normalized_segment)
-    date_info = find_date(segment, anchor)
+    range_match = match_time_range(normalized_segment, anchor)
+    if range_match:
+        date_info = find_date(normalized_segment[: int(range_match["match_start"])], anchor)
+    else:
+        range_match = match_single_time(normalized_segment)
+        date_info = find_date(normalized_segment, anchor)
 
     remaining = normalized_segment
     if range_match:
@@ -185,11 +314,19 @@ def split_sentences(text: str) -> list[str]:
 
 def parse_segment(raw_segment: str, anchor: date) -> ParsedSchedule:
     segment = raw_segment.strip()
-    date_info = find_date(segment, anchor)
+    normalized_segment = normalize_time_notation(segment)
+    range_match = match_time_range(normalized_segment, anchor)
+    if range_match:
+        date_info = find_date(normalized_segment[: int(range_match["match_start"])], anchor)
+    else:
+        range_match = match_single_time(normalized_segment)
+        date_info = find_date(normalized_segment, anchor)
     item_date = date_info["key"] if date_info else to_date_key(anchor)
 
-    normalized_segment = normalize_time_notation(segment)
-    range_match = match_time_range(normalized_segment) or match_single_time(normalized_segment)
+    if range_match and "match_start" in range_match:
+        range_match = match_time_range(
+            normalized_segment, _parse_date_key(item_date)
+        )
     start = int(range_match["start"]) if range_match else 9 * 60
     end = int(range_match["end"]) if range_match else start + 60
 

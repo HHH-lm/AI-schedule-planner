@@ -21,6 +21,7 @@ logger = get_logger("app.ai")
 
 CATEGORY_VALUES = ("work", "study", "fitness", "life", "rest")
 REJECT_CODES = ("empty", "garbage", "invalid_weekday", "missing_action", "detached_location")
+MINUTES_PER_DAY = 1440
 
 PROVIDER_CONFIG: dict[str, dict[str, str]] = {
     "openai": {
@@ -109,7 +110,8 @@ def build_system_prompt(today: str) -> str:
                 f"今天={today}（{weekday_label(today_date)}），明天={tomorrow_text}；"
                 f"本周日期映射：{weekday_map_text}；"
                 "“周X”必须按上面映射选择，绝不可选已经过去的日子，也不可把“周六”当成今天。",
-                "start/end=当天0点起分钟数（14:30=870），end>start，至少15分钟。",
+                "start/end=从date当天0点起算的分钟数（14:30=870）；end可以超过1440，表示跨到次日或更晚，"
+                "例如今天22:00到次日08:00=start1320、end1920；跨天时date填开始日期，end=天数*1440+次日分钟数；end-start至少15分钟。",
                 "只有一个开始时间（如“下午3点健身”“晚上8点读书”）时，end=start+60，即默认1小时，禁止输出2小时。",
                 '"在/去/地点:"后的地点放location，并从name中去掉；例如“去健身房跑步”→name="跑步"、location="健身房"。',
                 "category:work=工作/写代码/开会/项目/客户，study=学习/阅读/写文章/AI，fitness=健身/跑步/瑜伽/篮球/游泳，life=生活/吃饭/家务/通勤，rest=休息/冥想。",
@@ -148,7 +150,13 @@ def sanitize_schedule(raw: Any) -> ParsedSchedule | None:
     except (TypeError, ValueError):
         return None
     safe_start = max(0, min(1439, start))
-    safe_end = max(safe_start + 15, min(1439, end))
+    raw_end = end
+    if raw_end <= safe_start and raw_end < 12 * 60:
+        raw_end += MINUTES_PER_DAY
+    safe_end = max(
+        safe_start + 15,
+        min(14 * MINUTES_PER_DAY, raw_end),
+    )
     category = raw.get("category") if raw.get("category") in CATEGORY_VALUES else "life"
     location = None
     if isinstance(raw.get("location"), str) and raw["location"].strip():

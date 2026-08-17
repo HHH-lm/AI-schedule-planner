@@ -7,6 +7,7 @@ import type { WeekDay } from "@/lib/date";
 import { CATEGORIES } from "@/lib/categories";
 import { buildWeeklyReport, computeWeekStats } from "@/lib/report";
 import { isoWeekNumber, minutesToDuration } from "@/lib/date";
+import { blockOverlapsDate, splitBlockByDays } from "@/lib/blockTime";
 
 interface Props {
   data: AppData;
@@ -21,10 +22,14 @@ export default function StatsView({ data, days }: Props) {
   const totalMinutes = stats.reduce((sum, stat) => sum + stat.minutes, 0);
   const doneMinutes = stats.reduce((sum, stat) => sum + stat.doneMinutes, 0);
   const scheduledCount = data.timeBlocks.filter(
-    (block) => block.status === "scheduled" && days.some((d) => d.key === block.date)
+    (block) =>
+      block.status === "scheduled" &&
+      days.some((d) => blockOverlapsDate(block, d.key))
   ).length;
   const pendingCount = data.timeBlocks.filter(
-    (block) => block.status === "pending" && days.some((d) => d.key === block.date)
+    (block) =>
+      block.status === "pending" &&
+      days.some((d) => blockOverlapsDate(block, d.key))
   ).length;
   const completionRate =
     totalMinutes > 0 ? Math.round((doneMinutes / totalMinutes) * 100) : 0;
@@ -171,29 +176,35 @@ export default function StatsView({ data, days }: Props) {
         <h3 className="type-caption-strong text-ink">本周 24 小时分布</h3>
         <div className="mt-4 space-y-2">
           {days.map((day) => {
-            const dayBlocks = data.timeBlocks
+            const daySegments = data.timeBlocks
               .filter(
                 (block) =>
-                  block.status === "scheduled" && block.date === day.key
+                  block.status === "scheduled" &&
+                  blockOverlapsDate(block, day.key)
               )
-              .sort((a, b) => a.start - b.start);
+              .flatMap((block) =>
+                splitBlockByDays(block)
+                  .filter((segment) => segment.dateKey === day.key)
+                  .map((segment) => ({ block, segment }))
+              )
+              .sort((a, b) => a.segment.start - b.segment.start);
             return (
               <div key={day.key} className="flex items-center gap-2">
                 <span className="w-14 shrink-0 text-xs text-ink-muted-48">
                   {day.label.split(" ")[0]}
                 </span>
                 <div className="relative h-6 flex-1 overflow-hidden rounded-[6px] bg-[#f5f5f7]">
-                  {dayBlocks.map((block) => (
+                  {daySegments.map(({ block, segment }) => (
                     <div
-                      key={block.id}
+                      key={`${block.id}:${segment.dateKey}:${segment.start}`}
                       className="absolute top-0 h-full rounded-sm"
                       style={{
-                        left: `${(block.start / 1440) * 100}%`,
-                        width: `${Math.max(1, ((block.end - block.start) / 1440) * 100)}%`,
+                        left: `${(segment.start / 1440) * 100}%`,
+                        width: `${Math.max(1, ((segment.end - segment.start) / 1440) * 100)}%`,
                         backgroundColor: CATEGORIES[block.category].soft,
                         borderLeft: `3px solid ${CATEGORIES[block.category].solid}`,
                       }}
-                      title={`${block.name} ${block.start / 60}:00`}
+                      title={`${block.name} ${segment.start / 60}:00`}
                     />
                   ))}
                 </div>

@@ -1,9 +1,9 @@
-"""AI 解析与规划 golden set：四类共 30 条，用于质量评测与 prompt/模型回归防退化。
+"""AI 解析与规划 golden set：四类共 33 条，用于质量评测与 prompt/模型回归防退化。
 
 分类：
-- quickadd: 10 条自然语言 QuickAdd 解析
+- quickadd: 12 条自然语言 QuickAdd 解析（含跨天）
 - planning: 10 条结构化时间规划
-- boundary: 5 条边界与异常输入
+- boundary: 6 条边界与异常输入（含 24:00/1440 边界）
 - constraint_memory: 5 条约束与记忆偏好影响排期
 """
 
@@ -114,6 +114,24 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
         ],
     },
     {
+        "id": "qa11",
+        "kind": "quickadd",
+        "text": "今晚10点到明天早上8点值班",
+        "today": GOLDEN_ANCHOR_DATE,
+        "expect_schedules": [
+            {"name": "值班", "date": "2026-08-16", "start": 1320, "end": 1920, "category": "work", "location": None}
+        ],
+    },
+    {
+        "id": "qa12",
+        "kind": "quickadd",
+        "text": "周五晚10点到周六早上8点爬山",
+        "today": GOLDEN_ANCHOR_DATE,
+        "expect_schedules": [
+            {"name": "爬山", "date": "2026-08-21", "start": 1320, "end": 1920, "category": "fitness", "location": None}
+        ],
+    },
+    {
         "id": "b01",
         "kind": "boundary",
         "text": "",
@@ -148,6 +166,15 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
         "today": GOLDEN_ANCHOR_DATE,
         "expect_schedules": [
             {"name": "写代码", "date": "2026-08-16", "start": 0, "end": 60, "category": "work", "location": None}
+        ],
+    },
+    {
+        "id": "b06",
+        "kind": "boundary",
+        "text": "晚上10点到12点写代码",
+        "today": GOLDEN_ANCHOR_DATE,
+        "expect_schedules": [
+            {"name": "写代码", "date": "2026-08-16", "start": 1320, "end": 1440, "category": "work", "location": None}
         ],
     },
     {

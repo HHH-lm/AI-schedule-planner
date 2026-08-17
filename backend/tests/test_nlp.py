@@ -59,6 +59,55 @@ def test_parse_midnight_boundary() -> None:
     assert parsed[0].end == 60
 
 
+def test_parse_evening_to_midnight_uses_1440_boundary() -> None:
+    parsed = parse_schedule_text("晚上10点到12点写代码", ANCHOR)
+    assert parsed[0].start == 22 * 60
+    assert parsed[0].end == 1440
+    assert parsed[0].name == "写代码"
+
+
+def test_parse_evening_midnight_as_start() -> None:
+    parsed = parse_schedule_text("晚上12点到1点整理资料", ANCHOR)
+    assert parsed[0].start == 0
+    assert parsed[0].end == 60
+
+
+def test_parse_overnight_with_next_day_marker() -> None:
+    parsed = parse_schedule_text("今晚10点到明天早上8点值班", ANCHOR)
+    assert parsed[0].name == "值班"
+    assert parsed[0].date == "2026-08-03"
+    assert parsed[0].start == 22 * 60
+    assert parsed[0].end == 1440 + 8 * 60
+
+
+def test_parse_overnight_with_mingzao() -> None:
+    parsed = parse_schedule_text("周五晚10点到明早8点爬山", ANCHOR)
+    assert parsed[0].name == "爬山"
+    assert parsed[0].date == "2026-08-07"
+    assert parsed[0].start == 22 * 60
+    assert parsed[0].end == 1440 + 8 * 60
+
+
+def test_parse_weekday_range_cross_day() -> None:
+    parsed = parse_schedule_text("周五晚10点到周六早上8点徒步", ANCHOR)
+    assert parsed[0].name == "徒步"
+    assert parsed[0].date == "2026-08-07"
+    assert parsed[0].end == 1440 + 8 * 60
+
+
+def test_parse_overnight_without_end_date_marker() -> None:
+    parsed = parse_schedule_text("晚上10点到8点写代码", ANCHOR)
+    assert parsed[0].start == 22 * 60
+    assert parsed[0].end == 1440 + 8 * 60
+    assert parsed[0].name == "写代码"
+
+
+def test_evening_range_with_inherited_modifier_stays_same_day() -> None:
+    parsed = parse_schedule_text("晚上10点到11点阅读", ANCHOR)
+    assert parsed[0].start == 22 * 60
+    assert parsed[0].end == 23 * 60
+
+
 def test_parse_no_time_defaults_to_morning() -> None:
     parsed = parse_schedule_text("写代码", ANCHOR)
     assert parsed[0].date == "2026-08-03"

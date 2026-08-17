@@ -38,6 +38,27 @@ def test_overlaps_different_dates() -> None:
     assert not overlaps(a, b)
 
 
+def test_overlaps_cross_day_on_start_night() -> None:
+    """跨天块与开始日深夜时段重叠。"""
+    a = ExistingBlock(date="2026-08-03", start=22 * 60, end=1440 + 8 * 60)
+    b = ExistingBlock(date="2026-08-03", start=23 * 60, end=24 * 60)
+    assert overlaps(a, b)
+
+
+def test_overlaps_cross_day_on_next_morning() -> None:
+    """跨天块与次日凌晨时段重叠。"""
+    a = ExistingBlock(date="2026-08-03", start=22 * 60, end=1440 + 8 * 60)
+    b = ExistingBlock(date="2026-08-04", start=7 * 60, end=9 * 60)
+    assert overlaps(a, b)
+
+
+def test_cross_day_not_overlap_distant_day() -> None:
+    """跨天块与结束日之后的时间不重叠。"""
+    a = ExistingBlock(date="2026-08-03", start=22 * 60, end=1440 + 8 * 60)
+    b = ExistingBlock(date="2026-08-04", start=9 * 60, end=10 * 60)
+    assert not overlaps(a, b)
+
+
 def test_overlaps_with_any_true() -> None:
     """列表中存在重叠应返回 True。"""
     block = ParsedSchedule(name="测试", date="2026-08-03", start=9 * 60, end=10 * 60)

@@ -15,6 +15,7 @@ from datetime import date, timedelta
 from typing import NamedTuple
 
 from app.schemas import ExistingBlock
+from app.services.conflict import iter_segments
 
 
 class FreeSlot(NamedTuple):
@@ -37,8 +38,11 @@ def _get_occupied_minutes(
     date_str = target_date.isoformat()
     occupied: list[tuple[int, int]] = []
     for block in existing:
-        if block.date == date_str and block.status != "pending":
-            occupied.append((block.start, block.end))
+        if block.status == "pending":
+            continue
+        for segment_date, segment_start, segment_end in iter_segments(block):
+            if segment_date == date_str:
+                occupied.append((segment_start, segment_end))
     occupied.sort(key=lambda x: x[0])
     return occupied
 

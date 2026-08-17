@@ -30,7 +30,7 @@ AI 拆解宏观计划，双视图落地微观执行。
 - 版本：`0.1.0`（公网演示已上线，G7-001 发布 Gate 待项目负责人确认）
 - 公网地址：前端 https://ai-schedule-web-ten.vercel.app · 后端 https://ai-schedule-backend.vercel.app
 - 公网验收：真实 Supabase Auth/RLS、真实 DeepSeek 解析、PushPlus 微信推送端到端全部通过（E-T024-002）
-- 质量基线：前端 Vitest 82 个测试、后端 pytest 152 个测试、密钥扫描 5/5 PASS；AI golden set 30/30（2026-08-17）
+- 质量基线：前端 Vitest 91 个测试、后端 pytest 170 个测试、密钥扫描 5/5 PASS；AI golden set 真实 DeepSeek 33/33（2026-08-17）
 
 ## 核心功能
 
@@ -203,7 +203,7 @@ DEEPSEEK_MODEL=deepseek-chat
 
 ### AI 解析质量评测与回归
 
-- 内置 30 条中文 golden set（固定锚定日期 2026-08-16）：10 条 QuickAdd、10 条 Planning、5 条边界/异常、5 条 Constraint/Memory。
+- 内置 33 条中文 golden set（固定锚定日期 2026-08-16）：12 条 QuickAdd（含跨天）、10 条 Planning、6 条边界/异常（含 24:00/1440 边界）、5 条 Constraint/Memory。
 - 评测命令：`cd backend && .venv/bin/python -m app.eval_ai_golden --provider deepseek`
 - 指标：QuickAdd 完整精确率、Planning 排期检查通过率、边界/异常通过率、Constraint/Memory 检查通过率、字段准确率、拒答准确率。
 - 默认门禁：`full >= 0.80`、`quickadd >= 0.90`、`planning >= 0.90`、`boundary >= 1.00`、`cm >= 0.80`、`field >= 0.90`、`reject >= 1.00`、`check >= 0.90`。

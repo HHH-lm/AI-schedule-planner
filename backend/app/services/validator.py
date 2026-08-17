@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 from app.schemas import ExistingBlock, PlanV2Block, PlanV2Task
 from app.services.ai import parse_local_date
-from app.services.conflict import overlaps_with_any
+from app.services.conflict import iter_segments, overlaps_with_any
 
 
 # 默认每日最大工作量（分钟）
@@ -53,8 +53,8 @@ def validate_daily_workload(
     issues: list[ValidationIssue] = []
     daily_total: dict[str, int] = {}
     for block in blocks:
-        duration = block.end - block.start
-        daily_total[block.date] = daily_total.get(block.date, 0) + duration
+        for day, start, end in iter_segments(block):
+            daily_total[day] = daily_total.get(day, 0) + (end - start)
 
     for date_str, total in daily_total.items():
         if total > max_minutes:
@@ -104,6 +104,7 @@ def validate_time_reasonableness(
     """检查时间块是否在合理范围内。"""
     issues: list[ValidationIssue] = []
     for block in blocks:
+        end_day_minutes = block.end % 1440
         if block.start < min_time:
             issues.append(ValidationIssue(
                 code="time_too_early",
@@ -112,10 +113,10 @@ def validate_time_reasonableness(
                 block_date=block.date,
                 severity="warning",
             ))
-        if block.end > max_time:
+        if end_day_minutes > max_time:
             issues.append(ValidationIssue(
                 code="time_too_late",
-                message=f"「{block.title}」结束时间 {block.end//60:02d}:{block.end%60:02d} 过晚",
+                message=f"「{block.title}」结束时间 {end_day_minutes//60:02d}:{end_day_minutes%60:02d} 过晚",
                 block_title=block.title,
                 block_date=block.date,
                 severity="warning",

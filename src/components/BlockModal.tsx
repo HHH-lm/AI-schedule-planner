@@ -4,7 +4,16 @@ import { useEffect, useState } from "react";
 import { BookMarked, Clock, MapPin, Tag, Trash2, X } from "lucide-react";
 import type { Category, TimeBlock } from "@/lib/types";
 import { CATEGORIES, CATEGORY_ORDER } from "@/lib/categories";
-import { minutesToHHMM, remindBeforeInput } from "@/lib/date";
+import {
+  minutesToHHMM,
+  parseDateKey,
+  remindBeforeInput,
+} from "@/lib/date";
+import {
+  endDateKey,
+  endMinutes,
+  MINUTES_PER_DAY,
+} from "@/lib/blockTime";
 import { buildObsidianUrl, parseObsidianUrl } from "@/lib/obsidian";
 
 interface Props {
@@ -57,10 +66,13 @@ export default function BlockModal({
   const [startText, setStartText] = useState(
     minutesToHHMM(initialStartMinutes)
   );
+  const initialEndDate = block ? endDateKey(block) : defaultDate;
+  const initialEndMinutes = block
+    ? endMinutes(block)
+    : (Math.min(1440, (defaultStart ?? 9 * 60) + 60) % MINUTES_PER_DAY);
+  const [endDate, setEndDate] = useState(initialEndDate);
   const [endText, setEndText] = useState(
-    minutesToHHMM(
-      block?.end ?? Math.min(1440, (defaultStart ?? 9 * 60) + 60)
-    )
+    minutesToHHMM(initialEndMinutes)
   );
   const [category, setCategory] = useState<Category>(block?.category ?? "work");
   const [location, setLocation] = useState(block?.location ?? "");
@@ -86,6 +98,14 @@ export default function BlockModal({
     setRemindAt(remindBeforeInput(nextDate, nextStartMinutes));
   };
 
+  const handleStartDateChange = (value: string) => {
+    setDate(value);
+    if (!block || endDate === (block?.date ?? defaultDate)) {
+      setEndDate(value);
+    }
+    syncDefaultReminder(value, timeToMinutes(startText));
+  };
+
   const handleObsidianLinkChange = (value: string) => {
     setObsidianLink(value);
     const parsed = parseObsidianUrl(value);
@@ -96,7 +116,14 @@ export default function BlockModal({
   const handleSave = () => {
     let start = timeToMinutes(startText);
     let end = timeToMinutes(endText);
-    if (end <= start) end = Math.min(1440, start + 30);
+    let dayDiff = Math.round(
+      (parseDateKey(endDate).getTime() - parseDateKey(date).getTime()) / 86400000
+    );
+    if (dayDiff < 0) dayDiff = 0;
+    let endOffset = dayDiff * MINUTES_PER_DAY + end;
+    if (endOffset <= start) {
+      endOffset = dayDiff === 0 ? MINUTES_PER_DAY + end : start + 15;
+    }
     const noteRaw = obsidianNote.trim();
     const noteParsed = parseObsidianUrl(noteRaw);
     const resolvedVault = noteParsed.vault || obsidianVault.trim() || undefined;
@@ -106,7 +133,7 @@ export default function BlockModal({
         name: name.trim() || "未命名事项",
         date,
         start,
-        end,
+        end: endOffset,
         category,
         location: location.trim() || undefined,
         subtaskId: block?.subtaskId,
@@ -188,16 +215,12 @@ export default function BlockModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}>日期</label>
+              <label className={labelClass}>开始日期</label>
               <input
                 type="date"
                 className={inputClass}
                 value={date}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setDate(value);
-                  syncDefaultReminder(value, timeToMinutes(startText));
-                }}
+                onChange={(event) => handleStartDateChange(event.target.value)}
               />
             </div>
             <div>
@@ -249,6 +272,15 @@ export default function BlockModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <label className={labelClass}>结束日期</label>
+              <input
+                type="date"
+                className={inputClass}
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+              />
+            </div>
+            <div>
               <label className={labelClass}>地点</label>
               <div className="flex items-center gap-2">
                 <MapPin size={15} className="shrink-0 text-ink-muted-48" />
@@ -260,24 +292,25 @@ export default function BlockModal({
                 />
               </div>
             </div>
-            <div>
-              <label className={labelClass}>关联任务</label>
-              <select
-                className={inputClass}
-                value={taskId}
-                onChange={(event) => {
-                  setTaskId(event.target.value);
-                  setTaskIdTouched(true);
-                }}
-              >
-                <option value="">不关联</option>
-                {tasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>关联任务</label>
+            <select
+              className={inputClass}
+              value={taskId}
+              onChange={(event) => {
+                setTaskId(event.target.value);
+                setTaskIdTouched(true);
+              }}
+            >
+              <option value="">不关联</option>
+              {tasks.map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.name}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>

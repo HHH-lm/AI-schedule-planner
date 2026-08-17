@@ -1,7 +1,8 @@
 import type { TimeBlock } from "./types";
 import type { WeekDay } from "./date";
-import { parseDateKey, minutesToHHMM } from "./date";
+import { parseDateKey } from "./date";
 import { CATEGORIES } from "./categories";
+import { endDateKey } from "./blockTime";
 
 function pad(value: number): string {
   return String(value).padStart(2, "0");
@@ -50,9 +51,13 @@ function foldLine(line: string): string {
 }
 
 export function buildWeekICS(blocks: TimeBlock[], days: WeekDay[]): string {
-  const weekKeys = new Set(days.map((day) => day.key));
+  const weekStart = days[0].key;
+  const weekEnd = days[6].key;
   const events = blocks.filter(
-    (block) => block.status === "scheduled" && weekKeys.has(block.date)
+    (block) =>
+      block.status === "scheduled" &&
+      block.date <= weekEnd &&
+      endDateKey(block) >= weekStart
   );
 
   const now = new Date();

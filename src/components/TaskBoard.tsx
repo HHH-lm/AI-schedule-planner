@@ -19,6 +19,11 @@ import type { AppData, Task, TimeBlock } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
 import { addDays, minutesToHHMM, startOfWeek, toDateKey, weekdayName } from "@/lib/date";
 import { getBoardStart } from "@/lib/board";
+import {
+  blockOverlapsDate,
+  blockOverlapsRange,
+  formatBlockRange,
+} from "@/lib/blockTime";
 import { CATEGORIES } from "@/lib/categories";
 import { apiPost } from "@/lib/api";
 import { normalizeQuadrant, QUADRANT_META } from "@/lib/priorities";
@@ -370,7 +375,7 @@ export default function TaskBoard({
     );
     const title = compact
       ? `${block.name} ${block.date.slice(5).replace("-", "/")} ${minutesToHHMM(block.start)}`
-      : `${block.name} ${minutesToHHMM(block.start)}-${minutesToHHMM(block.end)}`;
+      : `${block.name} ${formatBlockRange(block)}`;
     return (
       <div
         key={block.id}
@@ -441,7 +446,7 @@ export default function TaskBoard({
   };
 
   const renderDayCell = (taskBlocks: TimeBlock[], day: BoardDay) => {
-    const dayBlocks = taskBlocks.filter((b) => b.date === day.key);
+    const dayBlocks = taskBlocks.filter((b) => blockOverlapsDate(b, day.key));
     const pendingBlocks = dayBlocks.filter((b) => b.status === "pending");
     const scheduledBlocks = dayBlocks.filter((b) => b.status === "scheduled");
     return (
@@ -477,7 +482,7 @@ export default function TaskBoard({
   ) => {
     const endKey = toDateKey(addDays(week.start, 7));
     const weekBlocks = taskBlocks.filter(
-      (b) => b.date >= week.key && b.date < endKey
+      (b) => blockOverlapsRange(b, week.key, endKey)
     );
     const pendingBlocks = weekBlocks.filter((b) => b.status === "pending");
     const scheduledBlocks = weekBlocks.filter((b) => b.status === "scheduled");
@@ -590,8 +595,11 @@ export default function TaskBoard({
               const collapsed = collapsedWeeks.has(week.key);
               const weekBlocks = data.timeBlocks.filter(
                 (b) =>
-                  b.date >= week.key &&
-                  b.date < toDateKey(addDays(week.start, 7))
+                  blockOverlapsRange(
+                    b,
+                    week.key,
+                    toDateKey(addDays(week.start, 7))
+                  )
               );
               return (
                 <div

@@ -90,4 +90,32 @@ describe("buildWeeklyReport", () => {
     expect(report).not.toContain("待处理");
     expect(report).not.toContain("下周事项");
   });
+
+  it("统计跨天块在本周内的分钟数并展示次日结束", () => {
+    const crossDayData: AppData = {
+      version: 1,
+      tasks: [],
+      timeBlocks: [
+        makeBlock({
+          id: "n1",
+          name: "跨天值班",
+          date: "2026-08-03",
+          start: 22 * 60,
+          end: 1440 + 8 * 60,
+          category: "rest",
+        }),
+      ],
+    };
+    const stats = computeWeekStats(crossDayData, days);
+    const rest = stats.find((s) => s.category === "rest");
+    expect(rest).toEqual({
+      category: "rest",
+      minutes: 10 * 60,
+      doneMinutes: 0,
+      count: 1,
+    });
+    const report = buildWeeklyReport(crossDayData, days);
+    expect(report).toContain("22:00-24:00");
+    expect(report).toContain("00:00-08:00");
+  });
 });

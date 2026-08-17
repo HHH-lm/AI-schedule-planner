@@ -31,6 +31,21 @@ def test_validate_daily_workload_exceeded() -> None:
     assert issues[0].code == "daily_workload_exceeded"
 
 
+def test_validate_daily_workload_splits_cross_day() -> None:
+    """跨天块的工作量按日分段统计。"""
+    blocks = [
+        PlanV2Block(
+            title="跨天值班",
+            date="2026-08-03",
+            start=22 * 60,
+            end=1440 + 8 * 60,
+        ),
+    ]
+    issues = validate_daily_workload(blocks, max_minutes=60)
+    assert len(issues) == 2
+    assert {issue.block_date for issue in issues} == {"2026-08-03", "2026-08-04"}
+
+
 def test_validate_deadlines_ok() -> None:
     """任务在截止日期前安排不应报错。"""
     blocks = [
@@ -83,6 +98,20 @@ def test_validate_time_reasonableness_too_short() -> None:
     issues = validate_time_reasonableness(blocks)
     assert len(issues) == 1
     assert issues[0].code == "block_too_short"
+
+
+def test_validate_time_reasonableness_cross_day_end_not_too_late() -> None:
+    """跨天块按结束日当天时间判断，不再误报过晚。"""
+    blocks = [
+        PlanV2Block(
+            title="跨天值班",
+            date="2026-08-03",
+            start=22 * 60,
+            end=1440 + 8 * 60,
+        ),
+    ]
+    issues = validate_time_reasonableness(blocks)
+    assert "time_too_late" not in [issue.code for issue in issues]
 
 
 def test_validate_plan_v2_all_ok() -> None:

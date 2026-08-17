@@ -14,7 +14,12 @@ import {
 } from "lucide-react";
 import type { AppData, Task, TaskQuadrant, TimeBlock } from "@/lib/types";
 import { CATEGORIES } from "@/lib/categories";
-import { addDays, minutesToHHMM, toDateKey } from "@/lib/date";
+import { addDays, toDateKey } from "@/lib/date";
+import {
+  blockOverlapsDate,
+  formatBlockRange,
+  splitBlockByDays,
+} from "@/lib/blockTime";
 import {
   normalizeQuadrant,
   QUADRANT_META,
@@ -40,6 +45,11 @@ const WEEKDAY_FULL = [
   "星期六",
 ];
 
+function dayStartFor(block: TimeBlock, dateKey: string): number {
+  const segment = splitBlockByDays(block).find((s) => s.dateKey === dateKey);
+  return segment ? segment.start : block.start;
+}
+
 export default function TodayView({
   data,
   onToggleDone,
@@ -56,16 +66,24 @@ export default function TodayView({
   const todayBlocks = useMemo(
     () =>
       data.timeBlocks
-        .filter((block) => block.status === "scheduled" && block.date === todayKeyValue)
-        .sort((a, b) => a.start - b.start),
+        .filter(
+          (block) =>
+            block.status === "scheduled" &&
+            blockOverlapsDate(block, todayKeyValue)
+        )
+        .sort((a, b) => dayStartFor(a, todayKeyValue) - dayStartFor(b, todayKeyValue)),
     [data.timeBlocks, todayKeyValue]
   );
 
   const pendingToday = useMemo(
     () =>
       data.timeBlocks
-        .filter((block) => block.status === "pending" && block.date === todayKeyValue)
-        .sort((a, b) => a.start - b.start),
+        .filter(
+          (block) =>
+            block.status === "pending" &&
+            blockOverlapsDate(block, todayKeyValue)
+        )
+        .sort((a, b) => dayStartFor(a, todayKeyValue) - dayStartFor(b, todayKeyValue)),
     [data.timeBlocks, todayKeyValue]
   );
 
@@ -93,8 +111,15 @@ export default function TodayView({
   const tomorrowBlocks = useMemo(
     () =>
       data.timeBlocks
-        .filter((block) => block.status === "scheduled" && block.date === tomorrowKeyValue)
-        .sort((a, b) => a.start - b.start),
+        .filter(
+          (block) =>
+            block.status === "scheduled" &&
+            blockOverlapsDate(block, tomorrowKeyValue)
+        )
+        .sort(
+          (a, b) =>
+            dayStartFor(a, tomorrowKeyValue) - dayStartFor(b, tomorrowKeyValue)
+        ),
     [data.timeBlocks, tomorrowKeyValue]
   );
 
@@ -173,7 +198,7 @@ export default function TodayView({
               </span>
             )}
             <span className="shrink-0 text-xs font-semibold tabular-nums text-ink">
-              {minutesToHHMM(block.start)}-{minutesToHHMM(block.end)}
+              {formatBlockRange(block)}
             </span>
             <span className="truncate text-sm font-medium text-ink">{block.name}</span>
           </span>
@@ -199,7 +224,7 @@ export default function TodayView({
         }`}
       >
         <span className="text-sm font-semibold tabular-nums text-ink">
-          {minutesToHHMM(block.start)}-{minutesToHHMM(block.end)}
+          {formatBlockRange(block)}
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-medium text-ink">{block.name}</span>
