@@ -1,0 +1,30 @@
+{
+  "taskId": "T-029",
+  "title": "修复提醒时间已过 10 分钟仍推送（F-018 修订）",
+  "status": "completed",
+  "stage": 7,
+  "owner": "Codex（用户反馈定位）",
+  "allowedPaths": [
+    "backend/app/services/reminders.py",
+    "backend/tests/test_reminders.py",
+    "backend/tests/test_observability.py",
+    "README.md",
+    "SESSION.md",
+    ".project-to-act/"
+  ],
+  "contract": "后端提醒扫描只处理最近 10 分钟内的到期 remindAt；提醒时间已过去超过 10 分钟的时间块不再推送。",
+  "dependencies": ["F-018", "T-015"],
+  "invariants": [
+    "remindAt 晚于当前时间仍不提前推送",
+    "remindAt 在过去 10 分钟以内仍可推送",
+    "remindAt 已过去超过 10 分钟不进入 due 列表"
+  ],
+  "acceptance": [
+    "collect_due_blocks 过滤超过 10 分钟的旧 remindAt",
+    "scan_reminders 对最近时间提醒仍推送并对已记录去重",
+    "后端 pytest 全部通过"
+  ],
+  "validation": [
+    "cd backend && .venv/bin/python -m pytest -q"
+  ]
+}

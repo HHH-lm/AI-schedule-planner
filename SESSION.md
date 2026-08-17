@@ -7,6 +7,7 @@
 - 已完成：阶段 6 Gate 通过（G6-001，E-G6-001，2026-08-17）；T-026 生命周期账本一致性修复（E-T026-001）；Vercel Serverless 公网部署与验收（E-T024-002）
 - 进行中：T-027 v0.1.0 首次发布执行（阶段 7 in_progress，revision 9）
 - 进行中（本会话新增）：周计划跨天时间块支持（手动手工添加 + 自然语言解析），代码与自动测试已完成，人工验收待确认
+- 进行中（本会话新增）：提醒过期 10 分钟过滤修复（F-018 修订，T-029），代码与测试已完成
 - 上一目标：阶段 6 Gate；T-026 账本修复；T-024 代码与公网验收；T-025 发布清单定义
 
 ## 文件索引
@@ -33,6 +34,12 @@
 - `backend/app/services/nlp.py` / `ai.py` / `conflict.py` / `slot_finder.py` / `reminders.py` / `memory_analysis.py` — 跨天解析、冲突与提醒
 - 测试：`src/lib/blockTime.test.ts`、`src/lib/report.test.ts`、`backend/tests/test_nlp.py`、`test_conflict.py`、`test_api.py`、`test_ai_sanitize.py`
 
+### 提醒过期窗口修复 / T-029
+- `backend/app/services/reminders.py` — `collect_due_blocks` 只处理最近 10 分钟内的到期 `remindAt`
+- `backend/tests/test_reminders.py` / `backend/tests/test_observability.py` — 过期边界与扫描事件用例
+- `README.md` — 提醒过期行为说明
+- `.project-to-act/tasks/T-029/` — TASK + E-T029-001 证据
+
 ### 公网部署验收 / T-024
 - 前端：`https://ai-schedule-web-ten.vercel.app`（Vercel 项目 `hhh-lm1/ai-schedule-web`）
 - 后端：`https://ai-schedule-backend.vercel.app`（Vercel 项目 `hhh-lm1/ai-schedule-backend`，Root Directory=`backend`）
@@ -48,12 +55,14 @@
 
 - 当前分支 `codex/vercel-serverless`；阶段 6 Gate 已提交（`925cc5b`），T-027 创建与阶段 7 启动相关改动未提交（按约定需用户批准后才 git add/commit）。
 - 待提交：`.project-to-act/tasks/T-027/`、`.project-to-act/AGENT_LIFECYCLE.json`、`.project-to-act/PROJECT_OVERVIEW.md`、`.project-to-act/PROJECT_PROGRESS.md`、`.project-to-act/PROJECT_VERSIONS.md`、`.project-to-act/PROJECT_ACCEPTANCE.md`、`SESSION.md`。
+- 本会话 T-029 改动已随当前提交入账（提交哈希见 `git log` HEAD）：`backend/app/services/reminders.py`、`backend/tests/test_reminders.py`、`backend/tests/test_observability.py`、`README.md`、`.project-to-act/tasks/T-029/`、`SESSION.md`。
 - 此前的 README/docs/Vercel 改动已在提交 `22cf636`、`5bea748`、`6581985` 中。
 - 自托管版本保留在 `deploy/self-host-001`（`c9e00d9`），`main` 未改动。
 
 ## 验证结果
 
 - 跨天功能（E-F022-001）：后端 pytest 170、前端 Vitest 91、`tsc --noEmit`、`npm run lint`、`npm run scan:secrets` 5/5、生产构建全部通过；golden set 扩至 33 条（QuickAdd 12 / Planning 10 / Boundary 6 / CM 5）并真实 DeepSeek 33/33、`passed=true`；浏览器 DOM 验收 NLP 跨天生成两段渲染。
+- 提醒过期窗口修复（T-029）：后端 pytest 171 通过（新增“提醒时间已过去超过 10 分钟不推送”边界用例）。
 - T-027 发布清单自动化部分：pytest 152、Vitest 82、lint/tsc、scan 5/5、公网前后端健康 200、cron 未授权 401、版本号一致；Auth/RLS/DeepSeek/推送 API 复用 E-T024-002 与 E-G6-001。
 - 阶段 7 已启动：`manage_lifecycle.py` revision 9、阶段 7 in_progress、T-027 入账，两套 validate 通过。
 - 阶段 6 Gate：后端 pytest 152、前端 Vitest 82、lint、tsc、密钥扫描 5/5、真实 DeepSeek golden 30/30、生产构建全部通过；`manage_lifecycle.py` revision 8、阶段 6 passed、阶段 7 ready。
