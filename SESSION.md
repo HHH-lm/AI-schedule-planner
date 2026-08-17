@@ -19,8 +19,10 @@
 
 ### 阶段 7 发布执行 / T-027
 - `.project-to-act/tasks/T-027/` — TASK/INTENT/CONTEXT（v0.1.0 首次发布执行）
+- `.project-to-act/tasks/T-027/evidence/E-T027-001.md` — 发布清单自动化部分执行证据
 - `.project-to-act/AGENT_LIFECYCLE.json` — revision 9，阶段 7 in_progress
 - `.project-to-act/PROJECT_OVERVIEW.md` / `PROJECT_PROGRESS.md` — 当前焦点与下一步已切换到 T-027
+- `.project-to-act/PROJECT_VERSIONS.md` — 发布清单已勾选自动化项，人工项保持未勾选
 
 ### 公网部署验收 / T-024
 - 前端：`https://ai-schedule-web-ten.vercel.app`（Vercel 项目 `hhh-lm1/ai-schedule-web`）
@@ -36,12 +38,13 @@
 ## Git 状态
 
 - 当前分支 `codex/vercel-serverless`；阶段 6 Gate 已提交（`925cc5b`），T-027 创建与阶段 7 启动相关改动未提交（按约定需用户批准后才 git add/commit）。
-- 待提交：`.project-to-act/tasks/T-027/`、`.project-to-act/AGENT_LIFECYCLE.json`、`.project-to-act/PROJECT_OVERVIEW.md`、`.project-to-act/PROJECT_PROGRESS.md`、`SESSION.md`。
+- 待提交：`.project-to-act/tasks/T-027/`、`.project-to-act/AGENT_LIFECYCLE.json`、`.project-to-act/PROJECT_OVERVIEW.md`、`.project-to-act/PROJECT_PROGRESS.md`、`.project-to-act/PROJECT_VERSIONS.md`、`.project-to-act/PROJECT_ACCEPTANCE.md`、`SESSION.md`。
 - 此前的 README/docs/Vercel 改动已在提交 `22cf636`、`5bea748`、`6581985` 中。
 - 自托管版本保留在 `deploy/self-host-001`（`c9e00d9`），`main` 未改动。
 
 ## 验证结果
 
+- T-027 发布清单自动化部分：pytest 152、Vitest 82、lint/tsc、scan 5/5、公网前后端健康 200、cron 未授权 401、版本号一致；Auth/RLS/DeepSeek/推送 API 复用 E-T024-002 与 E-G6-001。
 - 阶段 7 已启动：`manage_lifecycle.py` revision 9、阶段 7 in_progress、T-027 入账，两套 validate 通过。
 - 阶段 6 Gate：后端 pytest 152、前端 Vitest 82、lint、tsc、密钥扫描 5/5、真实 DeepSeek golden 30/30、生产构建全部通过；`manage_lifecycle.py` revision 8、阶段 6 passed、阶段 7 ready。
 - T-026 修复后两套 validate 通过。

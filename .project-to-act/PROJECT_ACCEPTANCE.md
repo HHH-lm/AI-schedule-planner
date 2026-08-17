@@ -73,6 +73,7 @@
 
 按时间倒序追加：日期、检查范围、证据 ID、结果、遗留问题和结论。失败、跳过与过期证据也必须如实记录。
 
+- 2026-08-17：T-027 发布清单自动化部分执行检查，E-T027-001，结果：A 组质量门禁、版本号一致、公网健康、cron 鉴权、schema/reminder_log、Auth/RLS、DeepSeek、推送 API 自动化项通过；C/G/H/I 与手机实际收到、Vercel Logs 等人工项待项目负责人确认。遗留问题：G7-001 未执行。结论：T-027 进行中，发布清单已部分勾选。
 - 2026-08-17：阶段 6 Gate 执行检查，E-G6-001，结果：后端 pytest 152、前端 Vitest 82、lint、tsc、密钥扫描 5/5、真实 DeepSeek golden 30/30、生产构建全部通过；dev server 已按约定停止并清理后构建。遗留问题：A-001/A-002 人工对照待确认；阶段 7 发布清单未执行，G7-001 待执行。结论：阶段 6 passed，阶段 7 ready。
 - 2026-08-17：T-026 生命周期账本一致性修复检查，E-T026-001，结果：阶段 5 状态由非法 completed 修正为 passed 并补工件 E-T004-003；revision 由失配的 14 对齐为 6 条既有转换记录，CLI 补记阶段 6 启动转换 rev 7；阶段 6 补录 T-005 至 T-025 任务与对应证据；Acceptance/Progress/Features 缺项补齐；manage_lifecycle validate 与 Project-to-Act validate 均通过。遗留问题：G7-001 发布 Gate 仍待项目负责人逐项执行；GitHub Actions 定时器、备份演练、外部探测、SLO、A-001/A-002 待办。结论：T-026 完成，未改变阶段 6 in_progress 与阶段 7 pending。
 - 2026-08-17：T-024 Vercel Serverless 公网部署验收检查，E-T024-002，结果：公网前端 `https://ai-schedule-web-ten.vercel.app` / 后端 `https://ai-schedule-backend.vercel.app` 健康检查与 Next.js 代理均 200；真实 Supabase Auth/RLS 11 项（创建/登录/跨用户读改删隔离/anon 拦截/service_role 审计）全 PASS；`GET /api/v1/reminders/cron` 鉴权 3 项全 PASS；PushPlus 真实推送 `errors=[]`、`reminder_log` 去重生效；DeepSeek 充值后真实解析 `source=deepseek`；验收数据与测试用户已清理。遗留问题：GitHub Actions 定时器示例未推入 `.github/workflows/`（PAT 无 workflow scope）；Hobby 版 Vercel Cron 每日 1 次。结论：T-024 完成，阶段 7 发布 Gate G7-001 仍待项目负责人逐项确认。
