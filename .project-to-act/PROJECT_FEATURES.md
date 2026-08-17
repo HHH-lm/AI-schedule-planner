@@ -33,7 +33,7 @@
 | F-016 | FastAPI/Python 后端（AI 任务解析、任务拆解、时间规划、冲突检测、AI 调用全部迁移到后端） | 高 | 已完成 | F-015 | 后端 pytest 通过 + 前端代理联动验证 | E-T013-001 |
 | F-017 | 今日待办视图与移动端/桌面双布局（今日安排、待办任务、明日预览、完成打卡、排到今天） | 高 | 已完成 | F-003 | 前端测试 + tsc + lint + build + 双端截图验证 | E-T014-001 |
 | F-018 | 定时提醒与微信推送（APScheduler 每 5 分钟扫描、reminder_log 去重、企业微信/PushPlus/Server酱） | 高 | 已完成 | F-009, F-016 | 后端 pytest 34 个测试通过 + 提醒端点探测通过 | E-T015-001 |
-| F-020 | 记忆系统（用户主动管理长期偏好、习惯、生活/工作偏好、长期约束，AI 只生成候选记忆） | 中 | 已完成 | 无 | 前端测试 + tsc + lint + build + 后端 pytest 通过 | 待补充 |
+| F-020 | 记忆系统（用户主动管理长期偏好、习惯、生活/工作偏好、长期约束，AI 只生成候选记忆） | 中 | 已完成 | 无 | 前端测试 + tsc + lint + build + 后端 pytest 通过 | E-T020-001 |
 | F-019 | 今日待办四象限（紧急/重要矩阵分组、新建任务象限选择、任务看板象限色点） | 高 | 已完成 | F-017 | 前端测试 + tsc + lint + build + 注入数据截图验证 | E-T016-001 |
 | F-021 | AI 解析质量评测与回归（30 条 golden set：10 QuickAdd + 10 Planning + 5 边界异常 + 5 Constraint/Memory） | 高 | 已完成 | F-015 | 评测命令通过 + 真实 DeepSeek 30/30 + 证据入账 | E-T022-001 |
 
@@ -41,6 +41,7 @@
 
 按时间倒序追加：日期、功能 ID、变化、原因、影响、证据 ID 和确认来源。
 
+- 2026-08-17：F-020，补录证据索引：既有证据 E-T020-001 已存在但功能清单标记“待补充”，T-026 账本一致性修复后改为 E-T020-001；原因：验收索引与证据文件不一致；影响：仅文档索引，无业务逻辑变化；证据 E-T026-001，来源：用户指令。
 - 2026-08-16：F-021，新增 AI 解析质量评测：30 条中文 golden set（10 QuickAdd + 10 Planning + 5 边界异常 + 5 Constraint/Memory），新增 `backend/app/golden_ai_cases.py` 与 `backend/app/eval_ai_golden.py`；评测发现并修复 weekday_label 周日错标、晚上偏好按时段中点误判、记忆未应用到全部任务；真实 DeepSeek 四类均 100%，证据 E-T022-001，来源：用户指令。
 - 2026-08-11：F-018，修订 PushPlus 推送判定：PushPlus 通道从“仅看 HTTP 状态码”改为解析响应并校验 `code == 200`，`code 905`（未实名认证）等业务失败不再误记成功、不写 `reminder_log`、可自动重试；原因：用户实测 `pushed:3` 但微信收不到，直测 PushPlus 返回 905；影响：`push_wechat_message`、提醒去重与重试语义；证据 E-T019-001，来源：用户反馈定位。
 - 2026-08-11：F-018，修订 remindAt 保存链路：修复 BlockModal 保存时遗漏 `remindAt` 导致云端时间块无提醒时间的缺陷；`addParsedBlocks`、`planTasks` 生成的新块和待排期拖拽落点自动写入“开始前 5 分钟”默认提醒；原因：用户实测 `pushed:0`，云端 32 个时间块全部缺 `remindAt`；影响：`saveBlock`、WeekTimeline 落点、`defaultRemindAtISO` 工具；证据 E-T018-001，来源：用户反馈定位。

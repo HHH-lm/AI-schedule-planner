@@ -1,0 +1,14 @@
+{
+  "intent": "以受控迁移修复生命周期账本：修正非法阶段状态与 revision，补录阶段 6 已完成任务和证据，并同步验收、进度、功能索引。",
+  "conflicts": "AGENT_LIFECYCLE.json 的 stage 5 状态 completed 和 revision 14 无法通过生命周期脚本校验，脚本不能直接加载账本，因此需要一次性受控迁移后恢复脚本维护。",
+  "assumptions": [
+    "G5-001 已通过，阶段 5 实际状态为 passed",
+    "T-005 至 T-025 的完成状态与证据文件可信",
+    "原 revision 14 与 6 条转换记录失配，修正为 6 后由脚本递增"
+  ],
+  "risks": [
+    "迁移需手工修改 JSON 的 status/revision/taskIds/evidenceIds，必须保留既有 transitions",
+    "若相关证据文件缺失，迁移后 validate 仍会失败",
+    "误把阶段 7 置为 ready 会破坏 Gate 顺序"
+  ]
+}

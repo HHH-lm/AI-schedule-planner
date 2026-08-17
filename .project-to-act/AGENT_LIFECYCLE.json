@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "projectId": "ai-schedule-system",
   "projectName": "AI日程管理与个性化规划系统",
-  "revision": 14,
+  "revision": 7,
   "projectStatus": "active",
   "currentStage": "6",
-  "updatedAt": "2026-08-09T18:16:52Z",
+  "updatedAt": "2026-08-17T10:32:14.944Z",
   "historicalLimitations": [
     "采用既有实现：核心功能代码已存在（18 个源文件，package.json v0.1.0），但无自动测试、无 Git 提交、无 Gate 文档；阶段 0-4 标记 legacy_unverified，不能追溯为已通过。"
   ],
@@ -93,7 +93,7 @@
     {
       "id": "5",
       "name": "具体功能与纵向切片开发",
-      "status": "completed",
+      "status": "passed",
       "expectedArtifacts": [
         "Task Contract",
         "纵向切片",
@@ -113,7 +113,9 @@
         "E-T004-001",
         "E-T004-003"
       ],
-      "artifacts": [],
+      "artifacts": [
+        ".project-to-act/tasks/T-004/evidence/E-T004-003.md"
+      ],
       "decisions": [],
       "startedAt": "2026-08-08T13:57:00.981Z",
       "updatedAt": "2026-08-09T17:28:23Z"
@@ -134,7 +136,21 @@
         "T-008",
         "T-009",
         "T-010",
-        "T-011"
+        "T-011",
+        "T-012",
+        "T-013",
+        "T-014",
+        "T-015",
+        "T-016",
+        "T-017",
+        "T-018",
+        "T-019",
+        "T-020",
+        "T-021",
+        "T-022",
+        "T-023",
+        "T-024",
+        "T-025"
       ],
       "evidenceIds": [
         "E-T005-001",
@@ -145,12 +161,28 @@
         "E-T010-001",
         "E-T011-001",
         "E-T011-002",
-        "E-T011-003"
+        "E-T011-003",
+        "E-T012-001",
+        "E-T012-002",
+        "E-T013-001",
+        "E-T014-001",
+        "E-T015-001",
+        "E-T016-001",
+        "E-T017-001",
+        "E-T018-001",
+        "E-T019-001",
+        "E-T020-001",
+        "E-T021-001",
+        "E-T022-001",
+        "E-T023-001",
+        "E-T024-001",
+        "E-T024-002",
+        "E-T025-001"
       ],
       "artifacts": [],
       "decisions": [],
       "startedAt": "2026-08-09T17:28:23Z",
-      "updatedAt": "2026-08-09T19:25:55Z"
+      "updatedAt": "2026-08-17T10:32:14.944Z"
     },
     {
       "id": "7",
@@ -277,6 +309,20 @@
       "artifacts": [],
       "summary": "阶段 5 Gate 通过：Git 基线 2e1ad62 建立后 test/lint/build/tsc 全部通过；进入阶段 6（评测、安全测试与调优）",
       "revision": 6
+    },
+    {
+      "at": "2026-08-17T10:32:14.944Z",
+      "action": "start",
+      "fromStage": "6",
+      "toStage": "6",
+      "fromStatus": "ready",
+      "toStatus": "in_progress",
+      "taskId": "T-005",
+      "decision": null,
+      "evidenceIds": [],
+      "artifacts": [],
+      "summary": "启动阶段 6：评测、安全测试与调优（T-026 受控迁移补录阶段 6 启动转换）",
+      "revision": 7
     }
   ]
 }

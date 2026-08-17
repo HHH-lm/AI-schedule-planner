@@ -26,6 +26,7 @@
 | T-017 微信提醒默认开始前 5 分钟自动预填（F-018 修订） | 已完成 | Codex（用户反馈） | 前端测试 + tsc + lint + build 通过并写入证据 | E-T017-001 | 2026-08-11 |
 | T-018 修复微信提醒 remindAt 保存链路（F-018 修订） | 已完成 | Codex（用户反馈定位） | 云端核查 + 前端测试 + tsc + lint + build 通过并写入证据 | E-T018-001 | 2026-08-11 |
 | T-019 修复 PushPlus 业务错误码误判为推送成功（F-018 修订） | 已完成 | Codex（用户反馈定位） | PushPlus 实测 + 后端 pytest 36 个测试通过并写入证据 | E-T019-001 | 2026-08-11 |
+| T-020 风险等级升级 L2、数据分类定义、API 速率限制、README 增强、周时间轴→周计划统一命名 | 已完成 | Codex（用户指令） | 后端 pytest 95 个测试 + 前端 Vitest 82 个测试通过并写入证据 | E-T020-001 | 2026-08-13 |
 | T-021 真实部署环境验收清单（Auth/RLS、真实 AI、微信推送） | 已完成 | Codex（用户指令） | 真实 Supabase/DeepSeek/PushPlus 端到端断言全部通过并写入证据 | E-T021-001 | 2026-08-16 |
 | T-022 AI 解析质量度量（30 条 golden set：10 QuickAdd + 10 Planning + 5 边界 + 5 Constraint/Memory + 回归门禁） | 已完成 | Codex（用户指令） | 评测命令通过 + 真实 DeepSeek 30/30 + 证据入账 | E-T022-001 | 2026-08-16 |
 | T-023 后端可观测性（结构化日志 + 关键事件：AI 慢/失败、推送失败可查） | 已完成 | Codex（用户指令） | 后端 148 测试 + 实机日志验证 + 证据入账 | E-T023-001 | 2026-08-16 |
@@ -40,21 +41,16 @@
 
 ## 下一步
 
-1. T-020 记忆系统第一阶段实施完成，等待人工验收。
-2. 用户 P0/P1/P2 清单已全部完成；T-011 登录式多租户隔离已完成自动验证。
-2. T-012 AI API 解析已完成自动验证；未配置 Key 时保持本地规则行为。
-3. 等待项目负责人人工验收（A-001/A-002）；真实 Supabase Auth/RLS、DeepSeek、PushPlus 已验收（E-T021-001）。
-4. 后续可进入阶段 7 发布准备：版本发布清单、SLO 与监控、灰度/回滚方案。
-5. AI 解析 golden set 评测已建立（E-T022-001）；后续 prompt 变更必须重跑 `npm run eval:ai:golden`。
-6. 后端可观测性已建立（E-T023-001）：JSON 结构化日志 + AI/推送/提醒关键事件 + request_id 关联；上线后可用日志排查 AI 慢/失败与推送失败。
-7. 后续阶段 7 发布准备可继续：外部日志平台/SLO 告警、request_id 写入响应头。
-8. Vercel Serverless 改造已完成并上线（E-T024-001/E-T024-002）：公网前端 `https://ai-schedule-web-ten.vercel.app`、后端 `https://ai-schedule-backend.vercel.app`；Auth/RLS、真实 DeepSeek、PushPlus 全部验收通过；Vercel Cron 每日兜底已配置，5 分钟级提醒待启用 GitHub Actions。
-9. 阶段 7 发布清单与发布 Gate 已定义（E-T025-001）：执行基准见 `PROJECT_VERSIONS.md`「v0.1.0 发布清单」，Gate 记录于 `PROJECT_ACCEPTANCE.md` G7-001（当前待执行，由项目负责人逐项勾选后确认）。
+1. T-026 生命周期账本一致性修复已完成（E-T026-001）：阶段 5 状态修正为 passed，阶段 6 任务与证据补录至 T-025，两套 validate 通过。
+2. 下一步执行阶段 6 Gate（G6-001）并启动阶段 7；随后按 `PROJECT_VERSIONS.md`「v0.1.0 发布清单」执行 G7-001（当前待项目负责人逐项勾选）。
+3. 发布前待办：启用 GitHub Actions 5 分钟定时器（PAT 增加 workflow scope + 配置 `BACKEND_URL`/`CRON_SECRET`）、Supabase 每日备份与恢复演练、外部健康探测、SLO 基线记录、A-001/A-002 人工对照确认。
+4. AI 解析 golden set 已建立（E-T022-001）：后续 prompt/模型变更必须重跑 `npm run eval:ai:golden`。
 
 ## 进度历史
 
 按时间倒序追加：日期、完成事项、证据 ID、遗留问题、下一步和确认来源。不要覆盖旧记录。
 
+- 2026-08-17：T-026 生命周期账本一致性修复完成：修正 AGENT_LIFECYCLE.json 阶段 5 非法状态 completed 为 passed 并补工件 E-T004-003 证据文件；revision 从失配的 14 对齐到 6 条既有转换记录后由 CLI 补记阶段 6 启动转换（rev 7）；阶段 6 taskIds/evidenceIds 补录 T-005 至 T-025 与对应 E-T 证据；PROJECT_ACCEPTANCE 补 E-T017-001 至 E-T020-001 索引，PROJECT_PROGRESS 补 T-020 行，PROJECT_FEATURES F-020 证据改为 E-T020-001；manage_lifecycle validate 与 Project-to-Act validate 均通过。证据 E-T026-001。遗留问题：G7-001 发布 Gate 待执行；GitHub Actions 定时器、备份演练、外部探测、SLO、A-001/A-002 待办。下一步：阶段 6 Gate 与阶段 7 发布执行。来源：用户指令。
 - 2026-08-17：T-024 公网部署验收完成（补记 UTC 2026-08-16T19:20Z）：Vercel CLI 登录后创建 `ai-schedule-backend`（Root Directory=backend）与 `ai-schedule-web` 两个项目并生产部署；公网健康检查、Next.js → FastAPI 代理、CORS；真实 Supabase Auth/RLS 11 项、cron 鉴权 3 项、PushPlus 推送与去重 3 项、清理 4 项全部 PASS；DeepSeek 充值后真实解析返回 `source=deepseek`；`backend/vercel.json` 增加每日 Vercel Cron 兜底并重新部署；测试用户与数据已清理。证据 E-T024-002。遗留问题：GitHub Actions 5 分钟定时器因 PAT 无 workflow scope 未推入 `.github/workflows/`，示例在 `deploy/github-actions/reminder-cron.yml`；Hobby 版 Vercel Cron 每天 1 次。下一步：用户给 PAT 加 workflow scope 或网页端创建 workflow，并配置 `BACKEND_URL`/`CRON_SECRET` Secrets。来源：用户指令（执行部署检查 + DeepSeek 充值后真实 AI 调用）。
 - 2026-08-16：T-025 定义阶段 7 发布清单与发布 Gate：发布清单写入 `.project-to-act/PROJECT_VERSIONS.md`（A 质量门禁 / B 版本产物 / C 环境变量与密钥 / D 数据与 Supabase / E 部署拓扑 / F 真实公网验收 / G 监控可观测性 / H 回滚风险 / I 人工确认与 Gate 执行），执行指南引用 `docs/operations.md`；`PROJECT_ACCEPTANCE.md` 新增 A-008 验收标准与 G7-001 Gate 记录（状态待执行，未伪造通过）；后端 pytest、前端 Vitest 保持通过。证据 E-T025-001。遗留问题：清单未执行，G7-001 发布 Gate 待项目负责人逐项勾选后确认。下一步：按清单执行公网部署与真实验收。来源：用户指令。
 - 2026-08-16：T-024 Vercel Serverless 改造（代码部分）：新增 `ENABLE_SCHEDULER` / `CRON_SECRET` / `CORS_ORIGINS` 配置，lifespan 仅在 `enable_scheduler=True` 时启动 APScheduler；新增 `GET /api/v1/reminders/cron`（Authorization Bearer 鉴权）；`backend/pyproject.toml` 配置 `[tool.vercel] entrypoint`、`backend/vercel.json` 配置 `maxDuration=60`；新增 `deploy/github-actions/reminder-cron.yml` 示例（复制到 `.github/workflows/` 后每 5 分钟定时触发）；`docs/operations.md` 第 2 节改为 Vercel Serverless 部署指南并保留自托管第 9 节；后端 152 测试（新增 4 Serverless 测试）、前端 82 测试、密钥扫描 5/5 PASS。证据 E-T024-001。遗留问题：公网 Vercel 部署未执行（本机无 Vercel CLI/登录态）。下一步：用户登录 Vercel 后按手册部署并跑公网验收清单。来源：用户指令。
