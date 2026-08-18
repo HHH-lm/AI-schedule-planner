@@ -21,8 +21,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import time
+from collections import Counter
 from datetime import date, timedelta
 from typing import Any
 
@@ -31,12 +33,14 @@ import httpx
 from app.config import Settings
 from app.logging_setup import get_logger, log_event
 from app.schemas import (
+    ConstraintSpec,
     ExistingBlock,
     PlanV2Block,
     PlanV2Request,
     PlanV2Response,
     PlanV2Task,
     PlanningRange,
+    WorkStyleSpec,
 )
 from app.services.ai import (
     _extract_content,
@@ -45,17 +49,107 @@ from app.services.ai import (
     parse_model_json,
     resolve_ai_provider,
 )
-from app.schemas import ConstraintSpec
 from app.services.scheduling_engine import (
     build_constraint_filters,
     parse_constraint_filters,
+    parse_work_style,
     schedule_tasks,
 )
 
 
 CATEGORY_VALUES = ("work", "study", "fitness", "life", "rest")
+EXCLUSION_KEYWORDS = ("不要", "不安排", "避开", "跳过", "不可", "不行", "不能", "别安排", "勿")
 
 logger = get_logger("app.planner_v2")
+
+
+def _exclusion_memories(memories: list[str]) -> list[str]:
+    """筛选出带明确排除语义的记忆（如"9点前不安排""不要晚上"）。
+
+    只有这类记忆才有资格被本地正则兜底解析为硬约束；
+    普通偏好（如"我上午精力最好"）不会被提升为约束。
+    """
+    return [m for m in memories if any(kw in m for kw in EXCLUSION_KEYWORDS)]
+
+
+def _fallback_constraint_sources(request: PlanV2Request) -> list[str]:
+    """本地兜底的约束文本来源：显式 constraints + 排除式记忆。"""
+    return list(request.constraints or []) + _exclusion_memories(request.memories)
+
+
+def _memory_hashes(memories: list[str]) -> list[str]:
+    """记忆文本的脱敏指纹（sha1 前 8 位），用于日志关联具体记忆而不落原文。"""
+    return sorted(hashlib.sha1(m.encode("utf-8")).hexdigest()[:8] for m in memories)
+
+
+def _understandings_summary(
+    understandings: list[dict[str, Any]] | None,
+) -> dict[str, dict[str, int]]:
+    """理解结果聚合（脱敏）：各任务 preferred_time / focus_level / category 分布。"""
+    if not understandings:
+        return {}
+    return {
+        "preferred_time": dict(Counter(u.get("preferred_time", "any") for u in understandings)),
+        "focus_level": dict(Counter(u.get("focus_level", "flexible") for u in understandings)),
+        "categories": dict(Counter(u.get("category", "life") for u in understandings)),
+    }
+
+
+def _log_memory_application(
+    *,
+    memories: list[str],
+    explicit_constraints: list[str],
+    constraint_filters: list[Any],
+    source: str,
+    understandings: list[dict[str, Any]] | None = None,
+    work_style: WorkStyleSpec | None = None,
+    work_style_source: str | None = None,
+) -> None:
+    """埋点：记忆应用证据（全部脱敏）。
+
+    - memories_total: 收到的记忆条数
+    - memories_exclusion: 其中带排除语义、有资格成为硬约束的条数
+    - memory_hashes: 这类记忆的 sha1 指纹（前 8 位），用于核对具体记忆是否进入约束
+    - constraint_filters: 实际生效的硬约束过滤函数数
+    - constraint_source: llm / fallback / timeout / error
+    - understandings: LLM 理解结果的脱敏聚合（时段/专注度/类目分布）
+    - work_style / work_style_source: 分块工作方式（如 25/5）及其来源
+    """
+    exclusion = _exclusion_memories(memories)
+    log_event(
+        logger,
+        logging.INFO,
+        "plan_v2.memory",
+        memories_total=len(memories),
+        memories_exclusion=len(exclusion),
+        explicit_constraints=len(explicit_constraints),
+        memory_hashes=_memory_hashes(exclusion) or None,
+        constraint_filters=len(constraint_filters),
+        constraint_source=source,
+        understandings=_understandings_summary(understandings) or None,
+        work_style=(
+            {
+                "chunk_minutes": work_style.chunk_minutes,
+                "break_minutes": work_style.break_minutes,
+            }
+            if work_style
+            else None
+        ),
+        work_style_source=work_style_source,
+    )
+
+
+def _sanitize_work_style(raw: Any) -> WorkStyleSpec | None:
+    """校验并清洗 LLM 返回的工作方式（分块排期）。"""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        spec = WorkStyleSpec.model_validate(raw)
+    except Exception:
+        return None
+    if not spec.chunk_minutes:
+        return None
+    return spec
 
 
 def _log_plan_v2_result(
@@ -144,14 +238,20 @@ def _build_understanding_prompt(
     lines.append("6. 只输出 JSON")
     lines.append("7. 记忆偏好适用于全部任务：记忆明确提到上午/下午/晚上时，所有任务的 preferred_time 都应优先遵循该记忆，除非任务名称明显冲突")
 
-    if constraints:
+    if constraints or memories:
         lines.append("## 约束解析要求")
-        lines.append('8. 若存在约束，请在 JSON 顶层同时输出 "constraints" 字段：')
+        lines.append('8. 若存在约束或记忆中的明确禁止/排除表述，请在 JSON 顶层同时输出 "constraints" 字段：')
         lines.append('   {"day_start": 可排最早小时(0-23)或null, "day_end": 可排最晚小时或null, ')
         lines.append('    "exclude_weekdays": [0-6], "exclude_periods": ["上午"/"下午"/"晚上"/"凌晨"], ')
         lines.append('    "max_daily_minutes": 数字或null}')
-        lines.append('9. 例："从14:00开始安排" → day_start=14；"周三晚上不能学习" → exclude_weekdays=[2], exclude_periods=["晚上"]')
-        lines.append('10. 最终格式：{"understandings": [...], "constraints": {...}}')
+        lines.append('9. 例："从14:00开始安排" → day_start=14；"周三晚上不能学习" → exclude_weekdays=[2], exclude_periods=["晚上"]；"9点之前不安排任何任务" → day_start=9')
+        lines.append('10. 只有明确禁止/排除的表达（如"X点前不安排""不要安排在晚上""避开周三"）才输出为约束；')
+        lines.append('    一般偏好（如"我上午精力最好""习惯每周运动"）不要输出为约束，只用于 preferred_time 判断')
+        lines.append('11. 若没有硬约束，输出 "constraints": {}')
+        lines.append('12. 若记忆/目标中包含分块工作方式（如"以25分钟时间块安排，中间需要间隔至少5分钟"），')
+        lines.append('    请同时输出顶层 "work_style": {"chunk_minutes": 25, "break_minutes": 5}；')
+        lines.append('    只有明确提到分块时长才输出，无分块要求时输出 "work_style": {}')
+        lines.append('13. 最终格式：{"understandings": [...], "constraints": {...}, "work_style": {...}}')
         lines.append("")
 
     return "\n".join(lines)
@@ -223,12 +323,25 @@ def _fallback_plan_v2(
     range_end: date,
     memories: list[str],
     constraints: list[str] | None = None,
+    work_style: WorkStyleSpec | None = None,
+    now_minutes: int | None = None,
 ) -> PlanV2Response:
     """本地 fallback 规划器 — 直接使用 SchedulingEngine。"""
-    constraint_filters = parse_constraint_filters(constraints or [])
+    constraint_filters = parse_constraint_filters((constraints or []) + _exclusion_memories(memories))
+    work_style = work_style or parse_work_style(memories)
+    _log_memory_application(
+        memories=memories,
+        explicit_constraints=constraints or [],
+        constraint_filters=constraint_filters,
+        source="fallback",
+        work_style=work_style,
+        work_style_source="fallback",
+    )
     blocks, unassigned, _issues = schedule_tasks(
         tasks, existing, (range_start, range_end), memories,
         constraint_filters=constraint_filters,
+        work_style=work_style,
+        now_minutes=now_minutes,
     )
     return PlanV2Response(
         source="local",
@@ -347,7 +460,25 @@ async def plan_v2_schedule(
             except Exception:
                 spec = None
         llm_filters = build_constraint_filters(spec) if spec else []
-        constraint_filters = llm_filters or parse_constraint_filters(request.constraints)
+        constraint_filters = llm_filters or parse_constraint_filters(_fallback_constraint_sources(request))
+        # 工作方式（分块排期）：优先用 LLM 提取，失败时本地规则兜底
+        work_style = None
+        work_style_source = "fallback"
+        if isinstance(understanding_payload, dict):
+            work_style = _sanitize_work_style(understanding_payload.get("work_style"))
+            if work_style:
+                work_style_source = "llm"
+        if work_style is None:
+            work_style = parse_work_style(request.memories)
+        _log_memory_application(
+            memories=request.memories,
+            explicit_constraints=request.constraints or [],
+            constraint_filters=constraint_filters,
+            source="llm" if llm_filters else "fallback",
+            understandings=understandings,
+            work_style=work_style,
+            work_style_source=work_style_source,
+        )
         understandings_dict = {u["title"]: u for u in understandings}
         blocks, unassigned, _issues = schedule_tasks(
             request.tasks,
@@ -356,6 +487,8 @@ async def plan_v2_schedule(
             request.memories,
             understandings=understandings_dict,
             constraint_filters=constraint_filters,
+            work_style=work_style,
+            now_minutes=request.now_minutes,
         )
 
         # ── 步骤 3: LLM 解释层（可选） ──
@@ -390,13 +523,24 @@ async def plan_v2_schedule(
         _ = error
         timeout_seconds = round(settings.ai_timeout_ms / 1000)
         # 超时时回退到 SchedulingEngine
-        constraint_filters = parse_constraint_filters(request.constraints)
+        constraint_filters = parse_constraint_filters(_fallback_constraint_sources(request))
+        work_style = parse_work_style(request.memories)
+        _log_memory_application(
+            memories=request.memories,
+            explicit_constraints=request.constraints or [],
+            constraint_filters=constraint_filters,
+            source="timeout",
+            work_style=work_style,
+            work_style_source="fallback",
+        )
         blocks, unassigned, _issues = schedule_tasks(
             request.tasks,
             request.existing_schedule,
             (range_start, range_end),
             request.memories,
             constraint_filters=constraint_filters,
+            work_style=work_style,
+            now_minutes=request.now_minutes,
         )
         _log_plan_v2_result(
             started, source="local", blocks=len(blocks),
@@ -412,13 +556,24 @@ async def plan_v2_schedule(
     except Exception as error:
         # 其他异常时回退到 SchedulingEngine
         try:
-            constraint_filters = parse_constraint_filters(request.constraints)
+            constraint_filters = parse_constraint_filters(_fallback_constraint_sources(request))
+            work_style = parse_work_style(request.memories)
+            _log_memory_application(
+                memories=request.memories,
+                explicit_constraints=request.constraints or [],
+                constraint_filters=constraint_filters,
+                source="error",
+                work_style=work_style,
+                work_style_source="fallback",
+            )
             blocks, unassigned, _issues = schedule_tasks(
                 request.tasks,
                 request.existing_schedule,
                 (range_start, range_end),
                 request.memories,
                 constraint_filters=constraint_filters,
+                work_style=work_style,
+                now_minutes=request.now_minutes,
             )
             _log_plan_v2_result(
                 started, source="local", blocks=len(blocks),

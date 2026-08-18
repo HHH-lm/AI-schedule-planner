@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from app.schemas import ExistingBlock, PlanV2Task
-from app.schemas import ConstraintSpec
+from app.schemas import ConstraintSpec, ExistingBlock, PlanV2Task, WorkStyleSpec
 from app.services.scheduling_engine import (
     SlotScorer,
     build_constraint_filters,
     parse_constraint_filters,
+    parse_work_style,
     resolve_priority,
     schedule_tasks,
     score_memory_match,
@@ -549,6 +549,51 @@ def test_constraint_filters_time_before() -> None:
     assert filters[0](FreeSlot("2026-08-03", 9 * 60, 10 * 60)) is True
 
 
+def test_constraint_filters_time_before_natural_variants() -> None:
+    """'9点之前/以前不安排' 等自然说法应被解析为硬约束（8点排除、9点保留）。"""
+    texts = [
+        "9点之前不安排任何任务",
+        "早上 9 点之前不安排任何任务",
+        "不要在9点之前安排任务",
+        "9点以前不安排",
+    ]
+    for text in texts:
+        filters = parse_constraint_filters([text])
+        assert len(filters) >= 1, f"{text!r} 应生成过滤函数"
+        before = FreeSlot("2026-08-03", 8 * 60, 9 * 60)
+        after = FreeSlot("2026-08-03", 9 * 60, 10 * 60)
+        assert all(f(before) for f in filters) is False, f"{text!r} 应排除 8 点时段"
+        assert all(f(after) for f in filters) is True, f"{text!r} 应保留 9 点时段"
+
+
+def test_constraint_filters_time_after_natural_variants() -> None:
+    """'晚上9点之后不安排' 应只保留 21 点前的时段。"""
+    filters = parse_constraint_filters(["晚上9点之后不安排任何任务"])
+    assert len(filters) >= 1
+    before = FreeSlot("2026-08-03", 20 * 60, 21 * 60)
+    after = FreeSlot("2026-08-03", 21 * 60, 22 * 60)
+    assert all(f(before) for f in filters) is True, "20 点时段应保留"
+    assert all(f(after) for f in filters) is False, "21 点及之后应被排除"
+
+
+def test_schedule_tasks_memory_exclusion_blocks_before_nine() -> None:
+    """记忆"9点之前不安排任何任务"解析为约束后，任务不得排到 9 点前。"""
+    tasks = [PlanV2Task(title="写代码", duration=120)]
+    existing: list[ExistingBlock] = []
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
+        memories=["早上9点之前不安排任何任务"],
+        constraint_filters=parse_constraint_filters(
+            ["早上9点之前不安排任何任务"]
+        ),
+    )
+    assert len(blocks) == 1
+    assert len(unassigned) == 0
+    assert blocks[0].start >= 9 * 60, (
+        f"记忆约束应阻止 9 点前排期，实际排在了 {blocks[0].start // 60}:{blocks[0].start % 60:02d}"
+    )
+
+
 def test_schedule_tasks_constraint_excludes_weekday() -> None:
     """hard constraint 排除周三后，任务不应排到周三。"""
     tasks = [PlanV2Task(title="写代码", duration=60)]
@@ -844,3 +889,151 @@ def test_schedule_tasks_exclude_evening_never_places_evening() -> None:
     assert blocks[0].start < 18 * 60, (
         f"'不要安排在晚上' 不应排到晚上，实际 {blocks[0].start // 60}:{blocks[0].start % 60:02d}"
     )
+
+
+# ============================================================
+# 9. 工作方式分块排期（番茄钟式）
+# ============================================================
+
+def test_parse_work_style_variants() -> None:
+    """常见"分块 + 间隔"表述应被解析为 WorkStyleSpec。"""
+    cases = {
+        "以25分钟时间块安排，中间需要间隔至少5分钟": (25, 5),
+        "工作25分钟休息5分钟": (25, 5),
+        "每50分钟休息10分钟": (50, 10),
+        "以三十分钟为一段，中间休息五分钟": (30, 5),
+        "以 25 分钟时间块安排": (25, None),
+    }
+    for text, (chunk, break_) in cases.items():
+        spec = parse_work_style([text])
+        assert spec is not None, f"{text!r} 应解析出 work_style"
+        assert spec.chunk_minutes == chunk, text
+        assert spec.break_minutes == break_, text
+
+
+def test_parse_work_style_merges_across_memories() -> None:
+    """分块和间隔可以来自不同记忆。"""
+    spec = parse_work_style(["每25分钟一个单位", "中间间隔至少5分钟"])
+    assert spec is not None
+    assert spec.chunk_minutes == 25
+    assert spec.break_minutes == 5
+
+
+def test_parse_work_style_none_for_unrelated() -> None:
+    """无分块表述的记忆不应解析出 work_style。"""
+    assert parse_work_style(["我上午的精力最好", "习惯每周运动两次"]) is None
+    assert parse_work_style([]) is None
+
+
+def test_schedule_tasks_chunked_with_breaks() -> None:
+    """分块任务应拆成多个 25 分钟块，块间保留空白间隔（不写入休息块）。"""
+    tasks = [PlanV2Task(title="写代码", duration=100)]
+    style = WorkStyleSpec(chunk_minutes=25, break_minutes=5)
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
+        work_style=style,
+    )
+    assert len(unassigned) == 0
+    assert blocks, "应生成工作块"
+    assert all(b.title == "写代码" for b in blocks), "不应生成休息块"
+    assert len(blocks) == 4, f"应拆成 4 个块，实际 {len(blocks)}"
+    assert all(b.end - b.start == 25 for b in blocks)
+    # 总工作时长守恒
+    assert sum(b.end - b.start for b in blocks) == 100
+    # 块间留出 5 分钟空白间隔，且块本身不重叠
+    ordered = sorted(blocks, key=lambda b: b.start)
+    for prev, nxt in zip(ordered, ordered[1:]):
+        assert nxt.start - prev.end == 5, "块间应保留 5 分钟空白间隔"
+
+
+def test_schedule_tasks_chunked_break_gap_reserved_for_other_tasks() -> None:
+    """分块任务的休息间隔应占位：其他任务不得排进该空白区间。"""
+    tasks = [
+        PlanV2Task(title="写代码", duration=50),
+        PlanV2Task(title="整理文档", duration=30),
+    ]
+    style = WorkStyleSpec(chunk_minutes=25, break_minutes=5)
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
+        work_style=style,
+    )
+    assert len(unassigned) == 0
+    code = sorted((b for b in blocks if b.title == "写代码"), key=lambda b: b.start)
+    assert len(code) == 2
+    gap_start, gap_end = code[0].end, code[1].start
+    assert gap_end - gap_start == 5, "分块任务块间应有 5 分钟间隔"
+    for other in blocks:
+        if other.title == "写代码":
+            continue
+        assert other.start >= gap_end or other.end <= gap_start, (
+            f"其他任务不得占用休息间隔 {gap_start}-{gap_end}，实际 {other.title} {other.start}-{other.end}"
+        )
+
+
+def test_schedule_tasks_chunked_respects_hard_constraint() -> None:
+    """分块任务的所有工作块都必须满足硬约束（9 点前不排）。"""
+    tasks = [PlanV2Task(title="写代码", duration=120)]
+    style = WorkStyleSpec(chunk_minutes=25, break_minutes=5)
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
+        work_style=style,
+        constraint_filters=parse_constraint_filters(["9点之前不安排任何任务"]),
+    )
+    assert len(unassigned) == 0
+    work = [b for b in blocks if b.title == "写代码"]
+    assert work, "应生成工作块"
+    assert all(b.start >= 9 * 60 for b in work), (
+        f"所有工作块应排在 9 点后，实际最早 {min(b.start for b in work) // 60} 点"
+    )
+
+
+def test_schedule_tasks_short_task_not_split() -> None:
+    """时长不超过块长的任务保持单块，不产生休息块。"""
+    tasks = [PlanV2Task(title="写代码", duration=30)]
+    style = WorkStyleSpec(chunk_minutes=25, break_minutes=5)
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
+        work_style=style,
+    )
+    assert len(unassigned) == 0
+    assert len(blocks) == 1
+    assert blocks[0].end - blocks[0].start == 30
+
+
+# ============================================================
+# 10. 当前时刻之后排期（now_minutes）
+# ============================================================
+
+def test_schedule_tasks_now_minutes_never_places_past_today() -> None:
+    """now_minutes 之后，今天不再排入已过去的时间段。"""
+    tasks = [PlanV2Task(title="写代码", duration=60)]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
+        now_minutes=20 * 60 + 47,
+    )
+    assert len(unassigned) == 0
+    assert blocks[0].start >= 20 * 60 + 47, (
+        f"任务不得排到当前时刻之前，实际 {blocks[0].start // 60}:{blocks[0].start % 60:02d}"
+    )
+
+
+def test_schedule_tasks_now_minutes_moves_to_later_days() -> None:
+    """今天剩余时间不足时，任务应排到后续日期而非过去的今天。"""
+    tasks = [PlanV2Task(title="写代码", duration=480)]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 5)),
+        now_minutes=22 * 60,
+    )
+    assert len(unassigned) == 0
+    assert blocks[0].date != "2026-08-03", "今天剩余 60 分钟不足 480 分钟，不应排到今天"
+    assert blocks[0].date == "2026-08-04"
+
+
+def test_schedule_tasks_without_now_minutes_keeps_full_first_day() -> None:
+    """不传 now_minutes 时保持原行为：首日从 day_start 开始可排。"""
+    tasks = [PlanV2Task(title="写代码", duration=60)]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
+    )
+    assert len(unassigned) == 0
+    assert blocks[0].start >= 6 * 60

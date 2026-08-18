@@ -1107,6 +1107,7 @@ export default function Home() {
         tasks: planInputs,
         memories,
         constraints,
+        now_minutes: new Date().getHours() * 60 + new Date().getMinutes(),
         existing_schedule: current.timeBlocks.map((block) => ({
           date: block.date,
           start: block.start,

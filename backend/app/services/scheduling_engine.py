@@ -29,7 +29,13 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
-from app.schemas import ConstraintSpec, ExistingBlock, PlanV2Block, PlanV2Task
+from app.schemas import (
+    ConstraintSpec,
+    ExistingBlock,
+    PlanV2Block,
+    PlanV2Task,
+    WorkStyleSpec,
+)
 from app.services.ai import parse_local_date
 from app.services.conflict import overlaps_with_any
 from app.services.nlp import guess_category
@@ -94,26 +100,17 @@ def parse_constraint_filters(
                 detected_period = period_label
                 break
 
-        # 如果同时检测到星期和时段，创建组合过滤器（AND 逻辑）
-        if detected_weekday is not None and detected_period is not None:
-            filters.append(_make_combined_weekday_period_filter(detected_weekday, detected_period, exclude=True))
-        else:
-            if detected_weekday is not None:
-                filters.append(_make_weekday_filter(detected_weekday, exclude=True))
-            if detected_period is not None:
-                filters.append(_make_period_filter(detected_period, exclude=True))
-
-        # 处理时点约束（支持中文数字/阿拉伯数字，上午/下午前缀）
+        # 处理时点约束（支持中文数字/阿拉伯数字，上午/下午前缀，"之前/以前/之后/以后"）
         hour = None
         constraint_type = None  # "before" / "after" / "start"
 
-        # ① "X点前" 或 "X点后"
-        m = re.search(r"(\d+)\s*点\s*(前|后)", text_stripped)
+        # ① "X点前/前/之前/以前/后/之后/以后"
+        m = re.search(r"(\d+)\s*点\s*(?:之|以)?\s*(前|后)", text_stripped)
         if m:
             hour = int(m.group(1))
             constraint_type = "before" if m.group(2) == "前" else "after"
         else:
-            cn = re.search(r"([一二三四五六七八九十\d]+)\s*点\s*(前|后)", text_stripped)
+            cn = re.search(r"([一二三四五六七八九十\d]+)\s*点\s*(?:之|以)?\s*(前|后)", text_stripped)
             if cn:
                 cn_hour = _parse_chinese_number(cn.group(1))
                 if cn_hour is not None:
@@ -167,6 +164,20 @@ def parse_constraint_filters(
                     filters.append(_make_time_before_filter(hour))
                 else:
                     filters.append(_make_time_after_filter(hour))
+
+        # 如果同时检测到星期和时段，创建组合过滤器（AND 逻辑）。
+        # 时点表达（如"晚上9点后"）里的"晚上/上午/下午"是 12 小时制前缀，
+        # 不再触发整段排除，避免"晚上9点之前不安排"把整个晚上都禁掉。
+        if hour is not None and constraint_type is not None:
+            if detected_weekday is not None:
+                filters.append(_make_weekday_filter(detected_weekday, exclude=True))
+        elif detected_weekday is not None and detected_period is not None:
+            filters.append(_make_combined_weekday_period_filter(detected_weekday, detected_period, exclude=True))
+        else:
+            if detected_weekday is not None:
+                filters.append(_make_weekday_filter(detected_weekday, exclude=True))
+            if detected_period is not None:
+                filters.append(_make_period_filter(detected_period, exclude=True))
 
     return filters
 
@@ -227,6 +238,26 @@ def _parse_chinese_number(text: str) -> int | None:
     return None
 
 
+_CN_DIGITS: dict[str, int] = {
+    "零": 0, "一": 1, "二": 2, "三": 3, "四": 4,
+    "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+}
+
+
+def _cn_to_int(value: str) -> int | None:
+    """把 1-99 的中文/阿拉伯数字串转为整数，支持 三十/二十五/十二/十 等。"""
+    if value.isdigit():
+        return int(value)
+    if "十" in value:
+        left, _, right = value.partition("十")
+        tens = _CN_DIGITS.get(left, 1) if left else 1
+        ones = _CN_DIGITS.get(right, 0) if right else 0
+        return tens * 10 + ones
+    if len(value) == 1:
+        return _CN_DIGITS.get(value)
+    return None
+
+
 def _make_time_before_filter(hour: int) -> Any:
     """在 X 点前的时段不受限，X 点及之后的时段被排除。"""
     def _filter(slot: FreeSlot) -> bool:
@@ -241,6 +272,118 @@ def _make_time_after_filter(hour: int) -> Any:
         slot_hour = slot.start // 60
         return slot_hour >= hour
     return _filter
+
+
+
+def parse_work_style(memories: list[str]) -> WorkStyleSpec | None:
+    """从记忆中确定性解析"番茄钟式分块"工作方式（本地兜底，LLM 为主）。
+
+    支持表述：
+      - "以25分钟时间块安排，中间需要间隔至少5分钟"
+      - "工作25分钟休息5分钟" / "每50分钟休息10分钟"
+      - 跨多条记忆合并（一条说分块，一条说间隔）
+    解析不到任何字段时返回 None。
+    """
+    chunk: int | None = None
+    break_minutes: int | None = None
+
+    for text in memories:
+        t = text.strip()
+        if not t:
+            continue
+        # 组合式："工作25分钟休息5分钟" / "学习50分钟间隔10分钟"
+        m = re.search(
+            r"(?:工作|学习|专注)?\s*(\d+|[一二三四五六七八九十]+)\s*分钟"
+            r"(?:工作|后)?\s*(?:休息|间隔)(?:至少|最少)?\s*"
+            r"(\d+|[一二三四五六七八九十]+)\s*分钟",
+            t,
+        )
+        if m:
+            c = _cn_to_int(m.group(1))
+            b = _cn_to_int(m.group(2))
+            if c and b:
+                chunk = chunk or c
+                break_minutes = break_minutes or b
+                continue
+        # 分块："以25分钟时间块安排"
+        m = re.search(
+            r"(?:以|按|每|分成|拆成|按照)?\s*(\d+|[一二三四五六七八九十]+)\s*分钟"
+            r"\s*(?:时间块|为?单位|一?段|工作|专注)?",
+            t,
+        )
+        if m:
+            c = _cn_to_int(m.group(1))
+            if c:
+                chunk = chunk or c
+        # 间隔："间隔至少5分钟" / "休息5分钟"
+        m = re.search(
+            r"(?:间隔|休息)(?:至少|最少)?\s*(\d+|[一二三四五六七八九十]+)\s*分钟",
+            t,
+        )
+        if m:
+            b = _cn_to_int(m.group(1))
+            if b:
+                break_minutes = break_minutes or b
+
+    if not chunk:
+        return None
+    return WorkStyleSpec(chunk_minutes=chunk, break_minutes=break_minutes)
+
+
+def _split_chunks(
+    duration: int,
+    chunk_minutes: int,
+    break_minutes: int | None,
+) -> tuple[list[int], list[int]]:
+    """把任务时长拆成 chunk 块，返回 (各块时长列表, 块间间隔列表)。
+
+    余数小于 15 分钟时并入最后一块，保证每块通过 validator 的最短时长校验。
+    """
+    full, remainder = divmod(duration, chunk_minutes)
+    chunks = [chunk_minutes] * full
+    if remainder >= 15:
+        chunks.append(remainder)
+    elif remainder > 0 and chunks:
+        chunks[-1] += remainder
+    elif remainder > 0:
+        chunks.append(remainder)
+    breaks = [break_minutes] * (len(chunks) - 1) if break_minutes else []
+    return chunks, breaks
+
+
+def _build_task_blocks(
+    task: PlanV2Task,
+    priority: str,
+    date_str: str,
+    start: int,
+    chunks: list[int],
+    breaks: list[int],
+) -> tuple[list[PlanV2Block], list[ExistingBlock]]:
+    """按分块计划生成工作块，并把块间间隔仅作为占用区间保留（不写入时间块）。"""
+    blocks_out: list[PlanV2Block] = []
+    occupied_out: list[ExistingBlock] = []
+    cursor = start
+    for i, c_len in enumerate(chunks):
+        end = cursor + c_len
+        blocks_out.append(PlanV2Block(
+            title=task.title[:80],
+            date=date_str,
+            start=cursor,
+            end=end,
+            category=guess_category(task.title),  # type: ignore[arg-type]
+            priority=priority,  # type: ignore[arg-type]
+            task_id=task.task_id,
+            subtask_id=task.subtask_id,
+        ))
+        occupied_out.append(ExistingBlock(date=date_str, start=cursor, end=end))
+        cursor = end
+        if i < len(breaks) and breaks[i] > 0:
+            # 休息间隔只占位防止其他任务插入，时间块保持空白
+            occupied_out.append(ExistingBlock(
+                date=date_str, start=cursor, end=cursor + breaks[i]
+            ))
+            cursor += breaks[i]
+    return blocks_out, occupied_out
 
 
 
@@ -606,9 +749,11 @@ def schedule_tasks(
     memories: list[str] | None = None,
     understandings: dict[str, dict[str, str]] | None = None,
     constraint_filters: list[Any] | None = None,
+    work_style: WorkStyleSpec | None = None,
     day_start: int = DEFAULT_DAY_START,
     day_end: int = DEFAULT_DAY_END,
     max_daily_workload: int = 480,
+    now_minutes: int | None = None,
 ) -> tuple[list[PlanV2Block], list[str], list[Any]]:
     """调度引擎主入口 — 将任务分配到最佳空闲时段。
 
@@ -626,9 +771,11 @@ def schedule_tasks(
         memories: 用户记忆偏好列表
         understandings: LLM 任务理解 dict（key=任务 title）
         constraint_filters: hard constraint 过滤函数列表（True=允许该时段）
+        work_style: 工作方式（分块时长 + 块间休息），如番茄钟 25/5
         day_start: 每日可排起始分钟（默认 06:00）
         day_end: 每日可排结束分钟（默认 23:00）
         max_daily_workload: 每日最大工作量（分钟，默认 480=8h）
+        now_minutes: 当前本地时间（当天 0 点起分钟），规划范围首日不得早于该时刻
 
     Returns:
         (blocks, unassigned, validation_issues)
@@ -652,6 +799,7 @@ def schedule_tasks(
         range_end,
         day_start=day_start,
         day_end=day_end,
+        now_minutes=now_minutes,
     )
     # 注：hard constraints 不在“整天空闲槽”粒度上过滤。
     # find_free_slots 生成的空闲槽可能横跨一整天（如 06:00-23:00），
@@ -667,7 +815,20 @@ def schedule_tasks(
     scorer = SlotScorer(existing_schedule, blocks)
 
     for task, priority in resolved_tasks:
-        available = filter_slots_by_duration(all_free_slots, task.duration)
+        # 工作方式分块：时长超过块长时拆成多块 + 块间休息
+        if (
+            work_style
+            and work_style.chunk_minutes
+            and task.duration > work_style.chunk_minutes
+        ):
+            chunks, breaks = _split_chunks(
+                task.duration, work_style.chunk_minutes, work_style.break_minutes
+            )
+        else:
+            chunks, breaks = [task.duration], []
+        span = sum(chunks) + sum(breaks)
+
+        available = filter_slots_by_duration(all_free_slots, span)
 
         if available:
             # 用 SlotScorer 评分并排序
@@ -675,50 +836,52 @@ def schedule_tasks(
             scored = scorer.score_all(available, task, priority, memories, task_understanding)
 
             placed = False
-            best_candidate: PlanV2Block | None = None
+            best_blocks: list[PlanV2Block] | None = None
+            best_occupied: list[ExistingBlock] | None = None
             best_score = -1.0
             for slot, _slot_score in scored:
                 slot_duration = slot.end - slot.start
-                if slot_duration < task.duration:
+                if slot_duration < span:
                     continue
-                for minute_start in range(slot.start, slot.end - task.duration + 1, 15):
-                    # 创建候选时间块的临时 slot 用于评分
-                    candidate_slot = FreeSlot(slot.date, minute_start, minute_start + task.duration)
-                    # hard constraints 在候选粒度校验（True=允许该时段）
-                    if constraint_filters and not all(fn(candidate_slot) for fn in constraint_filters):
-                        continue
-                    position_score = scorer.score(candidate_slot, task, priority, memories, task_understanding)
+                for minute_start in range(slot.start, slot.end - span + 1, 15):
+                    candidate_blocks, candidate_occupied = _build_task_blocks(
+                        task, priority, slot.date, minute_start, chunks, breaks
+                    )
+                    # hard constraints 在候选粒度校验（True=允许该时段），
+                    # 分块时对每个工作块起点分别校验
+                    if constraint_filters:
+                        work_slots: list[FreeSlot] = []
+                        cursor = minute_start
+                        for i, c_len in enumerate(chunks):
+                            work_slots.append(FreeSlot(slot.date, cursor, cursor + c_len))
+                            cursor += c_len
+                            if i < len(breaks):
+                                cursor += breaks[i]
+                        if not all(
+                            all(fn(s) for fn in constraint_filters) for s in work_slots
+                        ):
+                            continue
+                    # 创建候选时间块的临时 slot 用于评分（以首块为准）
+                    candidate_slot = FreeSlot(
+                        slot.date, minute_start, minute_start + chunks[0]
+                    )
+                    position_score = scorer.score(
+                        candidate_slot, task, priority, memories, task_understanding
+                    )
                     if position_score <= best_score:
                         continue
-                    candidate = PlanV2Block(
-                        title=task.title[:80],
-                        date=slot.date,
-                        start=minute_start,
-                        end=minute_start + task.duration,
-                        category=guess_category(task.title),  # type: ignore[arg-type]
-                        priority=priority,  # type: ignore[arg-type]
-                        task_id=task.task_id,
-                        subtask_id=task.subtask_id,
-                    )
-                    candidate_existing = ExistingBlock(
-                        date=candidate.date,
-                        start=candidate.start,
-                        end=candidate.end,
-                    )
-                    if overlaps_with_any(candidate_existing, occupied):
+                    if any(
+                        overlaps_with_any(occ, occupied) for occ in candidate_occupied
+                    ):
                         continue
-                    best_candidate = candidate
+                    best_blocks = candidate_blocks
+                    best_occupied = candidate_occupied
                     best_score = position_score
                     placed = True
 
-            if placed and best_candidate is not None:
-                candidate_existing = ExistingBlock(
-                    date=best_candidate.date,
-                    start=best_candidate.start,
-                    end=best_candidate.end,
-                )
-                occupied.append(candidate_existing)
-                blocks.append(best_candidate)
+            if placed and best_blocks is not None and best_occupied is not None:
+                occupied.extend(best_occupied)
+                blocks.extend(best_blocks)
             else:
                 unassigned.append(task.title)
         else:
