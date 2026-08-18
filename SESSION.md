@@ -72,6 +72,14 @@
 - `src/components/MemoryModal.tsx` — "AI 分析"→"智能分析"；"AI 建议"→"候选记忆"；"来源：AI 生成"→"来源：智能生成"；空态说明"点击上方按钮，AI 会根据你的时间块数据生成记忆建议"→"点击上方按钮，系统会根据你的过往数据生成记忆建议"
 - 前端 tsc + Vitest 91 + lint 通过
 
+### 记忆分析空结果提示（本会话新增，未入账）
+- 根因：`/memories/analyze` 数据不足或无规律时返回空建议且无任何提示，用户不知原因
+- `backend/app/services/memory_analysis.py` — 新增 `build_analysis_message`：无数据 / 不足 5 条 / 无规律三种场景返回文案
+- `backend/app/schemas.py` — `MemoryAnalysisResponse` 新增 `message` 字段
+- `backend/app/routers/memories.py` — 返回时组装 message
+- `src/app/page.tsx` — `runAnalysis` 在建议为空时复用 toast 弹窗展示后端 message（带本地兜底文案）
+- 测试：`backend/tests/test_api.py` 新增 4 个用例（无数据/不足/无规律/正常无提示）；后端全量 204 通过，前端 tsc + Vitest 91 + lint 通过
+
 ### 公网部署验收 / T-024
 - 前端：`https://ai-schedule-web-ten.vercel.app`（Vercel 项目 `hhh-lm1/ai-schedule-web`）
 - 后端：`https://ai-schedule-backend.vercel.app`（Vercel 项目 `hhh-lm1/ai-schedule-backend`，Root Directory=`backend`）

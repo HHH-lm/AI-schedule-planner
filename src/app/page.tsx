@@ -695,6 +695,7 @@ export default function Home() {
           confidence: number;
           createdAt: string;
         }>;
+        message?: string | null;
       }>("/memories/analyze", {
         timeBlocks: data.timeBlocks.map((block) => ({
           id: block.id,
@@ -707,6 +708,12 @@ export default function Home() {
         })),
         horizon_days: 28,
       });
+      if (result.suggestions.length === 0) {
+        // 数据不足或未发现规律时，用弹窗提示用户原因
+        setToastMessage(
+          result.message ?? "暂未生成记忆建议，请确保有足够的时间块数据后重试。"
+        );
+      }
       const now = new Date().toISOString();
       commitData((prev) => {
         if (!prev) return prev;
@@ -729,7 +736,7 @@ export default function Home() {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [data, commitData]);
+  }, [data, commitData, setToastMessage]);
 
   const dismissSuggestion = useCallback((id: string) => {
     commitData((prev) =>

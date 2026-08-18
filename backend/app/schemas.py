@@ -190,6 +190,10 @@ class MemoryAnalysisResponse(BaseModel):
     stats: dict[str, Any] = Field(
         default_factory=dict, description="分析统计摘要"
     )
+    message: str | None = Field(
+        default=None,
+        description="分析提示：数据量不足或未发现规律时，向用户说明原因",
+    )
 
 # --- Planning V2 ---
 
