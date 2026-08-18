@@ -84,6 +84,28 @@ def test_find_free_slots_before_day_start() -> None:
     assert slots[0] == FreeSlot("2026-08-03", DEFAULT_DAY_START, DEFAULT_DAY_END)
 
 
+def test_find_free_slots_now_minutes_clamps_first_day() -> None:
+    """now_minutes 应把规划范围首日（今天）的排期起点钳制到当前时刻之后。"""
+    slots = find_free_slots(
+        [], date(2026, 8, 3), date(2026, 8, 3), now_minutes=20 * 60 + 47
+    )
+    assert len(slots) == 1
+    assert slots[0].start >= 20 * 60 + 47, f"首日应从当前时刻后开始，实际 {slots[0].start}"
+    assert slots[0].end == DEFAULT_DAY_END
+
+
+def test_find_free_slots_now_minutes_only_first_day() -> None:
+    """now_minutes 只影响规划范围首日，后续日期保持完整可排。"""
+    slots = find_free_slots(
+        [], date(2026, 8, 3), date(2026, 8, 4), now_minutes=20 * 60 + 47
+    )
+    assert len(slots) == 2
+    assert slots[0].date == "2026-08-03"
+    assert slots[0].start >= 20 * 60 + 47
+    assert slots[1].date == "2026-08-04"
+    assert slots[1].start == DEFAULT_DAY_START
+
+
 def test_filter_slots_by_duration() -> None:
     """过滤能容纳 60 分钟的空闲时段。"""
     slots = [

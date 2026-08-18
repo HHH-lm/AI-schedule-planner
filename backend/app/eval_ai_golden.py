@@ -185,13 +185,24 @@ def evaluate_planning_checks(
     range_end = date_cls.fromisoformat(plan["range_end"])
     existing = [ExistingBlock(**item) for item in plan.get("existing", [])]
 
+    task_titles = {task["title"] for task in tasks}
     results: dict[str, Any] = {
-        "all_scheduled": not unassigned and len(blocks) == len(tasks),
+        # 分块任务会产生多个块，"全部安排"按任务是否至少有一个块判断
+        "all_scheduled": not unassigned
+        and all(any(block["title"] == title for block in blocks) for title in task_titles),
         "within_range": all(
             range_start <= date_cls.fromisoformat(block["date"]) <= range_end for block in blocks
         ),
-        "durations": len(blocks) == len(tasks)
-        and all(block["end"] - block["start"] == task_by_title[block["title"]]["duration"] for block in blocks),
+        # 分块任务各块时长之和等于任务时长
+        "durations": all(
+            sum(
+                block["end"] - block["start"]
+                for block in blocks
+                if block["title"] == title
+            )
+            == task_by_title[title]["duration"]
+            for title in task_titles
+        ),
         "no_conflicts": not _blocks_overlap(blocks, existing),
     }
 
@@ -221,6 +232,24 @@ def evaluate_planning_checks(
             not (date_cls.fromisoformat(block["date"]).weekday() == weekday and block["start"] >= 18 * 60)
             for block in blocks
         )
+    if "work_chunk_minutes" in checks:
+        max_chunk = checks["work_chunk_minutes"]
+        work_blocks = [block for block in blocks if block["title"] in task_titles]
+        results["work_chunk_minutes"] = bool(work_blocks) and all(
+            block["end"] - block["start"] <= max_chunk for block in work_blocks
+        )
+    if "min_chunk_gap" in checks:
+        min_gap = checks["min_chunk_gap"]
+        gap_ok = True
+        for title in task_titles:
+            task_blocks = sorted(
+                (block for block in blocks if block["title"] == title),
+                key=lambda block: block["start"],
+            )
+            for prev, nxt in zip(task_blocks, task_blocks[1:]):
+                if nxt["start"] - prev["end"] < min_gap:
+                    gap_ok = False
+        results["min_chunk_gap"] = gap_ok
     if "deadline_before" in checks:
         deadline = date_cls.fromisoformat(checks["deadline_before"])
         results["deadline_before"] = all(

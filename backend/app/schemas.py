@@ -220,6 +220,16 @@ class ConstraintSpec(BaseModel):
     max_daily_minutes: int | None = Field(default=None, ge=0, description="每日最大可排分钟数")
 
 
+class WorkStyleSpec(BaseModel):
+    """工作方式（番茄钟式分块排期）。
+
+    由 LLM 理解层从记忆/目标中提取，或由本地规则兜底解析：
+    把任务拆成 chunk_minutes 的块，块间保留 break_minutes 的休息间隔。
+    """
+    chunk_minutes: int | None = Field(default=None, ge=15, le=120, description="分块时长（分钟），如 25")
+    break_minutes: int | None = Field(default=None, ge=1, le=60, description="块间休息间隔（分钟），如 5")
+
+
 class PlanV2Request(BaseModel):
     goal: str = Field(default="", max_length=500, description="user goal")
     tasks: list[PlanV2Task] = Field(min_length=1, max_length=50)
@@ -227,6 +237,10 @@ class PlanV2Request(BaseModel):
     constraints: list[str] = Field(default_factory=list)
     existing_schedule: list[ExistingBlock] = Field(default_factory=list)
     planning_range: PlanningRange
+    now_minutes: int | None = Field(
+        default=None, ge=0, le=1440,
+        description="当前本地时间（当天 0 点起分钟），规划范围首日不得早于该时刻",
+    )
     provider: Provider | None = None
 
 

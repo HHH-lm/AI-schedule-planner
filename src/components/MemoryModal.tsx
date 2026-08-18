@@ -186,7 +186,7 @@ export default function MemoryModal({
                     <span className="text-[11px] text-ink-muted-48">来源：手动添加</span>
                   )}
                   {memory.source === "ai-suggested" && (
-                    <span className="text-[11px] text-ink-muted-48">来源：AI 生成</span>
+                    <span className="text-[11px] text-ink-muted-48">来源：智能生成</span>
                   )}
                   {!isActive && (
                     <span className="text-[11px] text-ink-muted-30">
@@ -261,7 +261,7 @@ export default function MemoryModal({
                 <div className="flex items-center gap-2">
                   <Lightbulb size={14} className="text-amber-500" />
                   <span className="text-xs font-medium text-amber-700">
-                    AI 建议
+                    候选记忆
                   </span>
                   {suggestions.length > 0 && (
                     <span className="text-[11px] text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded-full">
@@ -276,7 +276,7 @@ export default function MemoryModal({
                   className="btn-ghost !h-7 !text-xs"
                 >
                   <Sparkles size={12} className={isAnalyzing ? "animate-spin" : ""} />
-                  {isAnalyzing ? "分析中..." : "AI 分析"}
+                  {isAnalyzing ? "分析中..." : "智能分析"}
                 </button>
               </div>
               {suggestions.length > 0 ? (
@@ -369,7 +369,7 @@ export default function MemoryModal({
                 <div className="py-6 text-center">
                   <Lightbulb size={24} className="mx-auto mb-1.5 text-ink-muted-30" />
                   <p className="text-xs text-ink-muted-48">
-                    点击上方按钮，AI 会根据你的时间块数据生成记忆建议
+                    点击上方按钮，系统会根据你的过往数据生成记忆建议
                   </p>
                 </div>
               )}

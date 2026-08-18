@@ -8,6 +8,7 @@
 - 进行中：T-027 v0.1.0 首次发布执行（阶段 7 in_progress，revision 9）
 - 进行中（本会话新增）：周计划跨天时间块支持（手动手工添加 + 自然语言解析），代码与自动测试已完成，人工验收待确认
 - 进行中（本会话新增）：提醒过期 10 分钟过滤修复（F-018 修订，T-029），代码与测试已完成
+- 进行中（本会话新增）：记忆"9 点之前不安排"等排除式记忆未生效修复（LLM 语义提取 + 本地兜底），代码与测试已完成
 - 上一目标：阶段 6 Gate；T-026 账本修复；T-024 代码与公网验收；T-025 发布清单定义
 
 ## 文件索引
@@ -39,6 +40,37 @@
 - `backend/tests/test_reminders.py` / `backend/tests/test_observability.py` — 过期边界与扫描事件用例
 - `README.md` — 提醒过期行为说明
 - `.project-to-act/tasks/T-029/` — TASK + E-T029-001 证据
+
+### 记忆硬约束修复（本会话新增，未入账）
+- 根因：`time-preference` 类记忆只作为软文本进 prompt，不产生硬约束；本地 `parse_constraint_filters` 不识别"X点之前/以前/之后/以后"表述
+- `backend/app/services/planner_v2.py` — 理解层 prompt 在存在记忆时也要求 LLM 输出结构化 `constraints`；本地兜底合并显式 constraints + 排除式记忆（`_exclusion_memories` / `_fallback_constraint_sources`）
+- `backend/app/services/scheduling_engine.py` — 时点正则支持"之前/以前/之后/以后"；时点命中时"晚上/下午X点"不再触发整段排除
+- `backend/app/golden_ai_cases.py` — 新增 cm06（记忆驱动硬约束：9 点前不安排），golden 34 条
+- 测试：`backend/tests/test_planner_v2.py`（新增）、`test_scheduling_engine.py`、`test_golden_ai_cases.py` 更新
+- 真实 DeepSeek golden 评测 35/35 通过（`eval_ai_golden --provider deepseek`，含 cm06/cm07）
+- 记忆应用可观测性（本会话新增）：`plan_v2.memory` 埋点（`_log_memory_application`），脱敏记录 memories_total/memories_exclusion/memory_hashes(sha1 前 8 位)/constraint_filters/constraint_source/understandings 聚合；四条路径（llm/fallback/timeout/error）均埋点
+
+### 工作方式分块排期（本会话新增，未入账）
+- 方案：扩展结构化契约维度（非单条记忆打补丁）——LLM 理解层新增 `work_style`（chunk_minutes/break_minutes）语义提取，调度引擎执行分块排期
+- `backend/app/schemas.py` — 新增 `WorkStyleSpec`
+- `backend/app/services/scheduling_engine.py` — `parse_work_style`（本地兜底，支持"以25分钟时间块/工作25分钟休息5分钟/中文数字"等表述）+ `_split_chunks` + `_build_task_blocks`；`schedule_tasks` 新增 `work_style` 参数，分块任务拆成多块，块间间隔仅占位防冲突、不写入休息块（时间块保持空白），硬约束按每个工作块起点校验
+- `backend/app/services/planner_v2.py` — prompt 增加 `work_style` 提取指令；四条路径（llm/fallback/timeout/error）均解析并传入；`plan_v2.memory` 埋点增加 work_style/work_style_source
+- `backend/app/eval_ai_golden.py` — 分块用例检查适配（all_scheduled/durations 按任务聚合，新增 work_chunk_minutes/min_chunk_gap）
+- `backend/app/golden_ai_cases.py` — 新增 cm07（番茄钟分块），golden 35 条
+- 测试：`test_scheduling_engine.py`（parse_work_style/分块/硬约束/不拆分）、`test_planner_v2.py`（分块 fallback + 日志）、`test_golden_ai_cases.py` 计数更新；后端全量 193 通过
+
+### 当前时刻之后排期修复（本会话新增，未入账）
+- 根因：规划范围首日（今天）按整天 06:00-23:00 生成空闲槽，晚上规划时会把任务排进已过去的白天/下午
+- `backend/app/services/slot_finder.py` — `find_free_slots` 新增 `now_minutes`，规划范围首日可排起点钳制为 `max(day_start, now_minutes)`，后续日期不受影响
+- `backend/app/services/scheduling_engine.py` — `schedule_tasks` 新增 `now_minutes` 参数透传
+- `backend/app/schemas.py` — `PlanV2Request` 新增 `now_minutes`（0-1440）
+- `backend/app/services/planner_v2.py` — 四条路径均透传 `request.now_minutes`
+- `src/app/page.tsx` — `planTasks` 发送 `now_minutes: 当前本地时钟分钟数`
+- 测试：`test_slot_finder.py`（首日钳制/仅首日）、`test_scheduling_engine.py`（不排过去/顺延后续日/缺省兼容）、`test_planner_v2.py`（fallback 透传）；后端全量 200 通过，前端 tsc + Vitest 91 通过
+
+### 记忆系统前端文案调整（本会话新增，未入账）
+- `src/components/MemoryModal.tsx` — "AI 分析"→"智能分析"；"AI 建议"→"候选记忆"；"来源：AI 生成"→"来源：智能生成"；空态说明"点击上方按钮，AI 会根据你的时间块数据生成记忆建议"→"点击上方按钮，系统会根据你的过往数据生成记忆建议"
+- 前端 tsc + Vitest 91 + lint 通过
 
 ### 公网部署验收 / T-024
 - 前端：`https://ai-schedule-web-ten.vercel.app`（Vercel 项目 `hhh-lm1/ai-schedule-web`）

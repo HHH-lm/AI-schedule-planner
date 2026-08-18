@@ -1,10 +1,10 @@
-"""AI 解析与规划 golden set：四类共 33 条，用于质量评测与 prompt/模型回归防退化。
+"""AI 解析与规划 golden set：四类共 35 条，用于质量评测与 prompt/模型回归防退化。
 
 分类：
 - quickadd: 12 条自然语言 QuickAdd 解析（含跨天）
 - planning: 10 条结构化时间规划
 - boundary: 6 条边界与异常输入（含 24:00/1440 边界）
-- constraint_memory: 5 条约束与记忆偏好影响排期
+- constraint_memory: 7 条约束与记忆偏好影响排期
 """
 
 from __future__ import annotations
@@ -468,6 +468,43 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
         "checks": {
             "all_scheduled": True,
             "morning": True,
+        },
+    },
+    {
+        "id": "cm06",
+        "kind": "constraint_memory",
+        "text": "早上9点之前不安排任何任务（记忆驱动硬约束）",
+        "planning": {
+            "goal": "",
+            "tasks": [{"title": "写代码", "duration": 60, "priority": "auto"}],
+            "memories": ["早上9点之前不安排任何任务"],
+            "constraints": [],
+            "existing": [],
+            "range_start": "2026-08-17",
+            "range_end": "2026-08-18",
+        },
+        "checks": {
+            "all_scheduled": True,
+            "start_after": 540,
+        },
+    },
+    {
+        "id": "cm07",
+        "kind": "constraint_memory",
+        "text": "以25分钟时间块安排，中间需要间隔至少5分钟（分块工作方式）",
+        "planning": {
+            "goal": "",
+            "tasks": [{"title": "写代码", "duration": 120, "priority": "auto"}],
+            "memories": ["以25分钟时间块安排，中间需要间隔至少5分钟"],
+            "constraints": [],
+            "existing": [],
+            "range_start": "2026-08-17",
+            "range_end": "2026-08-18",
+        },
+        "checks": {
+            "all_scheduled": True,
+            "work_chunk_minutes": 25,
+            "min_chunk_gap": 5,
         },
     },
 ]

@@ -54,6 +54,7 @@ def find_free_slots(
     day_start: int = DEFAULT_DAY_START,
     day_end: int = DEFAULT_DAY_END,
     min_gap: int = 15,
+    now_minutes: int | None = None,
 ) -> list[FreeSlot]:
     """生成指定日期范围内的所有空闲时段。
 
@@ -64,6 +65,7 @@ def find_free_slots(
         day_start: 每天可安排起始分钟数（默认 06:00）
         day_end: 每天可安排结束分钟数（默认 23:00）
         min_gap: 最短空闲间隔（分钟，默认 15）
+        now_minutes: 当前本地时间（当天 0 点起分钟）；规划范围首日不得早于该时刻
 
     Returns:
         按日期排序的空闲时段列表
@@ -74,7 +76,10 @@ def find_free_slots(
         occupied = _get_occupied_minutes(existing, current)
         date_str = current.isoformat()
 
-        cursor = day_start
+        effective_day_start = day_start
+        if now_minutes is not None and current == start:
+            effective_day_start = max(day_start, now_minutes)
+        cursor = effective_day_start
         for occ_start, occ_end in occupied:
             if occ_end <= cursor:
                 continue
