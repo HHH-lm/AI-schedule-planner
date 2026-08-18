@@ -13,7 +13,7 @@ from app.schemas import (
     MemoryContextResponse,
 )
 from app.services.memory_service import format_memory_context
-from app.services.memory_analysis import run_analysis
+from app.services.memory_analysis import build_analysis_message, run_analysis
 
 router = APIRouter()
 
@@ -35,7 +35,11 @@ async def analyze_memories(
         payload.timeBlocks,
         payload.horizon_days,
     )
-    return MemoryAnalysisResponse(suggestions=suggestions, stats=stats)
+    return MemoryAnalysisResponse(
+        suggestions=suggestions,
+        stats=stats,
+        message=build_analysis_message(suggestions, stats),
+    )
 
 
 @router.post(

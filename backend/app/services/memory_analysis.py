@@ -262,3 +262,29 @@ def run_analysis(
     stats["suggestions_generated"] = len(suggestions)
 
     return suggestions, stats
+
+
+def build_analysis_message(
+    suggestions: list[MemorySuggestionOutput],
+    stats: dict[str, int],
+) -> str | None:
+    """根据分析结果生成面向用户的提示文案。
+
+    - 完全没有数据：提示先安排时间块
+    - 样本量不足 MIN_SAMPLES：说明当前数量与最低要求
+    - 样本足够但未发现规律：说明已分析但无建议
+    - 正常生成建议：不提示（建议本身就是反馈）
+    """
+    total = stats.get("total_blocks", 0)
+    if total == 0:
+        return "还没有时间块数据，先在日程中安排一些任务或时间块后再来分析。"
+    if total < MIN_SAMPLES:
+        return (
+            f"时间块数据不足（当前 {total} 条，至少需要 {MIN_SAMPLES} 条才能分析），"
+            "暂不生成记忆建议。"
+        )
+    if not suggestions:
+        return (
+            f"已基于 {total} 条时间块完成分析，未发现明显规律，暂无记忆建议。"
+        )
+    return None

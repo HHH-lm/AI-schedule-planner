@@ -114,3 +114,100 @@ def test_breakdown_local_fallback() -> None:
     body = response.json()
     assert body["source"] == "local"
     assert [task["name"] for task in body["tasks"]] == ["做一期视频", "写AI应用文章"]
+
+
+def test_analyze_memories_no_data_returns_message() -> None:
+    """无任何时间块数据时，应返回提示让用户知道无法分析。"""
+    response = client.post(
+        "/api/v1/memories/analyze",
+        json={"timeBlocks": [], "horizon_days": 28},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["suggestions"] == []
+    assert body["stats"]["total_blocks"] == 0
+    assert body["message"] and "还没有时间块数据" in body["message"]
+
+
+def test_analyze_memories_insufficient_data_returns_message() -> None:
+    """样本量不足（<5）时，应说明当前数量与最低要求。"""
+    blocks = [
+        {
+            "id": str(i),
+            "name": "写代码",
+            "date": "2026-08-03",
+            "start": 540,
+            "end": 600,
+            "category": "work",
+            "done": True,
+        }
+        for i in range(4)
+    ]
+    response = client.post(
+        "/api/v1/memories/analyze",
+        json={"timeBlocks": blocks, "horizon_days": 28},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["suggestions"] == []
+    assert body["message"] and "数据不足" in body["message"]
+    assert "4" in body["message"]
+
+
+def test_analyze_memories_no_pattern_returns_message() -> None:
+    """样本足够但未发现规律时，应说明已分析但无建议。"""
+    blocks = [
+        {
+            "id": str(i),
+            "name": "散步",
+            "date": "2026-08-03",
+            "start": 9 * 60,
+            "end": 10 * 60,
+            "category": "life",
+            "done": True,
+        }
+        for i in range(12)
+    ]
+    response = client.post(
+        "/api/v1/memories/analyze",
+        json={"timeBlocks": blocks, "horizon_days": 28},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["suggestions"] == []
+    assert body["message"] and "未发现明显规律" in body["message"]
+
+
+def test_analyze_memories_with_pattern_has_no_message() -> None:
+    """正常生成建议时不需要提示文案。"""
+    blocks = [
+        {
+            "id": f"am{i}",
+            "name": "写代码",
+            "date": "2026-08-03",
+            "start": 9 * 60,
+            "end": 10 * 60,
+            "category": "work",
+            "done": True,
+        }
+        for i in range(10)
+    ] + [
+        {
+            "id": f"pm{i}",
+            "name": "写代码",
+            "date": "2026-08-03",
+            "start": 20 * 60,
+            "end": 21 * 60,
+            "category": "work",
+            "done": False,
+        }
+        for i in range(10)
+    ]
+    response = client.post(
+        "/api/v1/memories/analyze",
+        json={"timeBlocks": blocks, "horizon_days": 28},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["suggestions"], "应有建议生成"
+    assert body["message"] is None
