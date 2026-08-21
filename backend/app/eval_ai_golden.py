@@ -1,25 +1,34 @@
 """AI 解析与规划 golden set 评测：质量度量与 prompt/模型回归防退化。
 
 用法（backend 目录下）：
-    .venv/bin/python -m app.eval_ai_golden --provider deepseek
+    .venv/bin/python -m app.eval_ai_golden --provider deepseek --split open
+    .venv/bin/python -m app.eval_ai_golden --provider deepseek --split heldout
+
+每次评测会把日期、模型、prompt fingerprint、阈值、指标与逐条原始结果写入
+`--snapshot-dir`（默认 eval_snapshots）。
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import itertools
 import json
 import re
 from collections import defaultdict
+from datetime import datetime
 from datetime import date as date_cls
+from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
-from app.golden_ai_cases import GOLDEN_AI_CASES
-from app.schemas import ExistingBlock, PlanV2Request
-from app.services.ai import parse_with_ai, resolve_ai_provider
-from app.services.planner_v2 import plan_v2_schedule
+from app.golden_ai_cases import GOLDEN_AI_CASES, GOLDEN_ANCHOR_DATE, GOLDEN_SET_VERSION
+from app.golden_ai_cases_heldout import HELDOUT_AI_CASES, HELDOUT_GOLDEN_SET_VERSION
+from app.schemas import ExistingBlock, PlanV2Request, PlanV2Task
+from app.services.ai import build_system_prompt, parse_with_ai, resolve_ai_provider
+from app.services.conflict import iter_segments
+from app.services.planner_v2 import _build_understanding_prompt, plan_v2_schedule
 
 
 FIELDS = ("name", "date", "start", "end", "category", "location")
@@ -122,7 +131,8 @@ def score_case(
         reject_ok = _reject_code(actual_rejected) == expected_reject and len(actual_schedules) == 0
         return {
             "id": case["id"],
-            "text": case["text"],
+            "name": case["name"],
+            "input": case["input"],
             "expect_reject": expected_reject,
             "actual_reject": _reject_code(actual_rejected),
             "reject_ok": reject_ok,
@@ -146,7 +156,8 @@ def score_case(
     )
     return {
         "id": case["id"],
-        "text": case["text"],
+        "name": case["name"],
+        "input": case["input"],
         "expect_reject": None,
         "actual_reject": _reject_code(actual_rejected),
         "reject_ok": False,
@@ -163,13 +174,84 @@ def score_case(
 
 
 def _blocks_overlap(blocks: list[dict[str, Any]], existing: list[ExistingBlock]) -> bool:
-    spans = [(block["date"], block["start"], block["end"]) for block in blocks]
-    spans += [(item.date, item.start, item.end) for item in existing]
+    spans: list[tuple[str, int, int]] = []
+    for block in blocks:
+        spans.extend(
+            iter_segments(
+                ExistingBlock(date=block["date"], start=block["start"], end=block["end"])
+            )
+        )
+    for item in existing:
+        spans.extend(iter_segments(item))
     spans.sort()
     for index in range(1, len(spans)):
         if spans[index][0] == spans[index - 1][0] and spans[index][1] < spans[index - 1][2]:
             return True
     return False
+
+
+def _day_segments(blocks: list[dict[str, Any]]) -> list[tuple[str, int, int]]:
+    """把排期块按自然日切段，供“完整落在上午/晚间”等语义检查使用。"""
+    spans: list[tuple[str, int, int]] = []
+    for block in blocks:
+        spans.extend(
+            iter_segments(
+                ExistingBlock(date=block["date"], start=block["start"], end=block["end"])
+            )
+        )
+    return spans
+
+
+def _provider_model(provider: str, settings: Any) -> str:
+    if provider == "openai":
+        return settings.openai_model or "gpt-4o-mini"
+    return settings.deepseek_model or "deepseek-chat"
+
+
+def _prompt_fingerprint() -> str:
+    """解析/规划 prompt 文本的 sha256 指纹，作为快照中的 prompt 版本。"""
+    plan_prompt = _build_understanding_prompt(
+        "",
+        [PlanV2Task(title="样本任务", duration=60, priority="high")],
+        ["我习惯上午处理工作"],
+        ["不要安排在晚上"],
+        [],
+        "2026-08-17",
+        "2026-08-18",
+    )
+    seed = build_system_prompt(GOLDEN_ANCHOR_DATE) + "\n---planning---\n" + plan_prompt
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
+
+
+def _write_snapshot(
+    args: argparse.Namespace,
+    provider: str,
+    thresholds: dict[str, float],
+    metrics: dict[str, Any],
+    results: list[dict[str, Any]],
+    settings: Any,
+    split: str,
+) -> Path:
+    """把一次评测的日期、模型、prompt 版本与原始结果落盘。"""
+    snapshots = Path(args.snapshot_dir)
+    snapshots.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    path = snapshots / f"eval-{GOLDEN_SET_VERSION}-{split}-{timestamp}.json"
+    payload = {
+        "golden_set_version": GOLDEN_SET_VERSION,
+        "heldout_version": HELDOUT_GOLDEN_SET_VERSION if split != "open" else None,
+        "split": split,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "provider": provider,
+        "model": _provider_model(provider, settings),
+        "prompt_version": f"sha256:{_prompt_fingerprint()}",
+        "thresholds": thresholds,
+        "metrics": metrics,
+        "results": results,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("SNAPSHOT=" + str(path))
+    return path
 
 
 def evaluate_planning_checks(
@@ -183,7 +265,7 @@ def evaluate_planning_checks(
     task_by_title = {task["title"]: task for task in tasks}
     range_start = date_cls.fromisoformat(plan["range_start"])
     range_end = date_cls.fromisoformat(plan["range_end"])
-    existing = [ExistingBlock(**item) for item in plan.get("existing", [])]
+    existing = [ExistingBlock(**item) for item in plan.get("existing_schedule", [])]
 
     task_titles = {task["title"] for task in tasks}
     results: dict[str, Any] = {
@@ -216,21 +298,34 @@ def evaluate_planning_checks(
         results["start_after"] = bool(blocks) and all(block["start"] >= checks["start_after"] for block in blocks)
     if "start_before" in checks:
         results["start_before"] = bool(blocks) and all(block["start"] < checks["start_before"] for block in blocks)
+    if "end_before" in checks:
+        results["end_before"] = bool(blocks) and all(
+            end <= checks["end_before"] for _, _, end in _day_segments(blocks)
+        )
     if checks.get("no_evening"):
-        results["no_evening"] = bool(blocks) and all(block["start"] < 18 * 60 for block in blocks)
+        results["no_evening"] = bool(blocks) and all(
+            end <= 18 * 60 for _, _, end in _day_segments(blocks)
+        )
     if "no_weekday" in checks:
         results["no_weekday"] = all(
             date_cls.fromisoformat(block["date"]).weekday() != checks["no_weekday"] for block in blocks
         )
     if checks.get("morning"):
-        results["morning"] = bool(blocks) and all(block["start"] < 12 * 60 for block in blocks)
+        results["morning"] = bool(blocks) and all(
+            end <= 12 * 60 for _, _, end in _day_segments(blocks)
+        )
     if checks.get("evening"):
-        results["evening"] = bool(blocks) and all(block["start"] >= 18 * 60 for block in blocks)
+        results["evening"] = bool(blocks) and all(
+            start >= 18 * 60 for _, start, _ in _day_segments(blocks)
+        )
     if "no_weekday_evening" in checks:
         weekday = checks["no_weekday_evening"]
         results["no_weekday_evening"] = all(
-            not (date_cls.fromisoformat(block["date"]).weekday() == weekday and block["start"] >= 18 * 60)
-            for block in blocks
+            not (
+                date_cls.fromisoformat(day).weekday() == weekday
+                and end > 18 * 60
+            )
+            for day, _, end in _day_segments(blocks)
         )
     if "work_chunk_minutes" in checks:
         max_chunk = checks["work_chunk_minutes"]
@@ -256,8 +351,17 @@ def evaluate_planning_checks(
             date_cls.fromisoformat(block["date"]) <= deadline for block in blocks
         )
     if checks.get("priority_order"):
-        results["priority_order"] = (
-            len(blocks) >= 2 and blocks[0]["priority"] == "high" and blocks[1]["priority"] == "low"
+        high_titles = {
+            task["title"] for task in tasks if str(task.get("priority", "")).lower() == "high"
+        }
+        low_titles = {
+            task["title"] for task in tasks if str(task.get("priority", "")).lower() == "low"
+        }
+        high_blocks = [block for block in blocks if block["title"] in high_titles]
+        low_blocks = [block for block in blocks if block["title"] in low_titles]
+        results["priority_order"] = bool(high_blocks and low_blocks) and (
+            max(block["end"] for block in high_blocks)
+            <= min(block["start"] for block in low_blocks)
         )
     return results
 
@@ -271,7 +375,8 @@ def score_planning_case(
     check_results = evaluate_planning_checks(case, blocks, unassigned)
     return {
         "id": case["id"],
-        "text": case.get("text", case["id"]),
+        "name": case["name"],
+        "input": case["input"],
         "full_exact": all(check_results.values()),
         "check_results": check_results,
         "check_total": len(check_results),
@@ -360,19 +465,30 @@ async def run_eval(args: argparse.Namespace) -> int:
         print(json.dumps({"provider": args.provider, "error": message or "AI provider unavailable"}, ensure_ascii=False))
         return 2
 
-    print(f"provider={provider} cases={len(GOLDEN_AI_CASES)}")
+    split = args.split
+    if split == "heldout":
+        cases = HELDOUT_AI_CASES
+        split_label = "heldout"
+    elif split == "all":
+        cases = [*GOLDEN_AI_CASES, *HELDOUT_AI_CASES]
+        split_label = "all"
+    else:
+        cases = GOLDEN_AI_CASES
+        split_label = "open"
+
+    print(f"split={split_label} provider={provider} cases={len(cases)}")
     results: list[dict[str, Any]] = []
-    for case in GOLDEN_AI_CASES:
+    for case in cases:
         kind = case["kind"]
         if kind in ("quickadd", "boundary"):
-            if kind == "boundary" and not case["text"].strip():
+            if kind == "boundary" and not case["input"].strip():
                 source = "local"
                 actual: list[dict[str, Any]] = []
                 rejected: Any = {"code": "empty", "message": "输入为空"}
                 ai_message = None
             else:
                 source, schedules, rejected, ai_message = await parse_with_ai(
-                    case["text"], provider, case["today"], settings
+                    case["input"], provider, case["today"], settings
                 )
                 actual = [schedule.model_dump() for schedule in schedules]
             result = score_case(case, actual, rejected)
@@ -393,7 +509,7 @@ async def run_eval(args: argparse.Namespace) -> int:
             result["kind"] = kind
         results.append(result)
         mark = "OK" if result["full_exact"] else "FAIL"
-        print(f"[{case['id']}] {kind:16} {mark:4} {case.get('text', case['id'])[:36]}")
+        print(f"[{case['id']}] {kind:16} {mark:4} {case.get('name', case['id'])[:36]}")
         if not result["full_exact"]:
             if kind in ("planning", "constraint_memory"):
                 failed = {key: value for key, value in result["check_results"].items() if not value}
@@ -414,14 +530,26 @@ async def run_eval(args: argparse.Namespace) -> int:
         "reject": args.threshold_reject,
         "check": args.threshold_check,
     }
-    metrics = compute_metrics(results, GOLDEN_AI_CASES, thresholds)
+    metrics = compute_metrics(results, cases, thresholds)
     print("METRICS=" + json.dumps(metrics, ensure_ascii=False, indent=2))
+    _write_snapshot(args, provider, thresholds, metrics, results, settings, split_label)
     return 0 if metrics["passed"] else 1
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AI 解析与规划 golden set 评测")
     parser.add_argument("--provider", choices=("auto", "openai", "deepseek"), default="auto")
+    parser.add_argument(
+        "--split",
+        choices=("open", "heldout", "all"),
+        default="open",
+        help="open=调参集；heldout=预留集；all=两者一起",
+    )
+    parser.add_argument(
+        "--snapshot-dir",
+        default="eval_snapshots",
+        help="评测快照输出目录（默认 eval_snapshots）",
+    )
     parser.add_argument("--threshold-full", type=float, default=0.80)
     parser.add_argument("--threshold-quickadd", type=float, default=0.90)
     parser.add_argument("--threshold-planning", type=float, default=0.90)

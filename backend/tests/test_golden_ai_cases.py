@@ -1,21 +1,29 @@
 from __future__ import annotations
 
+import json
+from argparse import Namespace
 from collections import Counter
 from datetime import date
 
+from app.config import Settings
 from app.eval_ai_golden import (
+    _blocks_overlap,
+    _prompt_fingerprint,
+    _write_snapshot,
     compute_metrics,
     evaluate_planning_checks,
     normalize_text,
     schedule_matches,
     score_case,
 )
-from app.golden_ai_cases import GOLDEN_AI_CASES
+from app.golden_ai_cases import GOLDEN_AI_CASES, GOLDEN_SET_VERSION
+from app.golden_ai_cases_heldout import HELDOUT_AI_CASES, HELDOUT_GOLDEN_SET_VERSION
 from app.services.ai import build_system_prompt
 
 
 def test_golden_set_has_35_cases_with_expected_distribution() -> None:
     assert len(GOLDEN_AI_CASES) == 35
+    assert GOLDEN_SET_VERSION == "0.3.0"
     ids = [case["id"] for case in GOLDEN_AI_CASES]
     assert len(set(ids)) == 35
     counts = Counter(case["kind"] for case in GOLDEN_AI_CASES)
@@ -28,8 +36,15 @@ def test_golden_set_has_35_cases_with_expected_distribution() -> None:
 def test_golden_case_structures_are_valid() -> None:
     for case in GOLDEN_AI_CASES:
         assert case["id"].startswith({"quickadd": "qa", "planning": "pl", "boundary": "b", "constraint_memory": "cm"}[case["kind"]])
+        assert case["name"]
+        assert case["description"]
+        assert case["input"] is not None
+        assert case["source"] in ("real_user", "fault_sample", "synthetic")
+        assert case["added_in"] in ("0.1.0", "0.2.0", "0.3.0")
+        assert case["rationale"]
+        assert "text" not in case
         if case["kind"] in ("quickadd", "boundary"):
-            assert case["text"] is not None
+            assert case["input"] is not None
             date.fromisoformat(case["today"])
             if case.get("expect_reject"):
                 assert not case.get("expect_schedules")
@@ -45,7 +60,27 @@ def test_golden_case_structures_are_valid() -> None:
             assert plan["tasks"]
             date.fromisoformat(plan["range_start"])
             date.fromisoformat(plan["range_end"])
+            assert isinstance(plan.get("existing_schedule"), list)
+            for item in plan.get("existing_schedule", []):
+                date.fromisoformat(item["date"])
+                assert 0 <= item["start"] < item["end"] <= 14 * 1440
             assert "checks" in case
+
+
+def test_heldout_set_has_expected_schema() -> None:
+    assert len(HELDOUT_AI_CASES) == 6
+    assert HELDOUT_GOLDEN_SET_VERSION == "0.1.0"
+    for case in HELDOUT_AI_CASES:
+        assert case["name"]
+        assert case["description"]
+        assert case["input"] is not None
+        assert case["source"] in ("real_user", "fault_sample", "synthetic")
+        assert case["added_in"] == "0.1.0"
+        assert case["rationale"]
+        assert "text" not in case
+        assert case["id"].startswith(
+            {"quickadd": "hqa", "planning": "hpl", "boundary": "hb", "constraint_memory": "hcm"}[case["kind"]]
+        )
 
 
 def test_normalize_text_strips_whitespace_and_punctuation() -> None:
@@ -95,6 +130,107 @@ def test_evaluate_planning_checks_perfect() -> None:
     ]
     checks = evaluate_planning_checks(case, blocks, [])
     assert all(checks.values())
+
+
+def test_planning_existing_schedule_maps_to_request_schema() -> None:
+    from app.schemas import PlanV2Request
+
+    case = next(item for item in GOLDEN_AI_CASES if item["id"] == "pl04")
+    payload = dict(case["planning"])
+    payload["planning_range"] = {
+        "start": payload.pop("range_start"),
+        "end": payload.pop("range_end"),
+    }
+    request = PlanV2Request(**payload)
+    assert request.existing_schedule
+
+
+def test_eval_conflict_check_detects_cross_day_overlap() -> None:
+    from app.schemas import ExistingBlock
+
+    blocks = [{"date": "2026-08-16", "start": 1320, "end": 1560}]
+    existing = [ExistingBlock(date="2026-08-17", start=60, end=120)]
+    assert _blocks_overlap(blocks, existing) is True
+
+
+def _block(title: str, start: int, end: int, priority: str = "medium") -> dict[str, object]:
+    return {
+        "title": title,
+        "date": "2026-08-17",
+        "start": start,
+        "end": end,
+        "category": "work",
+        "priority": priority,
+    }
+
+
+def test_end_before_requires_full_block_before_threshold() -> None:
+    case = next(item for item in GOLDEN_AI_CASES if item["id"] == "cm02")
+    overlap = [_block("写周报", 870, 930)]
+    complete = [_block("写周报", 840, 900)]
+    assert evaluate_planning_checks(case, overlap, [])["end_before"] is False
+    assert evaluate_planning_checks(case, complete, [])["end_before"] is True
+
+
+def test_priority_order_matches_titles_not_positions() -> None:
+    case = {
+        "planning": {
+            "tasks": [
+                {"title": "高优先级任务", "duration": 60, "priority": "high"},
+                {"title": "低优先级任务", "duration": 60, "priority": "low"},
+            ],
+            "existing_schedule": [],
+            "range_start": "2026-08-17",
+            "range_end": "2026-08-17",
+        },
+        "checks": {"priority_order": True},
+    }
+    low_first = [
+        _block("低优先级任务", 540, 600, priority="low"),
+        _block("高优先级任务", 600, 660, priority="high"),
+    ]
+    high_first = [
+        _block("高优先级任务", 540, 600, priority="high"),
+        _block("低优先级任务", 600, 660, priority="low"),
+    ]
+    assert evaluate_planning_checks(case, low_first, [])["priority_order"] is False
+    assert evaluate_planning_checks(case, high_first, [])["priority_order"] is True
+
+
+def test_morning_requires_complete_morning() -> None:
+    case = next(item for item in GOLDEN_AI_CASES if item["id"] == "pl07")
+    overlap_noon = [_block("写文章", 690, 750)]
+    full_morning = [_block("写文章", 660, 720)]
+    assert evaluate_planning_checks(case, overlap_noon, [])["morning"] is False
+    assert evaluate_planning_checks(case, full_morning, [])["morning"] is True
+
+
+def test_no_evening_rejects_block_overlapping_evening() -> None:
+    case = next(item for item in GOLDEN_AI_CASES if item["id"] == "cm01")
+    overlap_evening = [_block("写报告", 1050, 1110)]
+    before_evening = [_block("写报告", 1020, 1080)]
+    assert evaluate_planning_checks(case, overlap_evening, [])["no_evening"] is False
+    assert evaluate_planning_checks(case, before_evening, [])["no_evening"] is True
+
+
+def test_prompt_fingerprint_and_snapshot_persist(tmp_path) -> None:
+    assert len(_prompt_fingerprint()) == 12
+    path = _write_snapshot(
+        Namespace(snapshot_dir=str(tmp_path)),
+        "deepseek",
+        {"full": 0.8},
+        {"passed": True},
+        [{"id": "qa01", "full_exact": True}],
+        Settings(),
+        "open",
+    )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["split"] == "open"
+    assert data["provider"] == "deepseek"
+    assert data["model"] == "deepseek-chat"
+    assert data["golden_set_version"] == GOLDEN_SET_VERSION
+    assert data["prompt_version"].startswith("sha256:")
+    assert data["results"] == [{"id": "qa01", "full_exact": True}]
 
 
 def test_compute_metrics_passes_with_perfect_results() -> None:

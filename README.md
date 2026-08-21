@@ -30,7 +30,7 @@ AI 拆解宏观计划，双视图落地微观执行。
 - 版本：`0.1.0`（公网演示已上线，G7-001 发布 Gate 待项目负责人确认）
 - 公网地址：前端 https://ai-schedule-web-ten.vercel.app · 后端 https://ai-schedule-backend.vercel.app
 - 公网验收：真实 Supabase Auth/RLS、真实 DeepSeek 解析、PushPlus 微信推送端到端全部通过（E-T024-002）
-- 质量基线：前端 Vitest 91 个测试、后端 pytest 170 个测试、密钥扫描 5/5 PASS；AI golden set 真实 DeepSeek 33/33（2026-08-17）
+- 质量基线：前端 Vitest 91 个测试、后端 pytest 206 个测试、密钥扫描 5/5 PASS；AI golden set 真实 DeepSeek 35/35（2026-08-20）
 
 ## 核心功能
 
@@ -204,10 +204,15 @@ DEEPSEEK_MODEL=deepseek-chat
 
 ### AI 解析质量评测与回归
 
-- 内置 33 条中文 golden set（固定锚定日期 2026-08-16）：12 条 QuickAdd（含跨天）、10 条 Planning、6 条边界/异常（含 24:00/1440 边界）、5 条 Constraint/Memory。
-- 评测命令：`cd backend && .venv/bin/python -m app.eval_ai_golden --provider deepseek`
+- 内置 35 条中文 golden set（`GOLDEN_SET_VERSION=0.3.0`，固定锚定日期 2026-08-16）：12 条 QuickAdd（含跨天）、10 条 Planning、6 条边界/异常（含 24:00/1440 边界）、7 条 Constraint/Memory。
+- 元数据：每条用例带 `source`（`real_user` / `fault_sample` / `synthetic`）、`rationale`、`added_in` 与稳定 `id/name`；用例字段语义见 `backend/app/golden_ai_cases.py` 与 `backend/app/golden_case_meta.py`。
+- 字段语义：`input` 是用户输入，`description`/`rationale` 是语义描述；legacy `text` 由加载层迁移为 `input`，不再混用。
+- 评测命令：`cd backend && .venv/bin/python -m app.eval_ai_golden --provider deepseek --split open`
+- 快照落盘：每次评测默认写入 `backend/eval_snapshots/eval-<版本>-<split>-<时间>.json`，包含日期、模型、prompt fingerprint、阈值、指标与逐条原始结果，便于回归追踪。
+- held-out：`--split heldout` 执行预留集（`backend/app/golden_ai_cases_heldout.py`，不参与 prompt 调参），`--split open` 为默认调参集，`--split all` 两组一起跑。
 - 指标：QuickAdd 完整精确率、Planning 排期检查通过率、边界/异常通过率、Constraint/Memory 检查通过率、字段准确率、拒答准确率。
 - 默认门禁：`full >= 0.80`、`quickadd >= 0.90`、`planning >= 0.90`、`boundary >= 1.00`、`cm >= 0.80`、`field >= 0.90`、`reject >= 1.00`、`check >= 0.90`。
+- 评测范围：当前 golden 只覆盖自然语言解析（QuickAdd/Boundary）与时间规划（Planning/Constraint+Memory）；AI 任务拆解与记忆分析暂未纳入 golden 门禁，后续补充时同步版本号与 README。
 - 修改解析提示词后必须重跑评测，防止 AI 解析质量退化。
 
 ### 定时提醒（微信推送）

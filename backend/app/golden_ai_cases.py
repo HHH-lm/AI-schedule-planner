@@ -1,15 +1,22 @@
 """AI 解析与规划 golden set：四类共 35 条，用于质量评测与 prompt/模型回归防退化。
 
+版本：GOLDEN_SET_VERSION=0.3.0（定义见 `app.golden_case_meta`）。
 分类：
 - quickadd: 12 条自然语言 QuickAdd 解析（含跨天）
 - planning: 10 条结构化时间规划
 - boundary: 6 条边界与异常输入（含 24:00/1440 边界）
 - constraint_memory: 7 条约束与记忆偏好影响排期
+
+本文件保留结构化期望；加载时由 `app.golden_case_meta.attach_golden_meta`
+为每条用例附加 name/description/input/source/added_in/rationale，并把
+legacy `text` 迁移为语义明确的 `input`（运行时不使用 `text`）。
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+from app.golden_case_meta import GOLDEN_SET_VERSION, attach_golden_meta
 
 
 GOLDEN_ANCHOR_DATE = "2026-08-16"
@@ -186,7 +193,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写周报", "duration": 60, "priority": "auto"}],
             "memories": [],
             "constraints": [],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
@@ -209,7 +216,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             ],
             "memories": [],
             "constraints": [],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
@@ -229,7 +236,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "提交方案", "duration": 120, "priority": "high", "deadline": "2026-08-18"}],
             "memories": [],
             "constraints": [],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-21",
         },
@@ -248,7 +255,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写代码", "duration": 120, "priority": "auto"}],
             "memories": [],
             "constraints": [],
-            "existing": [{"date": "2026-08-17", "start": 540, "end": 600, "status": "scheduled"}],
+            "existing_schedule": [{"date": "2026-08-17", "start": 540, "end": 600, "status": "scheduled"}],
             "range_start": "2026-08-17",
             "range_end": "2026-08-17",
         },
@@ -266,7 +273,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "健身", "duration": 60, "priority": "auto"}],
             "memories": [],
             "constraints": [],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-17",
         },
@@ -288,7 +295,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             ],
             "memories": [],
             "constraints": [],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
@@ -307,7 +314,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写文章", "duration": 60, "priority": "auto"}],
             "memories": ["上午更适合深度工作，重要任务安排在上午"],
             "constraints": [],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-17",
         },
@@ -325,7 +332,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写文章", "duration": 60, "priority": "auto"}],
             "memories": ["晚上比较安静，适合写文章，请安排在晚上"],
             "constraints": [],
-            "existing": [
+            "existing_schedule": [
                 {"date": "2026-08-17", "start": 360, "end": 780, "status": "scheduled"},
                 {"date": "2026-08-17", "start": 840, "end": 900, "status": "scheduled"},
             ],
@@ -346,7 +353,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写周报", "duration": 60, "priority": "auto"}],
             "memories": [],
             "constraints": ["不要安排在周三"],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-21",
         },
@@ -364,7 +371,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写周报", "duration": 60, "priority": "auto"}],
             "memories": [],
             "constraints": ["从14:00开始安排工作"],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
@@ -382,7 +389,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写报告", "duration": 60, "priority": "auto"}],
             "memories": [],
             "constraints": ["不要安排在晚上"],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
@@ -400,13 +407,13 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写周报", "duration": 60, "priority": "auto"}],
             "memories": [],
             "constraints": ["下午三点前"],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
         "checks": {
             "all_scheduled": True,
-            "start_before": 900,
+            "end_before": 900,
         },
     },
     {
@@ -421,7 +428,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             ],
             "memories": ["上午头脑最清醒，请把工作都安排在上午"],
             "constraints": ["不要安排在晚上"],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
@@ -440,7 +447,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "学习AI", "duration": 60, "priority": "auto"}],
             "memories": [],
             "constraints": ["周三晚上不能学习"],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-21",
         },
@@ -461,7 +468,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             ],
             "memories": ["我习惯上午处理工作"],
             "constraints": [],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
@@ -479,7 +486,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写代码", "duration": 60, "priority": "auto"}],
             "memories": ["早上9点之前不安排任何任务"],
             "constraints": [],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
@@ -497,7 +504,7 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
             "tasks": [{"title": "写代码", "duration": 120, "priority": "auto"}],
             "memories": ["以25分钟时间块安排，中间需要间隔至少5分钟"],
             "constraints": [],
-            "existing": [],
+            "existing_schedule": [],
             "range_start": "2026-08-17",
             "range_end": "2026-08-18",
         },
@@ -508,3 +515,5 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
         },
     },
 ]
+
+GOLDEN_AI_CASES = [attach_golden_meta(case) for case in GOLDEN_AI_CASES]
