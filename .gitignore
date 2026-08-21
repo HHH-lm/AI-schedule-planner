@@ -12,3 +12,11 @@ dist
 .backend.pid
 __pycache__
 .pytest_cache
+
+# Private / local-only files (not uploaded to GitHub)
+AGENTS.md
+SESSION.md
+docs/interview-ai-coding-answers.md
+agentops-health-check-*.md
+.project-to-act/
+
