@@ -24,6 +24,11 @@ MIN_SAMPLES = 5          # 低于此值不生成建议
 LOW_CONF_SAMPLES = 9     # 5-9 为低置信度
 HIGH_CONF_SAMPLES = 10   # 10+ 为正常置信度
 
+# ── 时段建议阈值 ──
+
+FOCUS_MIN_RATE = 0.6         # 建议时段的完成率下限
+FOCUS_LEAD_FACTOR = 1.25     # 综合得分需领先次佳时段至少 25%
+
 # ── 时段划分（分钟） ──
 
 MORNING_START = 6 * 60     # 06:00
@@ -67,7 +72,11 @@ def _now_iso() -> str:
 def analyze_completion_by_period(
     blocks: list[TimeBlockInput],
 ) -> list[MemorySuggestionOutput]:
-    """按时间段（上午/下午/晚上）分析完成率差异。"""
+    """按时间段（上午/下午/晚上）分析专注时段。
+
+    评判标准 = 时段时间块数量 × 完成率（即已完成块数），而非只看完成率：
+    数量多且完成率高的时段更适合安排需要专注的任务。
+    """
     # 按时间段分组
     period_data: dict[str, list[bool]] = {
         "上午": [], "下午": [], "晚上": []
@@ -91,32 +100,50 @@ def analyze_completion_by_period(
         period_stats[period] = {
             "total": total,
             "completed": completed,
-            "rate": round(rate, 2)
+            "rate": round(rate, 2),
+            "score": completed,  # 数量 × 完成率 = 已完成块数
         }
 
-    # 找出最佳和最差时段
+    # 至少两个时段样本达标才比较
     if len(period_stats) < 2:
         return suggestions
 
-    best = max(period_stats, key=lambda p: period_stats[p]["rate"])
-    worst = min(period_stats, key=lambda p: period_stats[p]["rate"])
-    best_stat = period_stats[best]
-    worst_stat = period_stats[worst]
-    diff = best_stat["rate"] - worst_stat["rate"]
+    ranked = sorted(
+        period_stats.items(),
+        key=lambda kv: kv[1]["score"],
+        reverse=True,
+    )
+    best, best_stat = ranked[0]
+    second, second_stat = ranked[1]
 
-    # 差异显著（>15%）且样本达标才生成建议
-    if diff > 0.15 and best_stat["total"] >= MIN_SAMPLES:
-        confidence = _confidence_from_samples(best_stat["total"])
-        if confidence > 0:
-            suggestions.append(MemorySuggestionOutput(
-                id=_suggestion_id(),
-                category="time-preference",
-                content=f"你在{best}的完成率（{best_stat['completed']}/{best_stat['total']}，{best_stat['rate']:.0%}）显著高于{worst}（{worst_stat['completed']}/{worst_stat['total']}，{worst_stat['rate']:.0%}），{best}更适合安排需要专注的任务。",
-                conclusion=f"{best}更适合安排需要专注的任务。",
-                reasoning=f"过去的数据显示，{best}共{best_stat['total']}个时间块，完成{best_stat['completed']}个；{worst}共{worst_stat['total']}个时间块，完成{worst_stat['completed']}个。",
-                confidence=confidence,
-                createdAt=_now_iso(),
-            ))
+    # 综合评判：完成率达标且数量明显领先（≥25%）才生成建议
+    if best_stat["rate"] < FOCUS_MIN_RATE:
+        return suggestions
+    if best_stat["score"] < second_stat["score"] * FOCUS_LEAD_FACTOR:
+        return suggestions
+
+    confidence = _confidence_from_samples(best_stat["total"])
+    if confidence <= 0:
+        return suggestions
+
+    suggestions.append(MemorySuggestionOutput(
+        id=_suggestion_id(),
+        category="time-preference",
+        content=(
+            f"你在{best}安排了{best_stat['total']}个时间块，完成率{best_stat['rate']:.0%}，"
+            f"明显多于{second}（{second_stat['total']}个），"
+            f"{best}更适合安排需要专注的任务。"
+        ),
+        conclusion=f"{best}更适合安排需要专注的任务。",
+        reasoning=(
+            f"过去的数据显示，{best}共{best_stat['total']}个时间块，"
+            f"完成{best_stat['completed']}个（完成率{best_stat['rate']:.0%}）；"
+            f"{second}共{second_stat['total']}个时间块，"
+            f"完成{second_stat['completed']}个（完成率{second_stat['rate']:.0%}）。"
+        ),
+        confidence=confidence,
+        createdAt=_now_iso(),
+    ))
 
     return suggestions
 
