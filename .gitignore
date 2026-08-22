@@ -21,3 +21,4 @@ agentops-health-check-*.md
 .project-to-act/
 
 
+.env*
