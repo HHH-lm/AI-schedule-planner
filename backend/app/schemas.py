@@ -168,7 +168,11 @@ class MemoryAnalysisRequest(BaseModel):
     timeBlocks: list[TimeBlockInput] = Field(
         default_factory=list, description="最近 N 天的时间块列表"
     )
-    horizon_days: int = Field(default=28, ge=7, le=90, description="分析回溯天数")
+    horizon_days: int = Field(default=14, ge=7, le=90, description="分析回溯天数")
+    today: str | None = Field(
+        default=None,
+        description="分析参考日期（YYYY-MM-DD），不传则使用服务器当天",
+    )
 
 
 class MemorySuggestionOutput(BaseModel):

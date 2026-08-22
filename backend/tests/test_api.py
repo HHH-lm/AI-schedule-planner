@@ -120,7 +120,7 @@ def test_analyze_memories_no_data_returns_message() -> None:
     """无任何时间块数据时，应返回提示让用户知道无法分析。"""
     response = client.post(
         "/api/v1/memories/analyze",
-        json={"timeBlocks": [], "horizon_days": 28},
+        json={"timeBlocks": [], "horizon_days": 14, "today": "2026-08-10"},
     )
     assert response.status_code == 200
     body = response.json()
@@ -145,7 +145,7 @@ def test_analyze_memories_insufficient_data_returns_message() -> None:
     ]
     response = client.post(
         "/api/v1/memories/analyze",
-        json={"timeBlocks": blocks, "horizon_days": 28},
+        json={"timeBlocks": blocks, "horizon_days": 14, "today": "2026-08-10"},
     )
     assert response.status_code == 200
     body = response.json()
@@ -170,7 +170,7 @@ def test_analyze_memories_no_pattern_returns_message() -> None:
     ]
     response = client.post(
         "/api/v1/memories/analyze",
-        json={"timeBlocks": blocks, "horizon_days": 28},
+        json={"timeBlocks": blocks, "horizon_days": 14, "today": "2026-08-10"},
     )
     assert response.status_code == 200
     body = response.json()
@@ -205,7 +205,7 @@ def test_analyze_memories_with_pattern_has_no_message() -> None:
     ]
     response = client.post(
         "/api/v1/memories/analyze",
-        json={"timeBlocks": blocks, "horizon_days": 28},
+        json={"timeBlocks": blocks, "horizon_days": 14, "today": "2026-08-10"},
     )
     assert response.status_code == 200
     body = response.json()

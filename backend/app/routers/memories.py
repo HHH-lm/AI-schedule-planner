@@ -34,6 +34,7 @@ async def analyze_memories(
     suggestions, stats = run_analysis(
         payload.timeBlocks,
         payload.horizon_days,
+        today=payload.today,
     )
     return MemoryAnalysisResponse(
         suggestions=suggestions,

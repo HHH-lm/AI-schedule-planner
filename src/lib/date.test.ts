@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addDays,
   defaultRemindAtISO,
+  filterByDateWindow,
   formatWeekRange,
   getWeekDays,
   isoWeekNumber,
@@ -36,6 +37,24 @@ describe("date key", () => {
 
   it("addDays 跨月正确", () => {
     expect(toDateKey(addDays(new Date(2026, 0, 31), 1))).toBe("2026-02-01");
+  });
+});
+
+describe("date window filter", () => {
+  it("filterByDateWindow 保留最近 14 天内的时间块", () => {
+    const items = [
+      { date: "2026-07-27" },
+      { date: "2026-07-28" },
+      { date: "2026-08-03" },
+      { date: "2026-08-10" },
+      { date: "2026-08-11" },
+    ];
+    const filtered = filterByDateWindow(items, 14, new Date(2026, 7, 10, 9, 0, 0));
+    expect(filtered.map((item) => item.date)).toEqual([
+      "2026-07-28",
+      "2026-08-03",
+      "2026-08-10",
+    ]);
   });
 });
 

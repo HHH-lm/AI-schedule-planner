@@ -16,6 +16,20 @@ export function addDays(d: Date, n: number): Date {
   return next;
 }
 
+export function filterByDateWindow<T extends { date: string }>(
+  items: T[],
+  horizonDays: number,
+  anchor = new Date()
+): T[] {
+  const end = new Date(anchor);
+  end.setHours(0, 0, 0, 0);
+  const start = addDays(end, -(horizonDays - 1));
+  return items.filter((item) => {
+    const target = parseDateKey(item.date);
+    return target >= start && target <= end;
+  });
+}
+
 export function startOfWeek(d: Date): Date {
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;

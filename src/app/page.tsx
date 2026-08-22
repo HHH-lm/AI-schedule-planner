@@ -36,6 +36,7 @@ import type {
 } from "@/lib/types";
 import {
   addDays,
+  filterByDateWindow,
   formatWeekRange,
   getWeekDays,
   defaultRemindAtISO,
@@ -83,6 +84,8 @@ import {
   undoHistoryState,
   type HistoryState,
 } from "@/lib/history";
+
+const MEMORY_ANALYSIS_HORIZON_DAYS = 14; // 记忆分析回溯窗口，前后端保持一致
 
 const TABS: Array<{
   key: ViewMode;
@@ -697,7 +700,10 @@ export default function Home() {
         }>;
         message?: string | null;
       }>("/memories/analyze", {
-        timeBlocks: data.timeBlocks.map((block) => ({
+        timeBlocks: filterByDateWindow(
+          data.timeBlocks,
+          MEMORY_ANALYSIS_HORIZON_DAYS
+        ).map((block) => ({
           id: block.id,
           name: block.name,
           date: block.date,
@@ -706,7 +712,8 @@ export default function Home() {
           category: block.category,
           done: block.done,
         })),
-        horizon_days: 28,
+        horizon_days: MEMORY_ANALYSIS_HORIZON_DAYS,
+        today: toDateKey(new Date()),
       });
       if (result.suggestions.length === 0) {
         // 数据不足或未发现规律时，用弹窗提示用户原因

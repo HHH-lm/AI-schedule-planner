@@ -224,17 +224,51 @@ def analyze_work_study_balance(
 
 # ── 主入口 ──
 
+DEFAULT_HORIZON_DAYS = 14  # 默认分析回溯天数
+
+
+def _filter_blocks_by_window(
+    blocks: list[TimeBlockInput],
+    horizon_days: int,
+    today: str | None = None,
+) -> tuple[list[TimeBlockInput], str, str]:
+    """按最近 N 天窗口过滤时间块。
+
+    返回（窗口内时间块, 窗口起始日, 窗口结束日），窗口为闭区间
+    [today - (horizon_days - 1), today]，日期无法解析的时间块不参与分析。
+    """
+    reference = date.fromisoformat(today) if today else date.today()
+    window_start = (reference - timedelta(days=horizon_days - 1)).isoformat()
+    window_end = reference.isoformat()
+    filtered: list[TimeBlockInput] = []
+    for block in blocks:
+        try:
+            block_date = date.fromisoformat(block.date)
+        except (ValueError, TypeError):
+            continue
+        if date.fromisoformat(window_start) <= block_date <= reference:
+            filtered.append(block)
+    return filtered, window_start, window_end
+
+
 def run_analysis(
     blocks: list[TimeBlockInput],
     analysis_horizon_days: int | None = None,
-) -> tuple[list[MemorySuggestionOutput], dict[str, int]]:
+    today: str | None = None,
+) -> tuple[list[MemorySuggestionOutput], dict[str, Any]]:
     """运行完整分析，返回建议列表和统计摘要。
+
+    仅分析最近 analysis_horizon_days 天（默认 14 天）内的时间块，
+    窗口外的时间块不参与统计与模式检测。
 
     遵循最小样本量原则：
       - 样本 < 5: 不生成
       - 5-9: 低置信度
       - 10+: 正常置信度
     """
+    horizon = analysis_horizon_days or DEFAULT_HORIZON_DAYS
+    blocks, window_start, window_end = _filter_blocks_by_window(blocks, horizon, today)
+
     # 统计基础数据
     total_blocks = len(blocks)
     done_blocks = sum(1 for b in blocks if b.done)
@@ -247,7 +281,9 @@ def run_analysis(
         "total_blocks": total_blocks,
         "done_blocks": done_blocks,
         "completion_rate": round(done_blocks / total_blocks, 2) if total_blocks > 0 else 0,
-        "analysis_horizon_days": analysis_horizon_days or 0,
+        "analysis_horizon_days": horizon,
+        "window_start": window_start,
+        "window_end": window_end,
     }
 
     # 执行各分析器
@@ -266,7 +302,7 @@ def run_analysis(
 
 def build_analysis_message(
     suggestions: list[MemorySuggestionOutput],
-    stats: dict[str, int],
+    stats: dict[str, Any],
 ) -> str | None:
     """根据分析结果生成面向用户的提示文案。
 
