@@ -238,6 +238,17 @@ class WorkStyleSpec(BaseModel):
     break_minutes: int | None = Field(default=None, ge=1, le=60, description="块间休息间隔（分钟），如 5")
 
 
+class PlanningWeights(BaseModel):
+    """SchedulingEngine 七维加权评分权重（0-1，用户可在设置页调节）。"""
+    memory: float = Field(default=0.35, ge=0.0, le=1.0, description="记忆匹配度权重")
+    understanding: float = Field(default=0.25, ge=0.0, le=1.0, description="理解匹配度权重")
+    time: float = Field(default=0.15, ge=0.0, le=1.0, description="时间可用性权重")
+    priority: float = Field(default=0.15, ge=0.0, le=1.0, description="任务优先级权重")
+    deadline: float = Field(default=0.10, ge=0.0, le=1.0, description="截止日期权重")
+    conflict: float = Field(default=0.10, ge=0.0, le=1.0, description="冲突风险权重")
+    workload: float = Field(default=0.10, ge=0.0, le=1.0, description="负荷惩罚权重")
+
+
 class PlanV2Request(BaseModel):
     goal: str = Field(default="", max_length=500, description="user goal")
     tasks: list[PlanV2Task] = Field(min_length=1, max_length=50)
@@ -248,6 +259,10 @@ class PlanV2Request(BaseModel):
     now_minutes: int | None = Field(
         default=None, ge=0, le=1440,
         description="当前本地时间（当天 0 点起分钟），规划范围首日不得早于该时刻",
+    )
+    weights: PlanningWeights | None = Field(
+        default=None,
+        description="个性化规划七维权重，缺省使用 SchedulingEngine 默认值",
     )
     provider: Provider | None = None
 

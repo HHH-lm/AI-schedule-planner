@@ -34,6 +34,7 @@ from app.schemas import (
     ExistingBlock,
     PlanV2Block,
     PlanV2Task,
+    PlanningWeights,
     WorkStyleSpec,
 )
 from app.services.ai import parse_local_date
@@ -621,12 +622,13 @@ class SlotScorer:
 
     评分公式：
         Slot Score =
-            Memory匹配度 × 0.35
-            + 时间可用性   × 0.20
-            + 任务优先级   × 0.15
-            + 截止日期     × 0.10
-            - 冲突风险     × 0.10
-            - 负荷惩罚     × 0.10
+            Memory匹配度 × W_MEMORY
+            + 理解匹配度   × W_UNDERSTANDING
+            + 时间可用性   × W_TIME
+            + 任务优先级   × W_PRIORITY
+            + 截止日期     × W_DEADLINE
+            + 冲突风险     × W_CONFLICT
+            + 负荷惩罚     × W_WORKLOAD
 
     最终得分范围 0.0-1.0，Python 选最高分。
     """
@@ -635,9 +637,11 @@ class SlotScorer:
         self,
         existing_schedule: list[ExistingBlock] | None = None,
         already_assigned: list[PlanV2Block] | None = None,
+        weights: PlanningWeights | None = None,
     ):
         self.existing_schedule = existing_schedule or []
         self.already_assigned = already_assigned or []
+        self.weights = weights or PlanningWeights()
 
     def score(
         self,
@@ -657,13 +661,13 @@ class SlotScorer:
         w = score_workload_penalty(slot, self.existing_schedule, self.already_assigned)
 
         return (
-            m * W_MEMORY
-            + u * W_UNDERSTANDING
-            + t * W_TIME
-            + p * W_PRIORITY
-            + d * W_DEADLINE
-            + c * W_CONFLICT
-            + w * W_WORKLOAD
+            m * self.weights.memory
+            + u * self.weights.understanding
+            + t * self.weights.time
+            + p * self.weights.priority
+            + d * self.weights.deadline
+            + c * self.weights.conflict
+            + w * self.weights.workload
         )
 
     def score_all(
@@ -750,6 +754,7 @@ def schedule_tasks(
     understandings: dict[str, dict[str, str]] | None = None,
     constraint_filters: list[Any] | None = None,
     work_style: WorkStyleSpec | None = None,
+    weights: PlanningWeights | None = None,
     day_start: int = DEFAULT_DAY_START,
     day_end: int = DEFAULT_DAY_END,
     max_daily_workload: int = 480,
@@ -772,6 +777,7 @@ def schedule_tasks(
         understandings: LLM 任务理解 dict（key=任务 title）
         constraint_filters: hard constraint 过滤函数列表（True=允许该时段）
         work_style: 工作方式（分块时长 + 块间休息），如番茄钟 25/5
+        weights: 个性化规划七维权重，缺省使用模块默认值
         day_start: 每日可排起始分钟（默认 06:00）
         day_end: 每日可排结束分钟（默认 23:00）
         max_daily_workload: 每日最大工作量（分钟，默认 480=8h）
@@ -812,7 +818,7 @@ def schedule_tasks(
     unassigned: list[str] = []
     occupied = [b.model_copy() for b in existing_schedule]
 
-    scorer = SlotScorer(existing_schedule, blocks)
+    scorer = SlotScorer(existing_schedule, blocks, weights)
 
     for task, priority in resolved_tasks:
         # 工作方式分块：时长超过块长时拆成多块 + 块间休息

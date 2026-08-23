@@ -40,6 +40,7 @@ from app.schemas import (
     PlanV2Response,
     PlanV2Task,
     PlanningRange,
+    PlanningWeights,
     WorkStyleSpec,
 )
 from app.services.ai import (
@@ -325,6 +326,7 @@ def _fallback_plan_v2(
     constraints: list[str] | None = None,
     work_style: WorkStyleSpec | None = None,
     now_minutes: int | None = None,
+    weights: PlanningWeights | None = None,
 ) -> PlanV2Response:
     """本地 fallback 规划器 — 直接使用 SchedulingEngine。"""
     constraint_filters = parse_constraint_filters((constraints or []) + _exclusion_memories(memories))
@@ -342,6 +344,7 @@ def _fallback_plan_v2(
         constraint_filters=constraint_filters,
         work_style=work_style,
         now_minutes=now_minutes,
+        weights=weights,
     )
     return PlanV2Response(
         source="local",
@@ -396,6 +399,8 @@ async def plan_v2_schedule(
             range_end,
             request.memories,
             request.constraints,
+            now_minutes=request.now_minutes,
+            weights=request.weights,
         )
         result.message = resolved_message
         _log_plan_v2_result(
@@ -489,6 +494,7 @@ async def plan_v2_schedule(
             constraint_filters=constraint_filters,
             work_style=work_style,
             now_minutes=request.now_minutes,
+            weights=request.weights,
         )
 
         # ── 步骤 3: LLM 解释层（可选） ──
@@ -541,6 +547,7 @@ async def plan_v2_schedule(
             constraint_filters=constraint_filters,
             work_style=work_style,
             now_minutes=request.now_minutes,
+            weights=request.weights,
         )
         _log_plan_v2_result(
             started, source="local", blocks=len(blocks),
@@ -574,6 +581,7 @@ async def plan_v2_schedule(
                 constraint_filters=constraint_filters,
                 work_style=work_style,
                 now_minutes=request.now_minutes,
+                weights=request.weights,
             )
             _log_plan_v2_result(
                 started, source="local", blocks=len(blocks),

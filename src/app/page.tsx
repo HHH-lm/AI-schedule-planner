@@ -28,12 +28,17 @@ import type {
   Memory,
   MemoryCategory,
   ParsedSchedule,
+  PlanningWeights,
   Subtask,
   Task,
   TaskQuadrant,
   TimeBlock,
   ViewMode,
 } from "@/lib/types";
+import {
+  DEFAULT_PLANNING_WEIGHTS,
+  normalizePlanningWeights,
+} from "@/lib/planningWeights";
 import {
   addDays,
   filterByDateWindow,
@@ -77,6 +82,11 @@ import ConflictModal from "@/components/ConflictModal";
 import MemoryModal from "@/components/MemoryModal";
 import AccountModal from "@/components/AccountModal";
 import { buildObsidianUrl } from "@/lib/obsidian";
+import {
+  syncBlockDoneToSubtask,
+  syncBlockToTask,
+  syncSubtaskRenameToBlocks,
+} from "@/lib/taskBlockSync";
 import {
   commitHistoryState,
   createHistoryState,
@@ -366,48 +376,15 @@ export default function Home() {
       const block = prev.timeBlocks.find((b) => b.id === id);
       if (!block) return prev;
       const newDone = !block.done;
-      // Sync subtask completion status
-      if (block.subtaskId) {
-        return {
-          ...prev,
-          timeBlocks: prev.timeBlocks.map((b) =>
-            b.id === id ? { ...b, done: newDone } : b
-          ),
-          tasks: prev.tasks.map((task) => ({
-            ...task,
-            subtasks: task.subtasks.map((sub) =>
-              sub.id === block.subtaskId ? { ...sub, done: newDone } : sub
-            ),
-          })),
-        };
-      }
-      // Fallback: match by name
-      const matchedTask = prev.tasks.find((task) =>
-        task.subtasks.some((sub) => sub.name === block.name)
-      );
-      if (matchedTask) {
-        return {
-          ...prev,
-          timeBlocks: prev.timeBlocks.map((b) =>
-            b.id === id ? { ...b, done: newDone } : b
-          ),
-          tasks: prev.tasks.map((task) =>
-            task.id === matchedTask.id
-              ? {
-                  ...task,
-                  subtasks: task.subtasks.map((sub) =>
-                    sub.name === block.name ? { ...sub, done: newDone } : sub
-                  ),
-                }
-              : task
-          ),
-        };
-      }
+      const synced = syncBlockDoneToSubtask(prev.tasks, block, newDone);
       return {
         ...prev,
         timeBlocks: prev.timeBlocks.map((b) =>
-          b.id === id ? { ...b, done: newDone } : b
+          b.id === id
+            ? { ...b, done: newDone, subtaskId: synced.subtaskId ?? b.subtaskId }
+            : b
         ),
+        tasks: synced.tasks,
       };
     });
   }, [commitData]);
@@ -465,27 +442,14 @@ export default function Home() {
       const subtaskId = draft.subtaskId ?? existingBlock?.subtaskId;
       commitData((prev) => {
         if (!prev) return prev;
-        let tasks = prev.tasks;
-        if (subtaskId) {
-          // Update subtask name when block name changes
-          tasks = tasks.map((t) => ({
-            ...t,
-            subtasks: t.subtasks.map((sub) =>
-              sub.id === subtaskId ? { ...sub, name } : sub
-            ),
-          }));
-        } else if (taskId && name) {
-          const taskIdx = tasks.findIndex((t) => t.id === taskId);
-          if (taskIdx >= 0) {
-            const task = tasks[taskIdx];
-            if (!task.subtasks.some((s) => s.name === name)) {
-              const newSub = { id: uid(), name, done: false };
-              tasks = tasks.map((t) =>
-                t.id === taskId ? { ...t, subtasks: [...t.subtasks, newSub] } : t
-              );
-            }
-          }
-        }
+        const synced = syncBlockToTask(prev.tasks, {
+          taskId: taskId ?? undefined,
+          subtaskId: subtaskId ?? undefined,
+          blockName: name,
+          previousBlockName: existingBlock?.name,
+        });
+        const tasks = synced.tasks;
+        const linkedSubtaskId = synced.subtaskId ?? subtaskId;
         const block: TimeBlock = {
           id: id ?? uid(),
           name,
@@ -496,7 +460,7 @@ export default function Home() {
           location: draft.location,
           done: draft.done ?? false,
           status: draft.status ?? "scheduled",
-          subtaskId,
+          subtaskId: linkedSubtaskId,
           taskId,
           obsidianVault: draft.obsidianVault,
           obsidianNote: draft.obsidianNote,
@@ -565,14 +529,21 @@ export default function Home() {
         let tasks = prev.tasks;
         const newBlocks = accepted.map<ParsedSchedule & TimeBlock>((item) => {
           const itemTaskId = matchedTaskIds.get(item.name);
+          let itemSubtaskId: string | undefined;
           if (itemTaskId) {
             const taskIdx = tasks.findIndex((t) => t.id === itemTaskId);
             if (taskIdx >= 0) {
               const task = tasks[taskIdx];
-              if (!task.subtasks.some((s) => s.name === item.name)) {
+              const existing = task.subtasks.find((s) => s.name === item.name);
+              if (existing) {
+                itemSubtaskId = existing.id;
+              } else {
                 const newSub = { id: uid(), name: item.name, done: false };
+                itemSubtaskId = newSub.id;
                 tasks = tasks.map((t) =>
-                  t.id === itemTaskId ? { ...t, subtasks: [...t.subtasks, newSub] } : t
+                  t.id === itemTaskId
+                    ? { ...t, subtasks: [...t.subtasks, newSub] }
+                    : t
                 );
               }
             }
@@ -581,6 +552,7 @@ export default function Home() {
             ...item,
             id: uid(),
             taskId: itemTaskId,
+            subtaskId: itemSubtaskId,
             done: false,
             status: "scheduled",
             remindAt: defaultRemindAtISO(item.date, item.start),
@@ -759,7 +731,11 @@ export default function Home() {
   }, [commitData]);
 
   const saveSettings = useCallback(
-    (settings: { obsidianVault: string; aiProvider: AiProviderSetting }) => {
+    (settings: {
+      obsidianVault: string;
+      aiProvider: AiProviderSetting;
+      planningWeights: PlanningWeights;
+    }) => {
       commitData((prev) =>
         prev
           ? {
@@ -768,6 +744,9 @@ export default function Home() {
                 ...prev.settings,
                 obsidianVault: settings.obsidianVault || undefined,
                 aiProvider: settings.aiProvider,
+                planningWeights: normalizePlanningWeights(
+                  settings.planningWeights
+                ),
               },
             }
           : prev
@@ -892,22 +871,32 @@ export default function Home() {
         pinned: draft.pinned ?? false,
       };
       if (id) {
+        const previous = prev.tasks.find((item) => item.id === id);
+        const nextTask: Task = previous
+          ? {
+              ...previous,
+              name: task.name,
+              date: task.date,
+              status: task.status,
+              subtasks: task.subtasks,
+              priority: normalizeQuadrant(
+                draft.priority ?? previous.priority ?? DEFAULT_TASK_PRIORITY
+              ),
+              pinned: draft.pinned ?? previous.pinned ?? false,
+            }
+          : task;
+        const timeBlocks = previous
+          ? syncSubtaskRenameToBlocks(
+              prev.timeBlocks,
+              nextTask,
+              previous.subtasks
+            )
+          : prev.timeBlocks;
         return {
           ...prev,
+          timeBlocks,
           tasks: prev.tasks.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  name: task.name,
-                  date: task.date,
-                  status: task.status,
-                  subtasks: task.subtasks,
-                  priority: normalizeQuadrant(
-                    draft.priority ?? item.priority ?? DEFAULT_TASK_PRIORITY
-                  ),
-                  pinned: draft.pinned ?? item.pinned ?? false,
-                }
-              : item
+            item.id === id ? nextTask : item
           ),
         };
       }
@@ -1129,6 +1118,9 @@ export default function Home() {
           status: block.status,
         })),
         planning_range: { start: rangeStart, end: rangeEnd },
+        weights: normalizePlanningWeights(
+          current.settings?.planningWeights ?? DEFAULT_PLANNING_WEIGHTS
+        ),
         provider: current.settings?.aiProvider ?? "auto",
       });
       if (result.source === "none") {
@@ -1605,6 +1597,9 @@ export default function Home() {
         <SettingsModal
           obsidianVault={data.settings?.obsidianVault ?? ""}
           aiProvider={data.settings?.aiProvider ?? "auto"}
+          planningWeights={
+            data.settings?.planningWeights ?? DEFAULT_PLANNING_WEIGHTS
+          }
           onSave={saveSettings}
           onClose={() => setSettingsOpen(false)}
           onOpenMemory={() => {

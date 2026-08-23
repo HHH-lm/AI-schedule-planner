@@ -1,16 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { BookMarked, Bot, Brain, X } from "lucide-react";
+import { BookMarked, Bot, Brain, SlidersHorizontal, X } from "lucide-react";
 import { parseObsidianUrl } from "@/lib/obsidian";
-import type { AiProviderSetting } from "@/lib/types";
+import type { AiProviderSetting, PlanningWeights } from "@/lib/types";
+import {
+  DEFAULT_PLANNING_WEIGHTS,
+  PLANNING_WEIGHT_DIMENSIONS,
+  clampWeight,
+  normalizePlanningWeights,
+} from "@/lib/planningWeights";
 
 interface Props {
   obsidianVault: string;
   aiProvider: AiProviderSetting;
+  planningWeights: PlanningWeights;
   onSave: (settings: {
     obsidianVault: string;
     aiProvider: AiProviderSetting;
+    planningWeights: PlanningWeights;
   }) => void;
   onClose: () => void;
   onOpenMemory?: () => void;
@@ -19,23 +27,31 @@ interface Props {
 export default function SettingsModal({
   obsidianVault: initialVault,
   aiProvider: initialProvider,
+  planningWeights: initialWeights,
   onSave,
   onClose,
   onOpenMemory,
 }: Props) {
   const [vault, setVault] = useState(initialVault);
   const [provider, setProvider] = useState<AiProviderSetting>(initialProvider);
+  const [weights, setWeights] = useState<PlanningWeights>(() =>
+    normalizePlanningWeights(initialWeights)
+  );
 
   const handleSave = () => {
     const parsed = parseObsidianUrl(vault);
     onSave({
       obsidianVault: (parsed.vault ?? vault).trim(),
       aiProvider: provider,
+      planningWeights: normalizePlanningWeights(weights),
     });
     onClose();
   };
 
   const inputClass = "input-rect";
+  const updateWeight = (key: keyof PlanningWeights, value: number) => {
+    setWeights((prev) => ({ ...prev, [key]: clampWeight(value) }));
+  };
 
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
@@ -109,6 +125,49 @@ export default function SettingsModal({
               <Brain size={14} />
               管理记忆
             </button>
+          </div>
+
+          <hr className="border-t border-[var(--border-subtle)]" />
+
+          <div>
+            <div className="field-hint">
+              <SlidersHorizontal size={13} />
+              <span>个性化规划</span>
+            </div>
+            <div className="space-y-3">
+              {PLANNING_WEIGHT_DIMENSIONS.map((dimension) => (
+                <div key={dimension.key} className="flex items-center gap-3">
+                  <span className="w-16 shrink-0 text-sm text-ink-muted-80">
+                    {dimension.label}
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={weights[dimension.key]}
+                    onChange={(event) =>
+                      updateWeight(dimension.key, Number(event.target.value))
+                    }
+                    className="min-w-0 flex-1"
+                    style={{ accentColor: "var(--primary)" }}
+                    aria-label={`${dimension.label}权重`}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={weights[dimension.key]}
+                    onChange={(event) =>
+                      updateWeight(dimension.key, Number(event.target.value))
+                    }
+                    className="input-rect !w-20 !px-2 !py-1.5 text-right text-sm"
+                    aria-label={`${dimension.label}权重数值`}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 

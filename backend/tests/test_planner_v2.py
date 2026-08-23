@@ -7,7 +7,7 @@ from datetime import date
 import pytest
 
 from app.config import Settings
-from app.schemas import PlanV2Task, PlanV2Request
+from app.schemas import PlanV2Task, PlanV2Request, PlanningWeights
 from app.services.planner_v2 import (
     _build_understanding_prompt,
     _exclusion_memories,
@@ -249,3 +249,21 @@ def test_fallback_plan_v2_respects_now_minutes() -> None:
         f"任务不得排到当前时刻之前，实际 "
         f"{response.blocks[0].start // 60}:{response.blocks[0].start % 60:02d}"
     )
+
+
+def test_fallback_plan_v2_accepts_custom_weights() -> None:
+    """本地 fallback 应透传个性化规划权重并正常排期。"""
+    response = _fallback_plan_v2(
+        [PlanV2Task(title="写代码", duration=60)],
+        [],
+        date(2026, 8, 3),
+        date(2026, 8, 3),
+        memories=[],
+        constraints=[],
+        weights=PlanningWeights(
+            memory=0, understanding=0, time=0, priority=0,
+            deadline=0, conflict=1.0, workload=0,
+        ),
+    )
+    assert len(response.unassigned) == 0
+    assert len(response.blocks) == 1

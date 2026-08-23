@@ -4,9 +4,22 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from app.schemas import ConstraintSpec, ExistingBlock, PlanV2Task, WorkStyleSpec
+from app.schemas import (
+    ConstraintSpec,
+    ExistingBlock,
+    PlanV2Task,
+    PlanningWeights,
+    WorkStyleSpec,
+)
 from app.services.scheduling_engine import (
     SlotScorer,
+    W_CONFLICT,
+    W_DEADLINE,
+    W_MEMORY,
+    W_PRIORITY,
+    W_TIME,
+    W_UNDERSTANDING,
+    W_WORKLOAD,
     build_constraint_filters,
     parse_constraint_filters,
     parse_work_style,
@@ -243,6 +256,90 @@ def test_slot_scorer_score_all_order() -> None:
         assert scored[i][1] >= scored[i + 1][1]
     # 第一个（最高分）应是上午时段
     assert scored[0][0].start == 9 * 60
+
+
+def test_planning_weights_defaults_match_module_constants() -> None:
+    """PlanningWeights 默认值应与调度引擎模块常量一致。"""
+    weights = PlanningWeights()
+    assert weights.memory == W_MEMORY
+    assert weights.understanding == W_UNDERSTANDING
+    assert weights.time == W_TIME
+    assert weights.priority == W_PRIORITY
+    assert weights.deadline == W_DEADLINE
+    assert weights.conflict == W_CONFLICT
+    assert weights.workload == W_WORKLOAD
+
+
+def test_slot_scorer_custom_weights_scale_components() -> None:
+    """自定义权重应只放大对应维度：单维度权重 1.0 时总分等于该维度分。"""
+    slot = FreeSlot("2026-08-03", 9 * 60, 10 * 60)
+    task = PlanV2Task(title="写代码", duration=60)
+    understanding = {
+        "title": "写代码",
+        "preferred_time": "上午",
+        "focus_level": "deep",
+        "notes": "",
+    }
+
+    scorer_memory = SlotScorer(
+        weights=PlanningWeights(
+            memory=1.0, understanding=0, time=0, priority=0,
+            deadline=0, conflict=0, workload=0,
+        )
+    )
+    assert scorer_memory.score(slot, task, "medium", []) == score_memory_match(slot, task, [])
+
+    scorer_understanding = SlotScorer(
+        weights=PlanningWeights(
+            memory=0, understanding=1.0, time=0, priority=0,
+            deadline=0, conflict=0, workload=0,
+        )
+    )
+    assert scorer_understanding.score(
+        slot, task, "medium", [], understanding
+    ) == score_understanding(slot, task, understanding)
+
+
+def test_schedule_tasks_custom_weights_change_placement() -> None:
+    """自定义权重应改变调度结果：默认权重优先理解偏好的上午，冲突权重拉满时选最早无紧邻冲突时段。"""
+    tasks = [PlanV2Task(title="写代码", duration=60)]
+    existing = [
+        ExistingBlock(date="2026-08-03", start=10 * 60, end=11 * 60),
+        ExistingBlock(date="2026-08-03", start=11 * 60, end=12 * 60),
+    ]
+    understanding = {
+        "title": "写代码",
+        "preferred_time": "上午",
+        "focus_level": "deep",
+        "notes": "",
+    }
+
+    blocks_default, _, _ = schedule_tasks(
+        tasks,
+        existing,
+        (date(2026, 8, 3), date(2026, 8, 3)),
+        understandings={"写代码": understanding},
+    )
+    blocks_conflict, _, _ = schedule_tasks(
+        tasks,
+        existing,
+        (date(2026, 8, 3), date(2026, 8, 3)),
+        understandings={"写代码": understanding},
+        weights=PlanningWeights(
+            memory=0, understanding=0, time=0, priority=0,
+            deadline=0, conflict=1.0, workload=0,
+        ),
+    )
+
+    assert blocks_default[0].start < 10 * 60, (
+        f"默认权重应优先理解偏好的上午时段，实际 "
+        f"{blocks_default[0].start // 60}:{blocks_default[0].start % 60:02d}"
+    )
+    assert blocks_conflict[0].start == 6 * 60, (
+        f"冲突权重拉满时应选最早无紧邻冲突的 6:00，实际 "
+        f"{blocks_conflict[0].start // 60}:{blocks_conflict[0].start % 60:02d}"
+    )
+    assert blocks_default[0].start != blocks_conflict[0].start, "自定义权重应改变调度落点"
 
 
 # ============================================================

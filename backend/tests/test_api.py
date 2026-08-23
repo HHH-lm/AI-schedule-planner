@@ -116,6 +116,45 @@ def test_breakdown_local_fallback() -> None:
     assert [task["name"] for task in body["tasks"]] == ["做一期视频", "写AI应用文章"]
 
 
+def test_plan_v2_accepts_custom_weights() -> None:
+    """plan-v2 应接受个性化规划七维权重并正常返回。"""
+    response = client.post(
+        "/api/v1/plan-v2",
+        json={
+            "tasks": [{"title": "写代码", "duration": 60}],
+            "planning_range": {"start": "2026-08-03", "end": "2026-08-03"},
+            "provider": "local",
+            "weights": {
+                "memory": 0.5,
+                "understanding": 0.2,
+                "time": 0.1,
+                "priority": 0.1,
+                "deadline": 0.05,
+                "conflict": 0.05,
+                "workload": 0.0,
+            },
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "local"
+    assert len(body["blocks"]) == 1
+
+
+def test_plan_v2_rejects_weights_out_of_range() -> None:
+    """权重超出 0-1 范围应返回 422。"""
+    response = client.post(
+        "/api/v1/plan-v2",
+        json={
+            "tasks": [{"title": "写代码", "duration": 60}],
+            "planning_range": {"start": "2026-08-03", "end": "2026-08-03"},
+            "provider": "local",
+            "weights": {"memory": 1.5},
+        },
+    )
+    assert response.status_code == 422
+
+
 def test_analyze_memories_no_data_returns_message() -> None:
     """无任何时间块数据时，应返回提示让用户知道无法分析。"""
     response = client.post(

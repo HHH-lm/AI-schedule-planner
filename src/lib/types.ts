@@ -64,11 +64,22 @@ export interface AIMemorySuggestion {
   status: "pending";
 }
 
+export interface PlanningWeights {
+  memory: number;
+  understanding: number;
+  time: number;
+  priority: number;
+  deadline: number;
+  conflict: number;
+  workload: number;
+}
+
 export interface AppSettings {
   obsidianVault?: string;
   aiProvider?: AiProviderSetting;
   hiddenBoardWeeks?: string[];
   timelineCollapsedRanges?: Array<{ start: number; end: number }>;
+  planningWeights?: PlanningWeights;
 }
 
 export interface AppData {
