@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BookMarked, Bot, Brain, SlidersHorizontal, X } from "lucide-react";
 import { parseObsidianUrl } from "@/lib/obsidian";
 import type { AiProviderSetting, PlanningWeights } from "@/lib/types";
@@ -38,6 +38,25 @@ export default function SettingsModal({
     normalizePlanningWeights(initialWeights)
   );
 
+  useEffect(() => {
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   const handleSave = () => {
     const parsed = parseObsidianUrl(vault);
     onSave({
@@ -56,7 +75,7 @@ export default function SettingsModal({
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div
-        className="modal-card max-w-md"
+        className="modal-card modal-card-scroll max-w-md"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="modal-header">
@@ -162,7 +181,8 @@ export default function SettingsModal({
                     onChange={(event) =>
                       updateWeight(dimension.key, Number(event.target.value))
                     }
-                    className="input-rect !w-20 !px-2 !py-1.5 text-right text-sm"
+                    className="input-rect !w-20 !px-2 !py-1.5 text-center text-sm"
+                    style={{ textAlign: "center" }}
                     aria-label={`${dimension.label}权重数值`}
                   />
                 </div>

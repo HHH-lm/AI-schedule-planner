@@ -1401,6 +1401,8 @@ export default function Home() {
               setTaskModalOpen(true);
             }}
             onMoveTaskToToday={moveTaskToToday}
+            onToggleSubtask={toggleSubtask}
+            onAddSubtaskBlock={addSubtaskBlock}
             onOpenObsidian={handleOpenObsidian}
           />
         )}

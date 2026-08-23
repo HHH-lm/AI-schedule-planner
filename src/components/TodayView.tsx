@@ -12,7 +12,13 @@ import {
   Timer,
   TrendingUp,
 } from "lucide-react";
-import type { AppData, Task, TaskQuadrant, TimeBlock } from "@/lib/types";
+import type {
+  AppData,
+  Subtask,
+  Task,
+  TaskQuadrant,
+  TimeBlock,
+} from "@/lib/types";
 import { CATEGORIES } from "@/lib/categories";
 import { addDays, toDateKey } from "@/lib/date";
 import {
@@ -25,6 +31,7 @@ import {
   QUADRANT_META,
   QUADRANT_ORDER,
 } from "@/lib/priorities";
+import { collectTodoSubtasks } from "@/lib/todaySubtasks";
 
 interface Props {
   data: AppData;
@@ -32,6 +39,13 @@ interface Props {
   onEditBlock: (block: TimeBlock) => void;
   onEditTask: (task: Task) => void;
   onMoveTaskToToday: (taskId: string) => void;
+  onToggleSubtask: (taskId: string, subtaskId: string) => void;
+  onAddSubtaskBlock: (
+    taskId: string,
+    subtaskId: string,
+    subtaskName: string,
+    dateKey: string
+  ) => void;
   onOpenObsidian?: (block: TimeBlock) => void;
 }
 
@@ -56,6 +70,8 @@ export default function TodayView({
   onEditBlock,
   onEditTask,
   onMoveTaskToToday,
+  onToggleSubtask,
+  onAddSubtaskBlock,
   onOpenObsidian,
 }: Props) {
   const today = new Date();
@@ -87,26 +103,23 @@ export default function TodayView({
     [data.timeBlocks, todayKeyValue]
   );
 
-  const todoTasks = useMemo(
-    () =>
-      data.tasks
-        .filter((task) => task.status !== "done" && task.date === null)
-        .sort((a, b) => a.name.localeCompare(b.name, "zh-CN")),
+  const todoSubtasks = useMemo(
+    () => collectTodoSubtasks(data.tasks),
     [data.tasks]
   );
 
   const todoByQuadrant = useMemo(() => {
-    const groups: Record<TaskQuadrant, Task[]> = {
+    const groups: Record<TaskQuadrant, Array<{ task: Task; subtask: Subtask }>> = {
       "urgent-important": [],
       important: [],
       urgent: [],
       neither: [],
     };
-    for (const task of todoTasks) {
-      groups[normalizeQuadrant(task.priority)].push(task);
+    for (const item of todoSubtasks) {
+      groups[normalizeQuadrant(item.task.priority)].push(item);
     }
     return groups;
-  }, [todoTasks]);
+  }, [todoSubtasks]);
 
   const tomorrowBlocks = useMemo(
     () =>
@@ -247,11 +260,11 @@ export default function TodayView({
     );
   };
 
-  const renderMobileTaskRow = (task: Task) => {
-    const doneSubtasks = task.subtasks.filter((sub) => sub.done).length;
+  const renderMobileTaskRow = (item: { task: Task; subtask: Subtask }) => {
+    const { task, subtask } = item;
     return (
       <div
-        key={task.id}
+        key={subtask.id}
         className="rounded-[8px] border border-hairline bg-canvas-parchment px-3 py-2.5"
       >
         <div className="flex items-center gap-2">
@@ -261,63 +274,72 @@ export default function TodayView({
           />
           <button
             type="button"
-            onClick={() => onEditTask(task)}
-            className="min-w-0 flex-1 truncate text-left text-sm font-medium text-ink"
+            onClick={() => onToggleSubtask(task.id, subtask.id)}
+            className="flex min-w-0 flex-1 items-center gap-2 text-left"
           >
-            {task.name}
+            <span
+              className={`h-4 w-4 shrink-0 rounded-full border ${
+                subtask.done ? "border-primary bg-primary" : "border-ink-muted-48"
+              }`}
+            />
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-ink">
+                {subtask.name}
+              </span>
+              <span className="block truncate text-[11px] text-ink-muted-48">
+                {task.name}
+              </span>
+            </span>
           </button>
           <button
             type="button"
-            onClick={() => onMoveTaskToToday(task.id)}
+            onClick={() => onAddSubtaskBlock(task.id, subtask.id, subtask.name, todayKeyValue)}
             className="btn-ghost !px-3 !py-1.5 !text-xs"
           >
             排到今天
           </button>
         </div>
-        {task.subtasks.length > 0 && (
-          <div className="mt-1 text-[11px] text-ink-muted-48">
-            子任务 {doneSubtasks}/{task.subtasks.length}
-          </div>
-        )}
       </div>
     );
   };
 
-  const renderDesktopTaskRow = (task: Task) => {
-    const doneSubtasks = task.subtasks.filter((sub) => sub.done).length;
+  const renderDesktopTaskRow = (item: { task: Task; subtask: Subtask }) => {
+    const { task, subtask } = item;
     return (
       <div
-        key={task.id}
+        key={subtask.id}
         className="flex items-center justify-between gap-3 rounded-[8px] border border-hairline bg-canvas-parchment px-3 py-2.5"
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onToggleSubtask(task.id, subtask.id)}
+          className="flex min-w-0 items-center gap-2 text-left"
+        >
           <span
             className={`h-2 w-2 shrink-0 rounded-full ${QUADRANT_META[normalizeQuadrant(task.priority)].dot}`}
             title={QUADRANT_META[normalizeQuadrant(task.priority)].label}
           />
+          <span
+            className={`h-4 w-4 shrink-0 rounded-full border ${
+              subtask.done ? "border-primary bg-primary" : "border-ink-muted-48"
+            }`}
+          />
           <span className="min-w-0">
-          <span className="block truncate text-sm font-medium text-ink">{task.name}</span>
-          {task.subtasks.length > 0 && (
-            <span className="mt-0.5 block text-xs text-ink-muted-48">
-              子任务 {doneSubtasks}/{task.subtasks.length}
+            <span className="block truncate text-sm font-medium text-ink">
+              {subtask.name}
             </span>
-          )}
+            <span className="mt-0.5 block text-xs text-ink-muted-48">
+              {task.name}
+            </span>
           </span>
-        </span>
+        </button>
         <span className="flex shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => onMoveTaskToToday(task.id)}
+            onClick={() => onAddSubtaskBlock(task.id, subtask.id, subtask.name, todayKeyValue)}
             className="btn-ghost !px-3 !py-1.5 !text-xs"
           >
             排到今天
-          </button>
-          <button
-            type="button"
-            onClick={() => onEditTask(task)}
-            className="btn-ghost !px-3 !py-1.5 !text-xs"
-          >
-            编辑
           </button>
         </span>
       </div>
@@ -326,7 +348,7 @@ export default function TodayView({
 
   const renderQuadrantSection = (quadrant: TaskQuadrant, desktop: boolean) => {
     const meta = QUADRANT_META[quadrant];
-    const tasks = todoByQuadrant[quadrant];
+    const items = todoByQuadrant[quadrant];
     return (
       <div
         key={quadrant}
@@ -338,17 +360,17 @@ export default function TodayView({
             <span className="truncate">{meta.label}</span>
           </span>
           <span className="shrink-0 text-[11px] text-ink-muted-48">
-            {tasks.length} 项
+            {items.length} 项
           </span>
         </div>
         <div className="mt-2 space-y-2">
-          {tasks.length === 0 && (
+          {items.length === 0 && (
             <p className="text-xs text-ink-muted-48">
-              {meta.description}，暂无任务
+              {meta.description}，暂无待办
             </p>
           )}
-          {tasks.map((task) =>
-            desktop ? renderDesktopTaskRow(task) : renderMobileTaskRow(task)
+          {items.map((item) =>
+            desktop ? renderDesktopTaskRow(item) : renderMobileTaskRow(item)
           )}
         </div>
       </div>
@@ -368,7 +390,7 @@ export default function TodayView({
     },
     {
       label: "待办任务",
-      value: `${todoTasks.length} 项`,
+      value: `${todoSubtasks.length} 项`,
       icon: ListTodo,
     },
     {
@@ -446,16 +468,16 @@ export default function TodayView({
         <section className="tool-panel">
           <h3 className="type-caption-strong flex items-center gap-1.5 text-ink">
             <ListTodo size={15} className="text-primary" />
-            待办任务
-            {todoTasks.length > 0 && (
+            待办 · 四象限
+            {todoSubtasks.length > 0 && (
               <span className="rounded-full bg-[rgba(0,102,204,0.08)] px-2 py-0.5 text-[11px] text-primary">
-                {todoTasks.length}
+                {todoSubtasks.length}
               </span>
             )}
           </h3>
           <div className="mt-3 space-y-2">
-            {todoTasks.length === 0 && (
-              <p className="text-sm text-ink-muted-48">没有未排期任务，一切就绪。</p>
+            {todoSubtasks.length === 0 && (
+              <p className="text-sm text-ink-muted-48">没有未完成的子任务，一切就绪。</p>
             )}
             {QUADRANT_ORDER.map((quadrant) =>
               renderQuadrantSection(quadrant, false)
@@ -564,16 +586,16 @@ export default function TodayView({
             <section className="tool-panel">
               <h3 className="type-caption-strong flex items-center gap-1.5 text-ink">
                 <ListTodo size={15} className="text-primary" />
-                待办任务 · 四象限
-                {todoTasks.length > 0 && (
+                待办 · 四象限
+                {todoSubtasks.length > 0 && (
                   <span className="rounded-full bg-[rgba(0,102,204,0.08)] px-2 py-0.5 text-[11px] text-primary">
-                    {todoTasks.length}
+                    {todoSubtasks.length}
                   </span>
                 )}
               </h3>
               <div className="mt-3">
-                {todoTasks.length === 0 && (
-                  <p className="text-sm text-ink-muted-48">没有未排期任务，一切就绪。</p>
+                {todoSubtasks.length === 0 && (
+                  <p className="text-sm text-ink-muted-48">没有未完成的子任务，一切就绪。</p>
                 )}
                 <div className="grid grid-cols-2 gap-3">
                   {QUADRANT_ORDER.map((quadrant) =>
