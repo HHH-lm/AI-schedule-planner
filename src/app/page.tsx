@@ -27,8 +27,10 @@ import type {
   Category,
   Memory,
   MemoryCategory,
+  PlanningDimensionKey,
   ParsedSchedule,
   PlanningWeights,
+  PlanningStyleId,
   Subtask,
   Task,
   TaskQuadrant,
@@ -735,6 +737,8 @@ export default function Home() {
       obsidianVault: string;
       aiProvider: AiProviderSetting;
       planningWeights: PlanningWeights;
+      planningStyle?: PlanningStyleId;
+      planningFocus?: PlanningDimensionKey[];
     }) => {
       commitData((prev) =>
         prev
@@ -744,9 +748,10 @@ export default function Home() {
                 ...prev.settings,
                 obsidianVault: settings.obsidianVault || undefined,
                 aiProvider: settings.aiProvider,
-                planningWeights: normalizePlanningWeights(
-                  settings.planningWeights
-                ),
+                // 设置页已保证七维权重整数百分比总和为 100，直接存储
+                planningWeights: settings.planningWeights,
+                planningStyle: settings.planningStyle,
+                planningFocus: settings.planningFocus,
               },
             }
           : prev
@@ -1602,6 +1607,8 @@ export default function Home() {
           planningWeights={
             data.settings?.planningWeights ?? DEFAULT_PLANNING_WEIGHTS
           }
+          planningStyle={data.settings?.planningStyle}
+          planningFocus={data.settings?.planningFocus}
           onSave={saveSettings}
           onClose={() => setSettingsOpen(false)}
           onOpenMemory={() => {

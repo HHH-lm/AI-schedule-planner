@@ -10,13 +10,13 @@
                  ↓
           Scheduling Engine（本模块）
           SlotScorer 七维评分：
-            Memory匹配度  × 0.25
-            + 理解匹配度   × 0.10
-            + 时间可用性   × 0.20
+            Memory匹配度  × 0.30
+            + 理解匹配度   × 0.20
+            + 时间可用性   × 0.15
             + 任务优先级   × 0.15
             + 截止日期     × 0.10
-            - 冲突风险     × 0.10
-            - 负荷惩罚     × 0.10
+            - 冲突风险     × 0.05
+            - 负荷惩罚     × 0.05
                  ↓
           → 选最高分 → Final Plan
                  ↓
@@ -389,13 +389,13 @@ def _build_task_blocks(
 
 
 # ── 评分权重 ──
-W_MEMORY = 0.35      # 时段偏好匹配（通用时段，对所有任务统一生效）
-W_UNDERSTANDING = 0.25  # 理解匹配度（LLM preferred_time/focus_level）
+W_MEMORY = 0.30      # 时段偏好匹配（通用时段，对所有任务统一生效）
+W_UNDERSTANDING = 0.20  # 理解匹配度（LLM preferred_time/focus_level）
 W_TIME = 0.15        # 时间可用性
 W_PRIORITY = 0.15    # 任务优先级
 W_DEADLINE = 0.10    # 截止日期（1 - 紧迫度）
-W_CONFLICT = 0.10    # 冲突风险（1 - 风险）
-W_WORKLOAD = 0.10    # 负荷惩罚（1 - 惩罚）
+W_CONFLICT = 0.05    # 冲突风险（1 - 风险）
+W_WORKLOAD = 0.05    # 负荷惩罚（1 - 惩罚）
 
 PRIORITY_SCORE: dict[str, int] = {"high": 3, "medium": 2, "low": 1}
 

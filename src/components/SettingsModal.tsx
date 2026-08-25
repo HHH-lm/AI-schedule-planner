@@ -3,10 +3,19 @@
 import { useEffect, useState } from "react";
 import { BookMarked, Bot, Brain, SlidersHorizontal, X } from "lucide-react";
 import { parseObsidianUrl } from "@/lib/obsidian";
-import type { AiProviderSetting, PlanningWeights } from "@/lib/types";
+import type {
+  AiProviderSetting,
+  PlanningDimensionKey,
+  PlanningStyleId,
+  PlanningWeights,
+} from "@/lib/types";
 import {
   DEFAULT_PLANNING_WEIGHTS,
   PLANNING_WEIGHT_DIMENSIONS,
+  PLANNING_STYLE_PRESETS,
+  applyPlanningFocus,
+  describePlanningWeights,
+  inferPlanningSelection,
   clampWeight,
   normalizePlanningWeights,
 } from "@/lib/planningWeights";
@@ -15,10 +24,14 @@ interface Props {
   obsidianVault: string;
   aiProvider: AiProviderSetting;
   planningWeights: PlanningWeights;
+  planningStyle?: PlanningStyleId;
+  planningFocus?: PlanningDimensionKey[];
   onSave: (settings: {
     obsidianVault: string;
     aiProvider: AiProviderSetting;
     planningWeights: PlanningWeights;
+    planningStyle?: PlanningStyleId;
+    planningFocus?: PlanningDimensionKey[];
   }) => void;
   onClose: () => void;
   onOpenMemory?: () => void;
@@ -28,6 +41,8 @@ export default function SettingsModal({
   obsidianVault: initialVault,
   aiProvider: initialProvider,
   planningWeights: initialWeights,
+  planningStyle: initialStyle,
+  planningFocus: initialFocus,
   onSave,
   onClose,
   onOpenMemory,
@@ -36,6 +51,20 @@ export default function SettingsModal({
   const [provider, setProvider] = useState<AiProviderSetting>(initialProvider);
   const [weights, setWeights] = useState<PlanningWeights>(() =>
     normalizePlanningWeights(initialWeights)
+  );
+  const [styleId, setStyleId] = useState<PlanningStyleId>(() =>
+    initialStyle ??
+    inferPlanningSelection(normalizePlanningWeights(initialWeights)).styleId
+  );
+  const [focus, setFocus] = useState<PlanningDimensionKey[]>(() =>
+    (initialFocus ?? []).filter(
+      (key, index) =>
+        PLANNING_WEIGHT_DIMENSIONS.some((dimension) => dimension.key === key) &&
+        index < 2
+    )
+  );
+  const [advancedOpen, setAdvancedOpen] = useState(
+    (initialStyle ?? inferPlanningSelection(weights).styleId) === "custom"
   );
 
   useEffect(() => {
@@ -62,14 +91,107 @@ export default function SettingsModal({
     onSave({
       obsidianVault: (parsed.vault ?? vault).trim(),
       aiProvider: provider,
-      planningWeights: normalizePlanningWeights(weights),
+      // 设置页联动已保证百分比总和为 100，直接保存 0-1 权重
+      planningWeights: weights,
+      planningStyle: styleId,
+      planningFocus: focus.length > 0 ? focus : undefined,
     });
     onClose();
   };
 
   const inputClass = "input-rect";
-  const updateWeight = (key: keyof PlanningWeights, value: number) => {
-    setWeights((prev) => ({ ...prev, [key]: clampWeight(value) }));
+  // 设置页以整数百分比（0-100）展示，存储/后端仍为 0-1 浮点
+  const selectStyle = (nextStyleId: PlanningStyleId) => {
+    if (nextStyleId === "custom") return;
+    setStyleId(nextStyleId);
+    setFocus([]);
+    setWeights(applyPlanningFocus(nextStyleId, []));
+  };
+
+  const toggleFocus = (key: PlanningDimensionKey) => {
+    if (styleId === "custom") return;
+    const nextFocus = focus.includes(key)
+      ? focus.filter((item) => item !== key)
+      : [...focus, key].slice(0, 2);
+    setFocus(nextFocus);
+    setWeights(applyPlanningFocus(styleId, nextFocus));
+  };
+
+  const resetToBalanced = () => {
+    setStyleId("balanced");
+    setFocus([]);
+    setWeights(normalizePlanningWeights(DEFAULT_PLANNING_WEIGHTS));
+    setAdvancedOpen(false);
+  };
+
+  const weightPercent = (key: PlanningDimensionKey) =>
+    Math.round(weights[key] * 100);
+  const updateWeightPercent = (
+    key: PlanningDimensionKey,
+    percent: number
+  ) => {
+    const clamped = Math.min(100, Math.max(0, Math.round(percent)));
+    setWeights((prev) => {
+      const current = Object.fromEntries(
+        PLANNING_WEIGHT_DIMENSIONS.map((d) => [
+          d.key,
+          Math.round(prev[d.key] * 100),
+        ])
+      ) as Record<keyof PlanningWeights, number>;
+      const oldValue = current[key];
+      const delta = clamped - oldValue;
+      if (delta === 0) return prev;
+      const next = {
+        ...current,
+        [key]: clamped,
+      } as Record<PlanningDimensionKey, number>;
+      const others = PLANNING_WEIGHT_DIMENSIONS.filter((d) => d.key !== key);
+      const othersTotal = others.reduce((sum, d) => sum + current[d.key], 0);
+      const remaining = 100 - clamped;
+      const sourceValues = othersTotal > 0
+        ? others.map((d) => current[d.key])
+        : others.map((d) => DEFAULT_PLANNING_WEIGHTS[d.key] * 100);
+      const sourceTotal = sourceValues.reduce((a, b) => a + b, 0);
+
+      if (remaining <= 0) {
+        for (const d of others) next[d.key] = 0;
+      } else if (sourceTotal <= 0) {
+        const base = Math.floor(remaining / others.length);
+        let allocated = 0;
+        others.forEach((d, index) => {
+          const share = index === others.length - 1
+            ? remaining - allocated
+            : base;
+          next[d.key] = Math.max(0, share);
+          allocated += share;
+        });
+      } else {
+        let allocated = 0;
+        others.forEach((d, index) => {
+          const share = Math.round(
+            (sourceValues[index] / sourceTotal) * remaining
+          );
+          next[d.key] = Math.max(0, Math.min(100, share));
+          allocated += share;
+        });
+        const diff = remaining - allocated;
+        if (diff !== 0) {
+          const largest = [...others].sort(
+            (a, b) => next[b.key] - next[a.key]
+          )[0];
+          next[largest.key] = Math.max(0, next[largest.key] + diff);
+        }
+      }
+
+      const result = { ...prev };
+      for (const d of PLANNING_WEIGHT_DIMENSIONS) {
+        result[d.key] = clampWeight(next[d.key] / 100);
+      }
+      return result;
+    });
+    setStyleId("custom");
+    setFocus([]);
+    setAdvancedOpen(true);
   };
 
   return (
@@ -153,43 +275,147 @@ export default function SettingsModal({
               <SlidersHorizontal size={13} />
               <span>个性化规划</span>
             </div>
-            <div className="space-y-3">
-              {PLANNING_WEIGHT_DIMENSIONS.map((dimension) => (
-                <div key={dimension.key} className="flex items-center gap-3">
-                  <span className="w-16 shrink-0 text-sm text-ink-muted-80">
-                    {dimension.label}
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={weights[dimension.key]}
-                    onChange={(event) =>
-                      updateWeight(dimension.key, Number(event.target.value))
-                    }
-                    className="min-w-0 flex-1"
-                    style={{ accentColor: "var(--primary)" }}
-                    aria-label={`${dimension.label}权重`}
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={weights[dimension.key]}
-                    onChange={(event) =>
-                      updateWeight(dimension.key, Number(event.target.value))
-                    }
-                    className="input-rect !w-20 !px-2 !py-1.5 text-center text-sm"
-                    style={{ textAlign: "center" }}
-                    aria-label={`${dimension.label}权重数值`}
-                  />
-                </div>
-              ))}
+            <p className="text-xs text-ink-muted-48 mb-3">
+              选择一个规划风格；如需强调，可再选最多两个重点。
+            </p>
+
+            <div className="grid grid-cols-2 gap-2">
+              {PLANNING_STYLE_PRESETS.map((preset) => {
+                const selected = styleId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => selectStyle(preset.id)}
+                    aria-pressed={selected}
+                    className={`rounded-xl border p-3 text-left transition ${
+                      selected ? "shadow-sm" : ""
+                    }`}
+                    style={{
+                      borderColor: selected
+                        ? "var(--primary)"
+                        : "var(--hairline)",
+                      backgroundColor: selected
+                        ? "color-mix(in srgb, var(--primary) 6%, transparent)"
+                        : "transparent",
+                    }}
+                  >
+                    <span className="block text-sm font-medium text-ink">
+                      {preset.label}
+                    </span>
+                    <span className="mt-1 block text-xs leading-4 text-ink-muted-48">
+                      {preset.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-4">
+              <p className="text-sm font-medium text-ink-muted-80 mb-2">
+                重点加强（最多 2 个）
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {PLANNING_WEIGHT_DIMENSIONS.map((dimension) => {
+                  const selected = focus.includes(dimension.key);
+                  return (
+                    <button
+                      key={dimension.key}
+                      type="button"
+                      onClick={() => toggleFocus(dimension.key)}
+                      disabled={styleId === "custom"}
+                      aria-pressed={selected}
+                      className="rounded-full border px-3 py-1.5 text-xs transition disabled:cursor-not-allowed disabled:opacity-45"
+                      style={{
+                        borderColor: selected
+                          ? "var(--primary)"
+                          : "var(--hairline)",
+                        backgroundColor: selected
+                          ? "color-mix(in srgb, var(--primary) 8%, transparent)"
+                          : "transparent",
+                        color: selected
+                          ? "var(--primary)"
+                          : "var(--ink-muted-80)",
+                      }}
+                    >
+                      {dimension.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-[var(--hairline)] bg-[var(--canvas)] p-3">
+              <p className="text-xs text-ink-muted-80">
+                {describePlanningWeights(weights)}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen(!advancedOpen)}
+              aria-expanded={advancedOpen}
+              className="mt-4 flex w-full items-center justify-between rounded-lg px-0 py-1 text-sm text-ink-muted-80"
+            >
+              <span>高级权重设置</span>
+              <span>{advancedOpen ? "收起" : "展开"}</span>
+            </button>
+
+            {advancedOpen && (
+              <div className="mt-3 space-y-3">
+                <p className="text-xs leading-4 text-ink-muted-48">
+                  高级模式下修改一项时，其余项会按比例重新分配，总和保持 100%。修改后会进入自定义状态。
+                </p>
+                <button
+                  type="button"
+                  onClick={resetToBalanced}
+                  className="btn-ghost !px-3 !py-1.5 text-xs"
+                >
+                  恢复均衡默认
+                </button>
+                {PLANNING_WEIGHT_DIMENSIONS.map((dimension) => (
+                  <div key={dimension.key} className="flex items-center gap-3">
+                    <span className="w-16 shrink-0 text-sm text-ink-muted-80">
+                      {dimension.label}
+                    </span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={weightPercent(dimension.key)}
+                      onChange={(event) =>
+                        updateWeightPercent(
+                          dimension.key,
+                          Number(event.target.value)
+                        )
+                      }
+                      className="min-w-0 flex-1"
+                      style={{ accentColor: "var(--primary)" }}
+                      aria-label={`${dimension.label}权重`}
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={1}
+                      value={weightPercent(dimension.key)}
+                      onChange={(event) =>
+                        updateWeightPercent(
+                          dimension.key,
+                          Number(event.target.value)
+                        )
+                      }
+                      className="input-rect !w-20 !px-2 !py-1.5 text-center text-sm"
+                      style={{ textAlign: "center" }}
+                      aria-label={`${dimension.label}权重数值`}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
             </div>
           </div>
-        </div>
 
         <div className="modal-footer !justify-end">
           <button

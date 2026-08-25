@@ -270,6 +270,35 @@ def test_planning_weights_defaults_match_module_constants() -> None:
     assert weights.workload == W_WORKLOAD
 
 
+def test_planning_weights_default_sum_is_one() -> None:
+    """七维权重默认值相加应等于 1。"""
+    weights = PlanningWeights()
+    assert abs(sum((
+        weights.memory,
+        weights.understanding,
+        weights.time,
+        weights.priority,
+        weights.deadline,
+        weights.conflict,
+        weights.workload,
+    )) - 1.0) < 1e-9
+
+
+def test_planning_weights_custom_values_are_normalized() -> None:
+    """用户自定义权重总和不为 1 时，应按比例归一化到 1。"""
+    weights = PlanningWeights(memory=0.35, understanding=0.25, time=0.15, priority=0.15, deadline=0.10, conflict=0.10, workload=0.10)
+    total = sum((
+        weights.memory,
+        weights.understanding,
+        weights.time,
+        weights.priority,
+        weights.deadline,
+        weights.conflict,
+        weights.workload,
+    ))
+    assert abs(total - 1.0) < 1e-9
+
+
 def test_slot_scorer_custom_weights_scale_components() -> None:
     """自定义权重应只放大对应维度：单维度权重 1.0 时总分等于该维度分。"""
     slot = FreeSlot("2026-08-03", 9 * 60, 10 * 60)

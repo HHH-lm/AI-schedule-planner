@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 Provider = Literal["auto", "openai", "deepseek", "local"]
@@ -240,13 +240,38 @@ class WorkStyleSpec(BaseModel):
 
 class PlanningWeights(BaseModel):
     """SchedulingEngine 七维加权评分权重（0-1，用户可在设置页调节）。"""
-    memory: float = Field(default=0.35, ge=0.0, le=1.0, description="记忆匹配度权重")
-    understanding: float = Field(default=0.25, ge=0.0, le=1.0, description="理解匹配度权重")
+    memory: float = Field(default=0.30, ge=0.0, le=1.0, description="记忆匹配度权重")
+    understanding: float = Field(default=0.20, ge=0.0, le=1.0, description="理解匹配度权重")
     time: float = Field(default=0.15, ge=0.0, le=1.0, description="时间可用性权重")
     priority: float = Field(default=0.15, ge=0.0, le=1.0, description="任务优先级权重")
     deadline: float = Field(default=0.10, ge=0.0, le=1.0, description="截止日期权重")
-    conflict: float = Field(default=0.10, ge=0.0, le=1.0, description="冲突风险权重")
-    workload: float = Field(default=0.10, ge=0.0, le=1.0, description="负荷惩罚权重")
+    conflict: float = Field(default=0.05, ge=0.0, le=1.0, description="冲突风险权重")
+    workload: float = Field(default=0.05, ge=0.0, le=1.0, description="负荷惩罚权重")
+
+    @model_validator(mode="after")
+    def normalize_sum_to_one(self):
+        """归一化权重，使七维总和恰好为 1。"""
+        total = sum(
+            getattr(self, dim)
+            for dim in ("memory", "understanding", "time", "priority", "deadline", "conflict", "workload")
+        )
+        if total <= 0:
+            return self
+        for dim in ("memory", "understanding", "time", "priority", "deadline", "conflict", "workload"):
+            setattr(self, dim, round(getattr(self, dim) / total, 2))
+        # 把舍入误差加到最大维度上
+        current = sum(
+            getattr(self, dim)
+            for dim in ("memory", "understanding", "time", "priority", "deadline", "conflict", "workload")
+        )
+        diff = round(1.0 - current, 2)
+        if diff != 0:
+            largest = max(
+                ("memory", "understanding", "time", "priority", "deadline", "conflict", "workload"),
+                key=lambda d: getattr(self, d),
+            )
+            setattr(self, largest, round(getattr(self, largest) + diff, 2))
+        return self
 
 
 class PlanV2Request(BaseModel):

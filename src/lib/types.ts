@@ -74,12 +74,24 @@ export interface PlanningWeights {
   workload: number;
 }
 
+export type PlanningDimensionKey = keyof PlanningWeights;
+
+export type PlanningStyleId =
+  | "balanced"
+  | "deadline"
+  | "focus"
+  | "stability"
+  | "workload"
+  | "custom";
+
 export interface AppSettings {
   obsidianVault?: string;
   aiProvider?: AiProviderSetting;
   hiddenBoardWeeks?: string[];
   timelineCollapsedRanges?: Array<{ start: number; end: number }>;
   planningWeights?: PlanningWeights;
+  planningStyle?: PlanningStyleId;
+  planningFocus?: PlanningDimensionKey[];
 }
 
 export interface AppData {
