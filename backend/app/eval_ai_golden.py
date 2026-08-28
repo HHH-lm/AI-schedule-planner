@@ -25,9 +25,10 @@ from typing import Any
 from app.config import get_settings
 from app.golden_ai_cases import GOLDEN_AI_CASES, GOLDEN_ANCHOR_DATE, GOLDEN_SET_VERSION
 from app.golden_ai_cases_heldout import HELDOUT_AI_CASES, HELDOUT_GOLDEN_SET_VERSION
-from app.schemas import ExistingBlock, PlanV2Request, PlanV2Task
-from app.services.ai import build_system_prompt, parse_with_ai, resolve_ai_provider
+from app.schemas import ExistingBlock, ParsedSchedule, PlanV2Request, PlanV2Task, RejectReason
+from app.services.ai import build_system_prompt, parse_local_date, parse_with_ai, resolve_ai_provider
 from app.services.conflict import iter_segments
+from app.services.nlp import parse_schedule_with_feedback
 from app.services.planner_v2 import _build_understanding_prompt, plan_v2_schedule
 
 
@@ -221,6 +222,26 @@ def _prompt_fingerprint() -> str:
     )
     seed = build_system_prompt(GOLDEN_ANCHOR_DATE) + "\n---planning---\n" + plan_prompt
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
+
+
+def _fallback_empty_ai_result(
+    text: str,
+    today: str,
+    schedules: list[ParsedSchedule],
+    rejected: RejectReason | None,
+    ai_message: str | None,
+) -> tuple[list[ParsedSchedule], RejectReason | None, str | None, bool]:
+    """AI 返回空且无拒答时，按生产链路回退本地规则，避免拒答类门禁随模型输出抖动。
+
+    返回 (schedules, rejected, message, used_fallback)；used_fallback 表示本次是否采用了本地规则兜底，
+    供评测结果标记 source/ai_error 使用。
+    """
+    if schedules or rejected:
+        return schedules, rejected, ai_message, False
+    local_schedules, local_rejected = parse_schedule_with_feedback(
+        text, parse_local_date(today)
+    )
+    return local_schedules, local_rejected, "AI 未返回有效结果，已使用本地规则", True
 
 
 def _write_snapshot(
@@ -486,10 +507,16 @@ async def run_eval(args: argparse.Namespace) -> int:
                 actual: list[dict[str, Any]] = []
                 rejected: Any = {"code": "empty", "message": "输入为空"}
                 ai_message = None
+                used_fallback = False
             else:
                 source, schedules, rejected, ai_message = await parse_with_ai(
                     case["input"], provider, case["today"], settings
                 )
+                schedules, rejected, ai_message, used_fallback = _fallback_empty_ai_result(
+                    case["input"], case["today"], schedules, rejected, ai_message
+                )
+                if used_fallback:
+                    source = "local"
                 actual = [schedule.model_dump() for schedule in schedules]
             result = score_case(case, actual, rejected)
             result["kind"] = kind
@@ -497,6 +524,7 @@ async def run_eval(args: argparse.Namespace) -> int:
             result["source"] = source
             result["message"] = ai_message
             result["ai_error"] = source == "none"
+            result["fallback_used"] = used_fallback
         else:
             payload = dict(case["planning"])
             payload["planning_range"] = {

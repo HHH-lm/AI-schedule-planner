@@ -44,6 +44,16 @@ def test_parse_with_spaced_time() -> None:
     assert parsed[0].end == 16 * 60
 
 
+def test_parse_job_hunting_category_work() -> None:
+    parsed = parse_schedule_text("周五上午10点到11点投简历", ANCHOR)
+    assert parsed[0].name == "投简历"
+    assert parsed[0].category == "work"
+
+    parsed = parse_schedule_text("周三下午2点到3点面试", ANCHOR)
+    assert parsed[0].name == "面试"
+    assert parsed[0].category == "work"
+
+
 def test_parse_tomorrow_evening() -> None:
     parsed = parse_schedule_text("明天晚上8点吃饭", ANCHOR)
     assert parsed[0].name == "吃饭"

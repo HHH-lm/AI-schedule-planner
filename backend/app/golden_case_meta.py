@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 
-GOLDEN_SET_VERSION = "0.3.0"
+GOLDEN_SET_VERSION = "0.4.0"
 
 
 GOLDEN_CASE_META: dict[str, dict[str, str]] = {
@@ -98,6 +98,20 @@ GOLDEN_CASE_META: dict[str, dict[str, str]] = {
         "source": "synthetic",
         "added_in": "0.2.0",
         "rationale": "覆盖跨天块落在周末边界场景。",
+    },
+    "qa13": {
+        "name": "周五上午投简历",
+        "description": "解析周五 10:00-11:00 的 work 块，求职类目必须归入工作。",
+        "source": "fault_sample",
+        "added_in": "0.4.0",
+        "rationale": "回归保护“投简历/求职”不再被误判为 life；来自用户反馈的类目漂移样本。",
+    },
+    "qa14": {
+        "name": "周三下午面试",
+        "description": "解析周三 14:00-15:00 的 work 块，面试归入求职工作类目。",
+        "source": "fault_sample",
+        "added_in": "0.4.0",
+        "rationale": "与 qa13 组成求职类目多措辞回归，防止类目判定在措辞间漂移。",
     },
     "b01": {
         "name": "空输入拒答",

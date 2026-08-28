@@ -23,7 +23,7 @@ TIME_MODIFIERS = ("凌晨", "早上", "早晨", "上午", "中午", "下午", "�
 MINUTES_PER_DAY = 1440
 
 CATEGORY_KEYWORDS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"写代码|编程|开发|代码|工作|开会|会议|客户|需求|办公|文案|项目|周报|代码评审", re.I), "work"),
+    (re.compile(r"写代码|编程|开发|代码|工作|开会|会议|客户|需求|办公|文案|项目|周报|代码评审|投简历|投递简历|求职|面试|招聘|找工作", re.I), "work"),
     (re.compile(r"学习|阅读|读书|课程|上课|考试|背单词|研究|论文|写作|写文章|AI|教程", re.I), "study"),
     (re.compile(r"健身|跑步|运动|游泳|瑜伽|篮球|羽毛球|力量|拉伸|锻炼|骑行", re.I), "fitness"),
     (re.compile(r"睡觉|休息|午休|冥想|放松|散步", re.I), "rest"),

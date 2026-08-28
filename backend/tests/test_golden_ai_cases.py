@@ -8,6 +8,7 @@ from datetime import date
 from app.config import Settings
 from app.eval_ai_golden import (
     _blocks_overlap,
+    _fallback_empty_ai_result,
     _prompt_fingerprint,
     _write_snapshot,
     compute_metrics,
@@ -21,13 +22,13 @@ from app.golden_ai_cases_heldout import HELDOUT_AI_CASES, HELDOUT_GOLDEN_SET_VER
 from app.services.ai import build_system_prompt
 
 
-def test_golden_set_has_35_cases_with_expected_distribution() -> None:
-    assert len(GOLDEN_AI_CASES) == 35
-    assert GOLDEN_SET_VERSION == "0.3.0"
+def test_golden_set_has_37_cases_with_expected_distribution() -> None:
+    assert len(GOLDEN_AI_CASES) == 37
+    assert GOLDEN_SET_VERSION == "0.4.0"
     ids = [case["id"] for case in GOLDEN_AI_CASES]
-    assert len(set(ids)) == 35
+    assert len(set(ids)) == 37
     counts = Counter(case["kind"] for case in GOLDEN_AI_CASES)
-    assert counts["quickadd"] == 12
+    assert counts["quickadd"] == 14
     assert counts["planning"] == 10
     assert counts["boundary"] == 6
     assert counts["constraint_memory"] == 7
@@ -40,7 +41,7 @@ def test_golden_case_structures_are_valid() -> None:
         assert case["description"]
         assert case["input"] is not None
         assert case["source"] in ("real_user", "fault_sample", "synthetic")
-        assert case["added_in"] in ("0.1.0", "0.2.0", "0.3.0")
+        assert case["added_in"] in ("0.1.0", "0.2.0", "0.3.0", "0.4.0")
         assert case["rationale"]
         assert "text" not in case
         if case["kind"] in ("quickadd", "boundary"):
@@ -101,6 +102,71 @@ def test_schedule_matches_perfect() -> None:
     assert result["full"] is True
     assert result["time"] is True
     assert result["correct"] == 6
+
+
+def test_fallback_empty_ai_result_uses_local_rules() -> None:
+    from app.schemas import ParsedSchedule
+
+    schedules, rejected, message, used_fallback = _fallback_empty_ai_result(
+        "!!!###", "2026-08-16", [], None, None
+    )
+    assert schedules == []
+    assert rejected is not None
+    assert rejected.code == "garbage"
+    assert "本地规则" in (message or "")
+    assert used_fallback is True
+
+    kept = [
+        ParsedSchedule(
+            name="写代码", date="2026-08-16", start=540, end=600, category="work"
+        )
+    ]
+    schedules2, rejected2, message2, used_fallback2 = _fallback_empty_ai_result(
+        "周三写代码", "2026-08-16", kept, None, "原始消息"
+    )
+    assert schedules2 == kept
+    assert rejected2 is None
+    assert message2 == "原始消息"
+    assert used_fallback2 is False
+
+
+def test_fallback_used_result_passes_boundary_gate() -> None:
+    results = []
+    for case in GOLDEN_AI_CASES:
+        if case["kind"] in ("quickadd", "boundary"):
+            if case.get("expect_reject"):
+                result = score_case(case, [], {"code": case["expect_reject"], "message": "x"})
+            else:
+                result = score_case(case, case["expect_schedules"], None)
+            result["kind"] = case["kind"]
+            result["ai_error"] = False
+            result["fallback_used"] = case["id"] == "b02"
+        else:
+            result = {
+                "id": case["id"],
+                "kind": case["kind"],
+                "full_exact": True,
+                "ai_error": False,
+                "check_passed": 1,
+                "check_total": 1,
+            }
+        results.append(result)
+
+    thresholds = {
+        "full": 0.80,
+        "quickadd": 0.90,
+        "planning": 0.90,
+        "boundary": 1.00,
+        "cm": 0.80,
+        "field": 0.90,
+        "reject": 1.00,
+        "check": 0.90,
+    }
+    metrics = compute_metrics(results, GOLDEN_AI_CASES, thresholds)
+    assert metrics["passed"] is True
+    assert metrics["ai_error_cases"] == 0
+    assert metrics["kind_rates"]["boundary_exact"] == "6/6"
+    assert metrics["reject_accuracy"] == 1.0
 
 
 def test_score_case_perfect_parse_and_reject() -> None:
@@ -265,14 +331,15 @@ def test_compute_metrics_passes_with_perfect_results() -> None:
     }
     metrics = compute_metrics(results, GOLDEN_AI_CASES, thresholds)
     assert metrics["passed"] is True
-    assert metrics["total_cases"] == 35
+    assert metrics["total_cases"] == 37
     assert metrics["case_full_rate"] == 1.0
 
 
 def test_system_prompt_contains_quality_rules() -> None:
     prompt = build_system_prompt("2026-08-16")
     assert "（周日）" in prompt
-    assert "end=start+60" in prompt
-    assert "绝不可选已经过去" in prompt
+    assert "end = start + 60" in prompt
+    assert "下一个同名星期" in prompt
     assert "missing_action" in prompt
     assert "本周日期映射" in prompt
+    assert "投简历" in prompt
