@@ -85,8 +85,11 @@ def _build_breakdown_prompt() -> str:
         [
             "你是项目拆解助手，把中文项目计划拆解为可执行任务列表，只输出 JSON。",
             '格式:{"tasks":[{"name":"任务名","subtasks":["子任务1","子任务2"]}]}',
-            "任务数量 1-15，名称简洁具体；每个任务可带 0-5 个子任务。",
-            "子任务必须是可直接执行的步骤，不要输出解释。",
+            "任务数量 1-3，名称简洁具体；每个任务可带 0-5 个子任务。",
+            "子任务必须是可直接执行的步骤（即动作+对象），不得包含解释、条件分支或额外说明；"
+            '如果输入不含任何项目信息、包含非项目内容或无法提取有效项目计划，则固定返回 {"error": "未识别到有效项目计划，请输入项目计划内容"}；'
+            "只输出 JSON，且当输入为英文或其他语言时，任务名称和子任务使用与输入一致的语言"
+            "（中文输入用中文输出）。",
         ]
     )
 
@@ -124,6 +127,14 @@ async def breakdown_tasks(
         )
         content = _extract_content(data)
         payload = parse_model_json(content)
+        raw_error = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(raw_error, str) and raw_error.strip():
+            _log_breakdown_result(
+                started, source="none", tasks=0, error="ai_rejected"
+            )
+            return BreakdownResponse(
+                source="none", tasks=[], message=f"AI 拆解失败：{raw_error.strip()[:100]}"
+            )
         raw_tasks = payload.get("tasks") if isinstance(payload, dict) else None
         if not isinstance(raw_tasks, list) or not raw_tasks:
             raise ValueError("AI 未返回任务列表")
