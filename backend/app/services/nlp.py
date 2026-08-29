@@ -272,7 +272,9 @@ def detect_reject_reason(raw_segment: str, anchor: date) -> RejectReason | None:
     segment = raw_segment.strip()
     if not segment:
         return RejectReason(code="empty", message="输入为空，请输入包含时间和事项的句子")
-    if re.search(r"(?:周|星期)[^一二三四五六日天\d]", segment):
+    # 仅当 周/星期 后跟越界的中文数字（如周八、周十一）才算无效星期；
+    # 「周报」「周期」等周字词语不是星期引用，不得误判拒答。
+    if re.search(r"(?:周|星期)\s*[七八九十〇零两]", segment):
         return RejectReason(
             code="invalid_weekday", message="星期格式不正确，请使用“周一”到“周日”"
         )

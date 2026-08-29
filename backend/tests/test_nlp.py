@@ -140,6 +140,41 @@ def test_reject_invalid_weekday() -> None:
     assert rejected.code == "invalid_weekday"
 
 
+def test_reject_invalid_weekday_variants() -> None:
+    for text in ("周七健身", "星期九跑步", "周十一交报告"):
+        parsed, rejected = parse_schedule_with_feedback(text, ANCHOR)
+        assert parsed == []
+        assert rejected is not None
+        assert rejected.code == "invalid_weekday"
+
+
+def test_weekday_word_not_misjudged_as_invalid_weekday() -> None:
+    # 「周报」是 work 类目关键词，不是星期引用，不得触发 invalid_weekday
+    parsed, rejected = parse_schedule_with_feedback(
+        "凌晨12:00到12:25写周报", ANCHOR
+    )
+    assert rejected is None
+    assert len(parsed) == 1
+    assert parsed[0].name == "写周报"
+    assert parsed[0].category == "work"
+    assert parsed[0].start == 0
+    assert parsed[0].end == 25
+
+    parsed, rejected = parse_schedule_with_feedback(
+        "明天上午9点到11点写周报", ANCHOR
+    )
+    assert rejected is None
+    assert parsed[0].name == "写周报"
+    assert parsed[0].date == "2026-08-04"
+
+    # 其他「周X」词语同样不误伤
+    parsed, rejected = parse_schedule_with_feedback(
+        "周五下午2点到3点做周期整理", ANCHOR
+    )
+    assert rejected is None
+    assert parsed[0].name == "做周期整理"
+
+
 def test_reject_missing_action() -> None:
     parsed, rejected = parse_schedule_with_feedback("明天", ANCHOR)
     assert parsed == []
