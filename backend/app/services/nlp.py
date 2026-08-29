@@ -312,6 +312,24 @@ def split_sentences(text: str) -> list[str]:
     return [s.strip() for s in re.split(r"[，,。；;\n]+", text) if s.strip()]
 
 
+_LINK_DIRECTIVE_RE = re.compile(
+    r"^关联(?:到|至|给)?(?:任务|项目)?\s*[:：]?\s*(.+)$"
+)
+_LINK_HANG_RE = re.compile(r"^挂到\s*[:：]?\s*(.+?)下$")
+
+
+def extract_link_directive(segment: str) -> str | None:
+    """识别「关联 X」指令段：返回关联目标名；非指令段返回 None。"""
+    stripped = segment.strip()
+    match = _LINK_DIRECTIVE_RE.match(stripped) or _LINK_HANG_RE.match(stripped)
+    if not match:
+        return None
+    target = match.group(1).strip()
+    if not target or not has_meaningful_name(target):
+        return None
+    return target
+
+
 def parse_segment(raw_segment: str, anchor: date) -> ParsedSchedule:
     segment = raw_segment.strip()
     normalized_segment = normalize_time_notation(segment)
@@ -361,7 +379,17 @@ def parse_schedule_with_feedback(
     if not text.strip():
         return [], RejectReason(code="empty", message="输入为空，请输入包含时间和事项的句子")
 
+    pending_link: str | None = None
     for raw_segment in split_sentences(text):
+        link_target = extract_link_directive(raw_segment)
+        if link_target:
+            if schedules:
+                if not schedules[-1].linkTask:
+                    schedules[-1].linkTask = link_target
+            elif not pending_link:
+                pending_link = link_target
+            continue
+
         location = extract_detached_location(raw_segment)
         if location:
             if schedules:
@@ -382,6 +410,8 @@ def parse_schedule_with_feedback(
             continue
         schedules.append(parse_segment(raw_segment, anchor))
 
+    if pending_link and schedules and not schedules[0].linkTask:
+        schedules[0].linkTask = pending_link
     rejected = rejections[0] if not schedules and rejections else None
     return schedules, rejected
 

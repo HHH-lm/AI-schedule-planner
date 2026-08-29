@@ -16,6 +16,7 @@ class ParsedSchedule(BaseModel):
     end: int
     category: Category = "life"
     location: str | None = None
+    linkTask: str | None = None
 
 
 class RejectReason(BaseModel):

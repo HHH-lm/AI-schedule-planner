@@ -32,7 +32,7 @@ from app.services.nlp import parse_schedule_with_feedback
 from app.services.planner_v2 import _build_understanding_prompt, plan_v2_schedule
 
 
-FIELDS = ("name", "date", "start", "end", "category", "location")
+FIELDS = ("name", "date", "start", "end", "category", "location", "linkTask")
 _NORMALIZE_RE = re.compile(r"[\s，。；;、,.!！?？:：]+")
 
 
@@ -49,10 +49,16 @@ def schedule_matches(actual: dict[str, Any], expected: dict[str, Any]) -> dict[s
     end_ok = actual.get("end") == expected["end"]
     category_ok = actual.get("category") == expected["category"]
     location_ok = normalize_text(actual.get("location")) == normalize_text(expected.get("location"))
+    link_task_ok = normalize_text(actual.get("linkTask")) == normalize_text(
+        expected.get("linkTask")
+    )
     return {
-        "full": name_ok and date_ok and start_ok and end_ok and category_ok and location_ok,
+        "full": name_ok and date_ok and start_ok and end_ok and category_ok and location_ok
+        and link_task_ok,
         "time": date_ok and start_ok and end_ok,
-        "correct": sum((name_ok, date_ok, start_ok, end_ok, category_ok, location_ok)),
+        "correct": sum(
+            (name_ok, date_ok, start_ok, end_ok, category_ok, location_ok, link_task_ok)
+        ),
     }
 
 
@@ -165,7 +171,7 @@ def score_case(
         "full_exact": full_exact,
         "time_exact": time_exact,
         "correct_fields": sum(item["correct"] for item in mapping),
-        "field_total": 6 * len(expected_schedules),
+        "field_total": 7 * len(expected_schedules),
         "schedule_full_count": sum(1 for item in mapping if item["full"]),
         "schedule_time_count": sum(1 for item in mapping if item["time"]),
         "expected_count": len(expected_schedules),

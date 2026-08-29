@@ -112,6 +112,7 @@ export interface ParsedSchedule {
   end: number;
   category: Category;
   location?: string;
+  linkTask?: string | null;
 }
 
 export interface WeekStat {

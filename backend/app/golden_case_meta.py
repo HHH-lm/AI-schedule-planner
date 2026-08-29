@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 
-GOLDEN_SET_VERSION = "0.4.0"
+GOLDEN_SET_VERSION = "0.5.0"
 
 
 GOLDEN_CASE_META: dict[str, dict[str, str]] = {
@@ -112,6 +112,16 @@ GOLDEN_CASE_META: dict[str, dict[str, str]] = {
         "source": "fault_sample",
         "added_in": "0.4.0",
         "rationale": "与 qa13 组成求职类目多措辞回归，防止类目判定在措辞间漂移。",
+    },
+    "qa15": {
+        "name": "凌晨记录并关联任务",
+        "description": "「截止日期修改，关联 AI schedule」中「关联」子句是关联指令："
+        "生成 name=截止日期修改、linkTask=AI schedule 的单个 00:00-00:25 块，"
+        "严禁把指令子句拼入 name 或当作独立事项。",
+        "source": "fault_sample",
+        "added_in": "0.5.0",
+        "rationale": "用户真实缺陷回归：关联指令曾被当作独立事项经同时段合并污染名字"
+        "（「截止日期修改 + 关联 AI schedule」）；锁定 linkTask 字段契约与凌晨 0 点边界。",
     },
     "b01": {
         "name": "空输入拒答",

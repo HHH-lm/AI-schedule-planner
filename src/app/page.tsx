@@ -58,6 +58,10 @@ import {
   uid,
 } from "@/lib/storage";
 import { apiPost } from "@/lib/api";
+import {
+  extractLinkDirectives,
+  resolveLinkTargetLocal,
+} from "@/lib/linkDirective";
 import { DEFAULT_TASK_PRIORITY, normalizeQuadrant } from "@/lib/priorities";
 import {
   getSession,
@@ -537,17 +541,63 @@ export default function Home() {
     }
     const currentTasks = current.tasks ?? [];
     let deadlineStatus: DeadlineApplyStatus = "none";
+    const linkedTaskNames: string[] = [];
     if (accepted.length > 0) {
+      // 关联指令处理（两道防线）：显式 linkTask 字段由后端从「关联 X」指令解析而来；
+      // 名字守卫负责 LLM 偶发不服从提示词、把指令子句拼进块名的情况。
+      // 守卫仅本地解析且解析不到就保留原名，避免误伤「关联分析」类真实事项名。
+      const taskCandidates = currentTasks.map((t) => ({
+        id: t.id,
+        name: t.name,
+      }));
+      const directiveBound = new Map<number, string>();
+      const directiveMatchNames = new Map<number, string>();
+      const cleanedNames = new Map<number, string>();
+      accepted.forEach((block, index) => {
+        const explicit = block.linkTask?.trim();
+        if (explicit) {
+          const localTaskId = resolveLinkTargetLocal(explicit, taskCandidates);
+          if (localTaskId) {
+            directiveBound.set(index, localTaskId);
+          } else {
+            // 本地解析不到：用目标名（而非块名）做语义匹配兜底
+            directiveMatchNames.set(index, explicit);
+          }
+          return;
+        }
+        const extraction = extractLinkDirectives(block.name);
+        for (const target of extraction.targets) {
+          const localTaskId = resolveLinkTargetLocal(target, taskCandidates);
+          if (localTaskId) {
+            directiveBound.set(index, localTaskId);
+            cleanedNames.set(index, extraction.cleanedName);
+            return;
+          }
+        }
+      });
+      if (cleanedNames.size > 0) {
+        accepted = accepted.map((block, index) =>
+          cleanedNames.has(index)
+            ? { ...block, name: cleanedNames.get(index) ?? block.name }
+            : block
+        );
+      }
       const matchedTaskIds = new Map<string, string | undefined>();
-      // 批量 AI 匹配，逐个调用
-      for (const block of accepted) {
+      for (const [index, block] of accepted.entries()) {
+        const boundTaskId = directiveBound.get(index);
+        if (boundTaskId) {
+          matchedTaskIds.set(block.name, boundTaskId);
+          const boundName = currentTasks.find((t) => t.id === boundTaskId)?.name;
+          if (boundName) linkedTaskNames.push(boundName);
+          continue;
+        }
         try {
           const result = await apiPost<{
             source: string;
             taskId: string | null;
           }>("/match-task", {
-            name: block.name,
-            tasks: currentTasks.map((t) => ({ id: t.id, name: t.name })),
+            name: directiveMatchNames.get(index) ?? block.name,
+            tasks: taskCandidates,
             provider: current.settings?.aiProvider ?? "auto",
           });
           matchedTaskIds.set(block.name, result.taskId ?? undefined);
@@ -671,7 +721,11 @@ export default function Home() {
       if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
       focusTimerRef.current = setTimeout(() => setFocusTarget(null), 2000);
     }
-    return { added: accepted.length, deadlineStatus };
+    return {
+      added: accepted.length,
+      deadlineStatus,
+      linkedTaskNames,
+    };
   },
   [commitData]
   );

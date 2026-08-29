@@ -13,6 +13,8 @@ export type DeadlineApplyStatus = "applied" | "pending-task" | "none";
 export interface AddParsedResult {
   added: number;
   deadlineStatus: DeadlineApplyStatus;
+  /** 经「关联 X」指令显式绑定到的任务名（用于摘要反馈） */
+  linkedTaskNames?: string[];
 }
 
 interface Props {
@@ -103,6 +105,12 @@ export default function QuickAdd({ onAddParsed, aiProvider }: Props) {
       } else if (applyResult.deadlineStatus === "pending-task") {
         summaryWithDeadline = `${summary}；未匹配到任务，请先选择任务以保存截止日期`;
         tone = "warn";
+      }
+      const linkedTaskNames = applyResult.linkedTaskNames ?? [];
+      if (linkedTaskNames.length > 0) {
+        summaryWithDeadline = `${summaryWithDeadline}，已关联任务 ${[
+          ...new Set(linkedTaskNames),
+        ].join("、")}`;
       }
       const providerLabel =
         result.source === "local" ? "本地规则" : result.source.toUpperCase();

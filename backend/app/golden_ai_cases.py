@@ -1,8 +1,8 @@
-"""AI 解析与规划 golden set：四类共 37 条，用于质量评测与 prompt/模型回归防退化。
+"""AI 解析与规划 golden set：四类共 38 条，用于质量评测与 prompt/模型回归防退化。
 
-版本：GOLDEN_SET_VERSION=0.4.0（定义见 `app.golden_case_meta`）。
+版本：GOLDEN_SET_VERSION=0.5.0（定义见 `app.golden_case_meta`）。
 分类：
-- quickadd: 14 条自然语言 QuickAdd 解析（含跨天与求职类目）
+- quickadd: 15 条自然语言 QuickAdd 解析（含跨天、求职类目与「关联 X」指令）
 - planning: 10 条结构化时间规划
 - boundary: 6 条边界与异常输入（含 24:00/1440 边界）
 - constraint_memory: 7 条约束与记忆偏好影响排期
@@ -154,6 +154,23 @@ GOLDEN_AI_CASES: list[dict[str, Any]] = [
         "today": GOLDEN_ANCHOR_DATE,
         "expect_schedules": [
             {"name": "面试", "date": "2026-08-19", "start": 840, "end": 900, "category": "work", "location": None}
+        ],
+    },
+    {
+        "id": "qa15",
+        "kind": "quickadd",
+        "text": "帮我记录一下：刚刚凌晨 12:00 到 12:25，截止日期修改，关联 AI schedule。",
+        "today": GOLDEN_ANCHOR_DATE,
+        "expect_schedules": [
+            {
+                "name": "截止日期修改",
+                "date": "2026-08-16",
+                "start": 0,
+                "end": 25,
+                "category": "work",
+                "location": None,
+                "linkTask": "AI schedule",
+            }
         ],
     },
     {

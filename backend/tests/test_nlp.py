@@ -4,6 +4,7 @@ from datetime import date
 
 from app.services.nlp import (
     detect_reject_reason,
+    extract_link_directive,
     parse_schedule_text,
     parse_schedule_with_feedback,
     split_sentences,
@@ -165,3 +166,67 @@ def test_weekday_from_current_time_forward() -> None:
 
 def test_detect_reject_reason_returns_none_for_valid_input() -> None:
     assert detect_reject_reason("周二下午2点到5点写代码", ANCHOR) is None
+
+
+def test_extract_link_directive_variants() -> None:
+    assert extract_link_directive("关联 AI schedule") == "AI schedule"
+    assert extract_link_directive("关联到AI日程") == "AI日程"
+    assert extract_link_directive("关联任务：AI schedule") == "AI schedule"
+    assert extract_link_directive("关联项目 AI schedule") == "AI schedule"
+    assert extract_link_directive("挂到 AI schedule 下") == "AI schedule"
+    assert extract_link_directive("关联") is None
+    assert extract_link_directive("关联。。。") is None
+    assert extract_link_directive("做关联分析") is None
+    assert extract_link_directive("读书") is None
+
+
+def test_parse_link_directive_segment_attaches_to_schedule() -> None:
+    parsed = parse_schedule_text("凌晨12:00到12:25健身，关联 AI schedule", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].name == "健身"
+    assert parsed[0].start == 0
+    assert parsed[0].end == 25
+    assert parsed[0].linkTask == "AI schedule"
+
+
+def test_parse_link_directive_not_added_as_block() -> None:
+    parsed, rejected = parse_schedule_with_feedback(
+        "凌晨12:00到12:25健身，关联 AI schedule", ANCHOR
+    )
+    assert rejected is None
+    assert len(parsed) == 1
+    assert parsed[0].name == "健身"
+    assert all(schedule.start != 9 * 60 for schedule in parsed)
+
+
+def test_parse_link_directive_before_activity() -> None:
+    parsed = parse_schedule_text("关联 AI schedule，明天下午3点到4点做审查", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].name == "做审查"
+    assert parsed[0].date == "2026-08-04"
+    assert parsed[0].linkTask == "AI schedule"
+
+
+def test_parse_inline_correlation_analysis_not_directive() -> None:
+    parsed = parse_schedule_text("明天下午3点到4点做关联分析", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].name == "做关联分析"
+    assert parsed[0].linkTask is None
+
+
+def test_parse_link_directive_only_input_yields_no_schedule() -> None:
+    parsed, rejected = parse_schedule_with_feedback("关联 AI schedule", ANCHOR)
+    assert parsed == []
+    assert rejected is None
+
+
+def test_parse_user_report_input_no_polluted_block() -> None:
+    parsed, _ = parse_schedule_with_feedback(
+        "帮我记录一下：刚刚凌晨 12:00 到 12:25，截止日期修改，关联 AI schedule。",
+        ANCHOR,
+    )
+    linked = [s for s in parsed if s.linkTask]
+    assert len(linked) == 1
+    assert linked[0].linkTask == "AI schedule"
+    assert all("+ 关联" not in s.name for s in parsed)
+    assert all(s.name != "关联 AI schedule" for s in parsed)
