@@ -89,6 +89,7 @@ import MemoryModal from "@/components/MemoryModal";
 import AccountModal from "@/components/AccountModal";
 import { buildObsidianUrl } from "@/lib/obsidian";
 import {
+  syncBlockDeletionToTasks,
   syncBlockDoneToSubtask,
   syncBlockToTask,
   syncSubtaskRenameToBlocks,
@@ -406,25 +407,35 @@ export default function Home() {
   }, [commitData]);
 
   const deleteBlock = useCallback((id: string) => {
-    commitData((prev) =>
-      prev
-        ? {
-            ...prev,
-            timeBlocks: prev.timeBlocks.filter((block) => block.id !== id),
-          }
-        : prev
-    );
+    commitData((prev) => {
+      if (!prev) return prev;
+      const target = prev.timeBlocks.find((block) => block.id === id);
+      const remaining = prev.timeBlocks.filter((block) => block.id !== id);
+      return {
+        ...prev,
+        timeBlocks: remaining,
+        tasks: syncBlockDeletionToTasks(
+          prev.tasks,
+          remaining,
+          target ? [target] : []
+        ),
+      };
+    });
   }, [commitData]);
 
   const deleteBlocks = useCallback((ids: string[]) => {
-    commitData((prev) =>
-      prev
-        ? {
-            ...prev,
-            timeBlocks: prev.timeBlocks.filter((block) => !ids.includes(block.id)),
-          }
-        : prev
-    );
+    commitData((prev) => {
+      if (!prev) return prev;
+      const deleted = prev.timeBlocks.filter((block) => ids.includes(block.id));
+      const remaining = prev.timeBlocks.filter(
+        (block) => !ids.includes(block.id)
+      );
+      return {
+        ...prev,
+        timeBlocks: remaining,
+        tasks: syncBlockDeletionToTasks(prev.tasks, remaining, deleted),
+      };
+    });
   }, [commitData]);
 
   const saveBlock = useCallback(

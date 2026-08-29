@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  syncBlockDeletionToTasks,
   syncBlockDoneToSubtask,
   syncBlockToTask,
   syncSubtaskRenameToBlocks,
@@ -148,6 +149,156 @@ describe("syncBlockDoneToSubtask", () => {
     expect(result.tasks[0].subtasks[0].done).toBe(false);
     expect(result.tasks[0].subtasks).toHaveLength(1);
     expect(result.subtaskId).toBeUndefined();
+  });
+});
+
+describe("syncBlockDeletionToTasks", () => {
+  it("删除唯一引用某子任务的时间块时移除该子任务，任务保留", () => {
+    const task = makeTask("t1", "做视频", [
+      makeSubtask("s1", "写脚本"),
+      makeSubtask("s2", "剪辑素材"),
+    ]);
+    const blocks = [
+      makeBlock("b1", "写脚本", "t1", "s1"),
+      makeBlock("b2", "剪辑素材", "t1", "s2"),
+    ];
+
+    const result = syncBlockDeletionToTasks(
+      [task],
+      [blocks[1]],
+      [blocks[0]]
+    );
+
+    expect(result[0]).toMatchObject({ id: "t1", name: "做视频" });
+    expect(result[0].subtasks.map((sub) => sub.id)).toEqual(["s2"]);
+  });
+
+  it("多个时间块共享同一子任务时，删除其一保留子任务", () => {
+    const task = makeTask("t1", "做视频", [
+      makeSubtask("s1", "写脚本"),
+    ]);
+    const blocks = [
+      makeBlock("b1", "写脚本", "t1", "s1"),
+      makeBlock("b2", "写脚本", "t1", "s1"),
+    ];
+
+    const result = syncBlockDeletionToTasks(
+      [task],
+      [blocks[1]],
+      [blocks[0]]
+    );
+
+    expect(result[0].subtasks).toHaveLength(1);
+    expect(result[0].subtasks[0].id).toBe("s1");
+  });
+
+  it("被删时间块没有 subtaskId 时任务保持不变", () => {
+    const task = makeTask("t1", "做视频", [
+      makeSubtask("s1", "写脚本"),
+    ]);
+    const block = makeBlock("b1", "写脚本", "t1");
+
+    const result = syncBlockDeletionToTasks([task], [], [block]);
+
+    expect(result).toEqual([task]);
+  });
+
+  it("批量删除多个时间块时只清理无剩余引用的子任务", () => {
+    const task = makeTask("t1", "做视频", [
+      makeSubtask("s1", "写脚本"),
+      makeSubtask("s2", "剪辑素材"),
+    ]);
+    const blocks = [
+      makeBlock("b1", "写脚本", "t1", "s1"),
+      makeBlock("b2", "剪辑素材", "t1", "s2"),
+      makeBlock("b3", "剪辑素材", "t1", "s2"),
+    ];
+
+    const result = syncBlockDeletionToTasks(
+      [task],
+      [blocks[2]],
+      [blocks[0], blocks[1]]
+    );
+
+    expect(result[0].subtasks.map((sub) => sub.id)).toEqual(["s2"]);
+  });
+
+  it("删除未关联任何子任务的块时任务保持不变", () => {
+    const task = makeTask("t1", "做视频", [
+      makeSubtask("s1", "写脚本"),
+    ]);
+    const block = makeBlock("b1", "剪辑素材");
+
+    const result = syncBlockDeletionToTasks([task], [], [block]);
+
+    expect(result).toEqual([task]);
+  });
+
+  it("一个任务被清空移除时其他任务不受影响", () => {
+    const taskA = makeTask("t1", "做视频", [
+      makeSubtask("s1", "写脚本"),
+    ]);
+    const taskB = makeTask("t2", "读书", [
+      makeSubtask("s2", "读第一章"),
+    ]);
+    const blocks = [
+      makeBlock("b1", "写脚本", "t1", "s1"),
+      makeBlock("b2", "读第一章", "t2", "s2"),
+    ];
+
+    const result = syncBlockDeletionToTasks(
+      [taskA, taskB],
+      [blocks[1]],
+      [blocks[0]]
+    );
+
+    expect(result.map((task) => task.id)).toEqual(["t2"]);
+    expect(result[0].subtasks).toHaveLength(1);
+    expect(result[0].subtasks[0].id).toBe("s2");
+  });
+
+  it("任务下最后一个子任务被清理时整个任务一并移除", () => {
+    const task = makeTask("t1", "做视频", [
+      makeSubtask("s1", "写脚本"),
+    ]);
+    const block = makeBlock("b1", "写脚本", "t1", "s1");
+
+    const result = syncBlockDeletionToTasks([task], [], [block]);
+
+    expect(result).toEqual([]);
+  });
+
+  it("本次未发生子任务移除时已有任务不被误删", () => {
+    const emptyTask = makeTask("t1", "做视频", []);
+    const block = makeBlock("b1", "写脚本", "t1", "s-missing");
+
+    const result = syncBlockDeletionToTasks([emptyTask], [], [block]);
+
+    expect(result).toEqual([emptyTask]);
+  });
+
+  it("批量删除时一个任务被清空移除、另一个任务保留", () => {
+    const taskA = makeTask("t1", "做视频", [
+      makeSubtask("s1", "写脚本"),
+    ]);
+    const taskB = makeTask("t2", "读书", [
+      makeSubtask("s2", "读第一章"),
+      makeSubtask("s3", "读第二章"),
+    ]);
+    const blocks = [
+      makeBlock("b1", "写脚本", "t1", "s1"),
+      makeBlock("b2", "读第一章", "t2", "s2"),
+      makeBlock("b3", "读第二章", "t2", "s3"),
+    ];
+
+    const result = syncBlockDeletionToTasks(
+      [taskA, taskB],
+      [blocks[2]],
+      [blocks[0], blocks[1]]
+    );
+
+    expect(result.map((task) => task.id)).toEqual(["t2"]);
+    expect(result[0].subtasks.map((sub) => sub.id)).toEqual(["s3"]);
   });
 });
 

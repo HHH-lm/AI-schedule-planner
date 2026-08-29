@@ -155,6 +155,51 @@ export function syncBlockToTask(
 }
 
 /**
+ * Removes subtasks that become orphaned when their owning time blocks are
+ * deleted. Only subtaskIds referenced by the deleted blocks are considered;
+ * a subtask is removed only when no remaining block still references it, so
+ * blocks sharing one subtask (same-name reuse) keep it alive. A task whose
+ * subtasks are emptied by this removal is dropped entirely; tasks that were
+ * not touched (legacy blocks without subtaskId, pre-existing empty tasks)
+ * are never removed.
+ */
+export function syncBlockDeletionToTasks(
+  tasks: Task[],
+  remainingBlocks: TimeBlock[],
+  deletedBlocks: TimeBlock[]
+): Task[] {
+  const orphanCandidates = new Set<string>();
+  for (const block of deletedBlocks) {
+    if (block.subtaskId) orphanCandidates.add(block.subtaskId);
+  }
+  if (orphanCandidates.size === 0) return tasks;
+  const stillReferenced = new Set<string>();
+  for (const block of remainingBlocks) {
+    if (block.subtaskId) stillReferenced.add(block.subtaskId);
+  }
+
+  const toRemove = new Set<string>();
+  for (const subtaskId of orphanCandidates) {
+    if (!stillReferenced.has(subtaskId)) toRemove.add(subtaskId);
+  }
+  if (toRemove.size === 0) return tasks;
+
+  let changed = false;
+  const nextTasks: Task[] = [];
+  for (const task of tasks) {
+    const keep = task.subtasks.filter((sub) => !toRemove.has(sub.id));
+    if (keep.length === task.subtasks.length) {
+      nextTasks.push(task);
+      continue;
+    }
+    changed = true;
+    if (keep.length === 0) continue;
+    nextTasks.push({ ...task, subtasks: keep });
+  }
+  return changed ? nextTasks : tasks;
+}
+
+/**
  * Mirrors subtask renames from the task modal onto scheduled time blocks,
  * including legacy blocks that only share the old name with the subtask.
  */
