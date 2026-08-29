@@ -19,6 +19,7 @@ SESSION.md
 docs/interview-ai-coding-answers.md
 agentops-health-check-*.md
 .project-to-act/
+.zcode/
 
 
 .env*
