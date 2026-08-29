@@ -15,13 +15,21 @@ import {
   MINUTES_PER_DAY,
 } from "@/lib/blockTime";
 import { buildObsidianUrl, parseObsidianUrl } from "@/lib/obsidian";
+import {
+  formatDeadlineLabel,
+  isDeadlineOverdue,
+} from "@/lib/deadline";
 
 interface Props {
   block: TimeBlock | null;
   defaultDate: string;
   defaultStart?: number;
   defaultObsidianVault?: string;
-  tasks: Array<{ id: string; name: string }>;
+  tasks: Array<{
+    id: string;
+    name: string;
+    subtasks: Array<{ id: string; name: string; deadline?: string }>;
+  }>;
   onSave: (
     draft: Partial<TimeBlock> & { syncTask?: boolean },
     id?: string
@@ -311,6 +319,27 @@ export default function BlockModal({
                 </option>
               ))}
             </select>
+            {(() => {
+              // 截止按子任务粒度展示：当前块已关联子任务且带截止时提示
+              const linkedSub = tasks
+                .find((task) => task.id === taskId)
+                ?.subtasks.find(
+                  (sub) => sub.id === (block?.subtaskId ?? undefined)
+                );
+              if (!linkedSub?.deadline) return null;
+              const overdue = isDeadlineOverdue(linkedSub.deadline);
+              return (
+                <p
+                  className={`mt-1 text-[11px] leading-snug ${
+                    overdue ? "text-[#b3261e]" : "text-ink-muted-48"
+                  }`}
+                >
+                  {overdue ? "⚠ " : ""}子任务「{linkedSub.name}」截止：
+                  {formatDeadlineLabel(linkedSub.deadline)}
+                  {overdue ? "（已逾期）" : ""}
+                </p>
+              );
+            })()}
           </div>
 
           <div>

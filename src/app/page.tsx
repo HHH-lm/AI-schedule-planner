@@ -72,10 +72,14 @@ import { makeSampleData } from "@/lib/sample";
 // import { buildWeekICS } from "@/lib/ics"; // 苹果日历导出暂未启用
 import WeekTimeline from "@/components/WeekTimeline";
 import TodayView from "@/components/TodayView";
-import QuickAdd from "@/components/QuickAdd";
+import QuickAdd, {
+  type AddParsedResult,
+  type DeadlineApplyStatus,
+} from "@/components/QuickAdd";
 import BlockModal from "@/components/BlockModal";
 import TaskBoard from "@/components/TaskBoard";
-import TaskModal from "@/components/TaskModal";
+import TaskModal, { type TaskModalPreset } from "@/components/TaskModal";
+import TaskLinkModal from "@/components/TaskLinkModal";
 import StatsView from "@/components/StatsView";
 import SettingsModal from "@/components/SettingsModal";
 import AuthModal from "@/components/AuthModal";
@@ -161,6 +165,16 @@ export default function Home() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
+  // 截止日期关联流程：QuickAdd 未匹配任务时的引导弹窗 + 新建任务预填
+  const [deadlineLink, setDeadlineLink] = useState<{
+    blockName: string;
+    deadline: string;
+    blockIds: string[];
+  } | null>(null);
+  const [taskPreset, setTaskPreset] = useState<{
+    preset: TaskModalPreset;
+    link?: { blockName: string; blockIds: string[] };
+  } | null>(null);
   const [focusTarget, setFocusTarget] = useState<{
     date: string;
     start: number;
@@ -484,9 +498,12 @@ export default function Home() {
   );
 
   const addParsedBlocks = useCallback(
-    async (parsed: ParsedSchedule[]): Promise<number> => {
+    async (
+      parsed: ParsedSchedule[],
+      deadline?: string
+    ): Promise<AddParsedResult> => {
     const current = dataRef.current;
-    if (!current) return 0;
+    if (!current) return { added: 0, deadlineStatus: "none" };
     let accepted = parsed;
     let blocked: ParsedSchedule[] = [];
     try {
@@ -507,9 +524,10 @@ export default function Home() {
     } catch (error) {
       throw error instanceof Error ? error : new Error("冲突检测失败");
     }
+    const currentTasks = current.tasks ?? [];
+    let deadlineStatus: DeadlineApplyStatus = "none";
     if (accepted.length > 0) {
       const matchedTaskIds = new Map<string, string | undefined>();
-      const currentTasks = current.tasks ?? [];
       // 批量 AI 匹配，逐个调用
       for (const block of accepted) {
         try {
@@ -526,11 +544,46 @@ export default function Home() {
           matchedTaskIds.set(block.name, undefined);
         }
       }
+      // 截止日期填入目标：匹配到任务的第一个块，截止写到它的同名子任务上（不覆盖已有截止）
+      const matchedBlockIndex = deadline
+        ? accepted.findIndex((item) => Boolean(matchedTaskIds.get(item.name)))
+        : -1;
+      let deadlineTargetIndex = -1;
+      if (deadline && matchedBlockIndex >= 0) {
+        const targetTaskId = matchedTaskIds.get(
+          accepted[matchedBlockIndex].name
+        );
+        const targetTask = currentTasks.find((t) => t.id === targetTaskId);
+        const sameNameSub = targetTask?.subtasks.find(
+          (s) => s.name === accepted[matchedBlockIndex].name
+        );
+        // 同名子任务缺失或尚无截止日期时才填入
+        if (!sameNameSub || !sameNameSub.deadline) {
+          deadlineTargetIndex = matchedBlockIndex;
+        }
+      }
+      const hasAnyMatch = accepted.some((item) =>
+        Boolean(matchedTaskIds.get(item.name))
+      );
+      const newBlockIds = accepted.map(() => uid());
+      const unlinkedBlockIds = accepted
+        .map((item, index) =>
+          matchedTaskIds.get(item.name) ? null : newBlockIds[index]
+        )
+        .filter((value): value is string => Boolean(value));
+      deadlineStatus = deadline
+        ? deadlineTargetIndex >= 0
+          ? "applied"
+          : hasAnyMatch
+            ? "none"
+            : "pending-task"
+        : "none";
       commitData((prev) => {
         if (!prev) return prev;
         let tasks = prev.tasks;
-        const newBlocks = accepted.map<ParsedSchedule & TimeBlock>((item) => {
+        const newBlocks = accepted.map<ParsedSchedule & TimeBlock>((item, index) => {
           const itemTaskId = matchedTaskIds.get(item.name);
+          const isDeadlineTarget = index === deadlineTargetIndex;
           let itemSubtaskId: string | undefined;
           if (itemTaskId) {
             const taskIdx = tasks.findIndex((t) => t.id === itemTaskId);
@@ -539,8 +592,25 @@ export default function Home() {
               const existing = task.subtasks.find((s) => s.name === item.name);
               if (existing) {
                 itemSubtaskId = existing.id;
+                if (isDeadlineTarget && deadline && !existing.deadline) {
+                  tasks = tasks.map((t) =>
+                    t.id === itemTaskId
+                      ? {
+                          ...t,
+                          subtasks: t.subtasks.map((s) =>
+                            s.id === existing.id ? { ...s, deadline } : s
+                          ),
+                        }
+                      : t
+                  );
+                }
               } else {
-                const newSub = { id: uid(), name: item.name, done: false };
+                const newSub = {
+                  id: uid(),
+                  name: item.name,
+                  done: false,
+                  ...(isDeadlineTarget && deadline ? { deadline } : {}),
+                };
                 itemSubtaskId = newSub.id;
                 tasks = tasks.map((t) =>
                   t.id === itemTaskId
@@ -552,7 +622,7 @@ export default function Home() {
           }
           return {
             ...item,
-            id: uid(),
+            id: newBlockIds[index],
             taskId: itemTaskId,
             subtaskId: itemSubtaskId,
             done: false,
@@ -566,6 +636,14 @@ export default function Home() {
           timeBlocks: [...prev.timeBlocks, ...newBlocks],
         };
       });
+      // 含截止表述但未匹配到任务：引导用户选择/新建任务以保存截止日期
+      if (deadline && deadlineStatus === "pending-task" && unlinkedBlockIds.length > 0) {
+        setDeadlineLink({
+          blockName: accepted[0].name,
+          deadline,
+          blockIds: unlinkedBlockIds,
+        });
+      }
     }
     if (blocked.length > 0) {
       setConflicts(blocked);
@@ -582,7 +660,7 @@ export default function Home() {
       if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
       focusTimerRef.current = setTimeout(() => setFocusTarget(null), 2000);
     }
-    return accepted.length;
+    return { added: accepted.length, deadlineStatus };
   },
   [commitData]
   );
@@ -823,7 +901,13 @@ export default function Home() {
   const addTasks = useCallback(
     (
       seeds: Array<
-        { name: string; subtasks?: string[]; priority?: TaskQuadrant } | string
+        {
+          name: string;
+          subtasks?: string[];
+          priority?: TaskQuadrant;
+          /** 统一应用到该任务全部子任务的截止日期 */
+          subtaskDeadline?: string;
+        } | string
       >
     ) => {
       commitData((prev) =>
@@ -840,10 +924,13 @@ export default function Home() {
                     typeof seed === "string"
                       ? DEFAULT_TASK_PRIORITY
                       : normalizeQuadrant(seed.priority);
+                  const subtaskDeadline =
+                    typeof seed === "string" ? undefined : seed.subtaskDeadline;
                   const subtasks: Subtask[] = subtaskNames.map((subtask) => ({
                     id: uid(),
                     name: subtask,
                     done: false,
+                    deadline: subtaskDeadline,
                   }));
                   return {
                     id: uid(),
@@ -908,6 +995,96 @@ export default function Home() {
       return { ...prev, tasks: [...prev.tasks, task] };
     });
   }, [commitData]);
+
+  // QuickAdd 截止日期关联：选择已有任务 → 截止日期写入同名子任务并回链时间块
+  const handleDeadlineLinkPick = useCallback(
+    (taskId: string) => {
+      if (!deadlineLink) return;
+      const { blockName, deadline, blockIds } = deadlineLink;
+      commitData((prev) => {
+        if (!prev) return prev;
+        const target = prev.tasks.find((t) => t.id === taskId);
+        if (!target) return prev;
+        let tasks = prev.tasks;
+        const existingSub = target.subtasks.find((s) => s.name === blockName);
+        let subtaskId = existingSub?.id;
+        if (subtaskId) {
+          // 同名子任务已存在：无截止才填入，不覆盖
+          tasks = prev.tasks.map((t) =>
+            t.id === taskId
+              ? {
+                  ...t,
+                  subtasks: t.subtasks.map((s) =>
+                    s.id === subtaskId && !s.deadline ? { ...s, deadline } : s
+                  ),
+                }
+              : t
+          );
+        } else {
+          const newSub = { id: uid(), name: blockName, done: false, deadline };
+          subtaskId = newSub.id;
+          tasks = prev.tasks.map((t) =>
+            t.id === taskId ? { ...t, subtasks: [...t.subtasks, newSub] } : t
+          );
+        }
+        const idSet = new Set(blockIds);
+        const timeBlocks = prev.timeBlocks.map((b) =>
+          idSet.has(b.id) ? { ...b, taskId, subtaskId } : b
+        );
+        return { ...prev, tasks, timeBlocks };
+      });
+      setDeadlineLink(null);
+    },
+    [commitData, deadlineLink]
+  );
+
+  // QuickAdd 截止日期关联：新建任务（TaskModal 预填，保存后回链时间块）
+  const handleDeadlineLinkCreate = useCallback(() => {
+    if (!deadlineLink) return;
+    const { blockName, deadline, blockIds } = deadlineLink;
+    setTaskPreset({
+      preset: {
+        name: blockName,
+        subtasks: [{ name: blockName, deadline }],
+      },
+      link: { blockName, blockIds },
+    });
+    setDeadlineLink(null);
+    setEditingTask(null);
+    setTaskModalOpen(true);
+  }, [deadlineLink]);
+
+  // 预填模式下保存任务：创建任务并把本次生成的时间块关联到它
+  const handlePresetTaskSave = useCallback(
+    (draft: Partial<Task>) => {
+      const link = taskPreset?.link;
+      setTaskPreset(null);
+      if (!link) {
+        saveTask(draft);
+        return;
+      }
+      commitData((prev) => {
+        if (!prev) return prev;
+        const task: Task = {
+          id: uid(),
+          name: draft.name ?? "未命名任务",
+          date: draft.date ?? null,
+          status: draft.status ?? "todo",
+          subtasks: draft.subtasks ?? [],
+          priority: normalizeQuadrant(draft.priority),
+          pinned: false,
+        };
+        const linkedSub = task.subtasks.find((s) => s.name === link.blockName);
+        const subtaskId = linkedSub?.id ?? task.subtasks[0]?.id;
+        const idSet = new Set(link.blockIds);
+        const timeBlocks = prev.timeBlocks.map((b) =>
+          idSet.has(b.id) ? { ...b, taskId: task.id, subtaskId } : b
+        );
+        return { ...prev, tasks: [...prev.tasks, task], timeBlocks };
+      });
+    },
+    [commitData, saveTask, taskPreset]
+  );
 
   const reorderTask = useCallback(
     (fromTaskId: string, toTaskId: string, before: boolean) => {
@@ -1082,7 +1259,8 @@ export default function Home() {
               title: sub.name,
               duration: 60,
               priority: task.priority === "urgent-important" ? "high" : "auto",
-              deadline: task.date ?? undefined,
+              // 子任务真实截止优先，无则维持既有行为（用任务排期日期兜底）
+              deadline: sub.deadline ?? task.date ?? undefined,
               task_id: task.id,
               subtask_id: sub.id,
             }))
@@ -1438,6 +1616,18 @@ export default function Home() {
                 setEditingBlock(block);
                 setBlockModalOpen(true);
               }}
+              subtaskDeadlines={Object.fromEntries(
+                data.tasks.flatMap((task) =>
+                  task.subtasks.map((sub) => [
+                    sub.id,
+                    {
+                      taskName: task.name,
+                      subtaskName: sub.name,
+                      deadline: sub.deadline,
+                    },
+                  ])
+                )
+              )}
             />
           </div>
         )}
@@ -1590,7 +1780,15 @@ export default function Home() {
           defaultDate={newBlockTime?.date ?? todayKey()}
           defaultStart={newBlockTime?.start}
           defaultObsidianVault={data.settings?.obsidianVault}
-          tasks={data.tasks.map((task) => ({ id: task.id, name: task.name }))}
+          tasks={data.tasks.map((task) => ({
+            id: task.id,
+            name: task.name,
+            subtasks: task.subtasks.map((sub) => ({
+              id: sub.id,
+              name: sub.name,
+              deadline: sub.deadline,
+            })),
+          }))}
           onSave={saveBlock}
           onDelete={deleteBlock}
           onClose={() => {
@@ -1666,9 +1864,24 @@ export default function Home() {
         <TaskModal
           task={editingTask}
           defaultDate={todayKey()}
-          onSave={saveTask}
+          preset={taskPreset?.preset}
+          onSave={taskPreset ? handlePresetTaskSave : saveTask}
           onDelete={deleteTask}
-          onClose={() => setTaskModalOpen(false)}
+          onClose={() => {
+            setTaskPreset(null);
+            setTaskModalOpen(false);
+          }}
+        />
+      )}
+
+      {deadlineLink && (
+        <TaskLinkModal
+          blockName={deadlineLink.blockName}
+          deadline={deadlineLink.deadline}
+          tasks={data.tasks}
+          onPick={handleDeadlineLinkPick}
+          onCreate={handleDeadlineLinkCreate}
+          onClose={() => setDeadlineLink(null)}
         />
       )}
       {toastMessage && (

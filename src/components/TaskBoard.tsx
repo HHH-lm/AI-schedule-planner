@@ -26,6 +26,11 @@ import {
 } from "@/lib/blockTime";
 import { CATEGORIES } from "@/lib/categories";
 import { apiPost } from "@/lib/api";
+import {
+  formatDeadlineShort,
+  isDeadlineOverdue,
+  extractDeadline,
+} from "@/lib/deadline";
 import { normalizeQuadrant, QUADRANT_META } from "@/lib/priorities";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import RestoreWeeksModal from "@/components/RestoreWeeksModal";
@@ -54,7 +59,15 @@ interface Props {
   onMoveTask: (taskId: string, dateKey: string) => void;
   onEditTask: (task: Task) => void;
   onNewTask: () => void;
-  onAddTasks: (names: Array<{ name: string; subtasks?: string[] } | string>) => void;
+  onAddTasks: (
+    names: Array<
+      {
+        name: string;
+        subtasks?: string[];
+        subtaskDeadline?: string;
+      } | string
+    >
+  ) => void;
   onToggleSubtask: (taskId: string, subtaskId: string) => void;
   onAddSubtaskBlock: (taskId: string, subtaskId: string, subtaskName: string, dateKey: string) => void;
   onReorderTask: (fromTaskId: string, toTaskId: string, before: boolean) => void;
@@ -244,14 +257,20 @@ export default function TaskBoard({
         setFeedback("没有拆解出任务，请检查输入");
         return;
       }
+      const deadline = extractDeadline(plan);
       onAddTasks(
         result.tasks.map((task) => ({
           name: task.name,
           subtasks: task.subtasks,
+          ...(deadline ? { subtaskDeadline: deadline } : {}),
         }))
       );
       setMacroText("");
-      setFeedback(`已拆解出 ${result.tasks.length} 个任务`);
+      setFeedback(
+        deadline
+          ? `已拆解出 ${result.tasks.length} 个任务，截止日期 ${formatDeadlineShort(deadline)} 已填入子任务`
+          : `已拆解出 ${result.tasks.length} 个任务`
+      );
     } catch (error) {
       setFeedback(
         error instanceof Error ? error.message : "AI 拆解失败，请稍后重试"
@@ -831,15 +850,27 @@ export default function TaskBoard({
                             >
                               {sub.name}
                             </span>
-                              {matchedBlock &&
+                            {sub.deadline && (
+                              <span
+                                title={`截止日期 ${sub.deadline}`}
+                                className={`ml-auto shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium leading-none ${
+                                  isDeadlineOverdue(sub.deadline)
+                                    ? "bg-[rgba(190,40,60,0.08)] text-[#b3261e]"
+                                    : "bg-[rgba(0,102,204,0.08)] text-primary"
+                                }`}
+                              >
+                                截止 {formatDeadlineShort(sub.deadline)}
+                              </span>
+                            )}
+                            {matchedBlock &&
                                 matchedBlock.status === "scheduled" && (
-                                <span className="ml-auto shrink-0 text-[10px] text-ink-muted-48">
+                                <span className={`${sub.deadline ? "" : "ml-auto "}shrink-0 text-[10px] text-ink-muted-48`}>
                                   {matchedBlock.date.slice(5).replace("-", "/")}{" "}
                                   {minutesToHHMM(matchedBlock.start)}
                                 </span>
                               )}
                             {!matchedBlock && (
-                              <span className="ml-auto shrink-0 rounded-full bg-[rgba(201,110,18,0.1)] px-1.5 py-px text-[10px] text-[#9a5b12]">
+                              <span className={`${sub.deadline ? "" : "ml-auto "}shrink-0 rounded-full bg-[rgba(201,110,18,0.1)] px-1.5 py-px text-[10px] text-[#9a5b12]`}>
                                 未排期
                               </span>
                             )}

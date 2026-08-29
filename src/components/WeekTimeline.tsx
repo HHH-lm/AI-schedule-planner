@@ -14,6 +14,7 @@ import type { TimeBlock } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
 import { CATEGORIES } from "@/lib/categories";
 import { defaultRemindAtISO, minutesToHHMM } from "@/lib/date";
+import { formatDeadlineLabel } from "@/lib/deadline";
 import type { TimelineFocusTarget } from "@/lib/timeline";
 import {
   endDateKey,
@@ -84,6 +85,11 @@ interface Props {
   onAddAt: (date: string, start: number) => void;
   onOpenObsidian?: (block: TimeBlock) => void;
   onDeleteBlocks?: (ids: string[]) => void;
+  /** 截止日期按子任务粒度派生展示：subtaskId → 任务/子任务名与截止日期 */
+  subtaskDeadlines?: Record<
+    string,
+    { taskName: string; subtaskName: string; deadline?: string }
+  >;
 }
 
 export default function WeekTimeline({
@@ -102,6 +108,7 @@ export default function WeekTimeline({
   onAddAt,
   onOpenObsidian,
   onDeleteBlocks,
+  subtaskDeadlines,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -810,6 +817,16 @@ export default function WeekTimeline({
               };
               const segments = splitBlockByDays(display);
               const meta = CATEGORIES[block.category];
+              const linkedSub = block.subtaskId
+                ? subtaskDeadlines?.[block.subtaskId]
+                : undefined;
+              const chipTitle = linkedSub
+                ? `${block.name} · 所属任务：${linkedSub.taskName}／子任务：${linkedSub.subtaskName}${
+                    linkedSub.deadline
+                      ? `，截止 ${formatDeadlineLabel(linkedSub.deadline)}`
+                      : ""
+                  }`
+                : undefined;
               const dragging = drag?.blockId === block.id;
               const hasObsidian = Boolean(
                 block.obsidianVault || block.obsidianNote || obsidianVault
@@ -869,6 +886,7 @@ export default function WeekTimeline({
                 <div
                   key={`${block.id}:${segment.dateKey}`}
                   data-time-block
+                  title={chipTitle}
                   className={`time-block-card ${meta.bg} ${meta.border} ${
                     block.done ? "done" : ""
                   } ${

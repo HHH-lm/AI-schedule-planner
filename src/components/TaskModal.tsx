@@ -9,11 +9,23 @@ import {
   QUADRANT_META,
   QUADRANT_ORDER,
 } from "@/lib/priorities";
+import { isDeadlineOverdue } from "@/lib/deadline";
 import { uid } from "@/lib/storage";
+
+export interface TaskModalPresetSubtask {
+  name: string;
+  deadline?: string;
+}
+
+export interface TaskModalPreset {
+  name?: string;
+  subtasks?: TaskModalPresetSubtask[];
+}
 
 interface Props {
   task: Task | null;
   defaultDate: string;
+  preset?: TaskModalPreset;
   onSave: (draft: Partial<Task>, id?: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
@@ -22,14 +34,25 @@ interface Props {
 export default function TaskModal({
   task,
   defaultDate,
+  preset,
   onSave,
   onDelete,
   onClose,
 }: Props) {
-  const [name, setName] = useState(task?.name ?? "");
+  const [name, setName] = useState(task?.name ?? preset?.name ?? "");
   const [date, setDate] = useState(task?.date ?? "");
   const [status, setStatus] = useState(task?.status ?? "todo");
-  const [subtasks, setSubtasks] = useState<Subtask[]>(task?.subtasks ?? []);
+  const [subtasks, setSubtasks] = useState<Subtask[]>(
+    task?.subtasks ??
+      (preset?.subtasks?.length
+        ? preset.subtasks.map((sub) => ({
+            id: uid(),
+            name: sub.name,
+            done: false,
+            deadline: sub.deadline,
+          }))
+        : [])
+  );
   const [subtaskName, setSubtaskName] = useState("");
   const [priority, setPriority] = useState<TaskQuadrant>(
     task ? normalizeQuadrant(task.priority) : DEFAULT_TASK_PRIORITY
@@ -48,7 +71,10 @@ export default function TaskModal({
         name: name.trim() || "未命名任务",
         date: date || null,
         status,
-        subtasks,
+        subtasks: subtasks.map((sub) => ({
+          ...sub,
+          deadline: sub.deadline || undefined,
+        })),
         priority,
       },
       task?.id
@@ -113,9 +139,7 @@ export default function TaskModal({
                   setStatus((value) => (value === "done" ? "todo" : "done"))
                 }
                 className={`flex w-full items-center justify-between rounded-md border px-2.5 py-1.5 text-sm ${
-                  status === "done"
-                    ? "status-note-ok"
-                    : "btn-ghost w-full"
+                  status === "done" ? "status-note-ok" : "btn-ghost w-full"
                 }`}
               >
                 <span>{status === "done" ? "已完成" : "进行中"}</span>
@@ -161,7 +185,7 @@ export default function TaskModal({
           </div>
 
           <div>
-            <label className={labelClass}>子任务清单</label>
+            <label className={labelClass}>子任务清单（截止日期选填）</label>
             <div className="space-y-1.5">
               {subtasks.map((subtask) => (
                 <div
@@ -195,6 +219,25 @@ export default function TaskModal({
                         prev.map((item) =>
                           item.id === subtask.id
                             ? { ...item, name: event.target.value }
+                            : item
+                        )
+                      )
+                    }
+                  />
+                  <input
+                    type="date"
+                    title="截止日期（选填）"
+                    className={`w-[7.75rem] shrink-0 rounded-md border border-hairline bg-surface-pearl px-1.5 py-0.5 text-[11px] tabular-nums text-ink-muted-80 outline-none ${
+                      subtask.deadline && isDeadlineOverdue(subtask.deadline)
+                        ? "border-[rgba(190,40,60,0.35)] text-[#b3261e]"
+                        : ""
+                    }`}
+                    value={subtask.deadline ?? ""}
+                    onChange={(event) =>
+                      setSubtasks((prev) =>
+                        prev.map((item) =>
+                          item.id === subtask.id
+                            ? { ...item, deadline: event.target.value || undefined }
                             : item
                         )
                       )

@@ -14,6 +14,8 @@ export interface Subtask {
   id: string;
   name: string;
   done: boolean;
+  /** 截止日期 YYYY-MM-DD，选填；规划与展示均以子任务为粒度 */
+  deadline?: string;
 }
 
 export interface Task {

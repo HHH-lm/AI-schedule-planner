@@ -4,11 +4,22 @@ import { useState } from "react";
 import { CheckCircle2, Loader2, Sparkles } from "lucide-react";
 import type { AiProviderSetting, ParsedSchedule } from "@/lib/types";
 import { todayKey } from "@/lib/date";
+import { extractDeadline } from "@/lib/deadline";
 import { apiPost, API_TIMEOUT_MS } from "@/lib/api";
 import { logInfo, logWarn } from "@/lib/logger";
 
+export type DeadlineApplyStatus = "applied" | "pending-task" | "none";
+
+export interface AddParsedResult {
+  added: number;
+  deadlineStatus: DeadlineApplyStatus;
+}
+
 interface Props {
-  onAddParsed: (parsed: ParsedSchedule[]) => Promise<number>;
+  onAddParsed: (
+    parsed: ParsedSchedule[],
+    deadline?: string
+  ) => Promise<AddParsedResult>;
   aiProvider?: AiProviderSetting;
 }
 
@@ -64,12 +75,16 @@ export default function QuickAdd({ onAddParsed, aiProvider }: Props) {
         );
         return;
       }
-      const added = await onAddParsed(result.schedules);
+      const deadline = extractDeadline(input) ?? undefined;
+      const applyResult = await onAddParsed(result.schedules, deadline);
+      const added = applyResult.added;
       const skipped = result.schedules.length - added;
       logInfo("nlp_generated", {
         count: added,
         skipped,
         source: result.source,
+        deadlineExtracted: deadline ?? undefined,
+        deadlineStatus: applyResult.deadlineStatus,
       });
       const summary =
         added > 0
@@ -81,10 +96,21 @@ export default function QuickAdd({ onAddParsed, aiProvider }: Props) {
         showFeedback(summary, "warn");
         return;
       }
+      let summaryWithDeadline = summary;
+      let tone: "ok" | "warn" = "ok";
+      if (applyResult.deadlineStatus === "applied") {
+        summaryWithDeadline = `${summary}，截止日期已填入关联任务`;
+      } else if (applyResult.deadlineStatus === "pending-task") {
+        summaryWithDeadline = `${summary}；未匹配到任务，请先选择任务以保存截止日期`;
+        tone = "warn";
+      }
       const providerLabel =
         result.source === "local" ? "本地规则" : result.source.toUpperCase();
       showFeedback(
-        result.message ? `${result.message}，${summary}` : `${summary}（${providerLabel}）`
+        result.message
+          ? `${result.message}，${summaryWithDeadline}`
+          : `${summaryWithDeadline}（${providerLabel}）`,
+        tone
       );
     } catch (error) {
       logWarn("ai_parse_failed", {
