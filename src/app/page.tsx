@@ -35,12 +35,14 @@ import type {
   Task,
   TaskQuadrant,
   TimeBlock,
+  TimePreference,
   ViewMode,
 } from "@/lib/types";
 import {
   DEFAULT_PLANNING_WEIGHTS,
   normalizePlanningWeights,
 } from "@/lib/planningWeights";
+import { normalizeTimePreference } from "@/lib/timePreference";
 import {
   addDays,
   filterByDateWindow,
@@ -93,7 +95,6 @@ import MemoryModal from "@/components/MemoryModal";
 import AccountModal from "@/components/AccountModal";
 import { buildObsidianUrl } from "@/lib/obsidian";
 import {
-  syncBlockDeletionToTasks,
   syncBlockDoneToSubtask,
   syncBlockToTask,
   syncSubtaskRenameToBlocks,
@@ -411,35 +412,25 @@ export default function Home() {
   }, [commitData]);
 
   const deleteBlock = useCallback((id: string) => {
-    commitData((prev) => {
-      if (!prev) return prev;
-      const target = prev.timeBlocks.find((block) => block.id === id);
-      const remaining = prev.timeBlocks.filter((block) => block.id !== id);
-      return {
-        ...prev,
-        timeBlocks: remaining,
-        tasks: syncBlockDeletionToTasks(
-          prev.tasks,
-          remaining,
-          target ? [target] : []
-        ),
-      };
-    });
+    commitData((prev) =>
+      prev
+        ? {
+            ...prev,
+            timeBlocks: prev.timeBlocks.filter((block) => block.id !== id),
+          }
+        : prev
+    );
   }, [commitData]);
 
   const deleteBlocks = useCallback((ids: string[]) => {
-    commitData((prev) => {
-      if (!prev) return prev;
-      const deleted = prev.timeBlocks.filter((block) => ids.includes(block.id));
-      const remaining = prev.timeBlocks.filter(
-        (block) => !ids.includes(block.id)
-      );
-      return {
-        ...prev,
-        timeBlocks: remaining,
-        tasks: syncBlockDeletionToTasks(prev.tasks, remaining, deleted),
-      };
-    });
+    commitData((prev) =>
+      prev
+        ? {
+            ...prev,
+            timeBlocks: prev.timeBlocks.filter((block) => !ids.includes(block.id)),
+          }
+        : prev
+    );
   }, [commitData]);
 
   const saveBlock = useCallback(
@@ -882,6 +873,7 @@ export default function Home() {
       planningWeights: PlanningWeights;
       planningStyle?: PlanningStyleId;
       planningFocus?: PlanningDimensionKey[];
+      timePreference?: TimePreference;
     }) => {
       commitData((prev) =>
         prev
@@ -895,6 +887,7 @@ export default function Home() {
                 planningWeights: settings.planningWeights,
                 planningStyle: settings.planningStyle,
                 planningFocus: settings.planningFocus,
+                timePreference: settings.timePreference,
               },
             }
           : prev
@@ -1324,8 +1317,11 @@ export default function Home() {
               title: sub.name,
               duration: 60,
               priority: task.priority === "urgent-important" ? "high" : "auto",
-              // 子任务真实截止优先，无则维持既有行为（用任务排期日期兜底）
-              deadline: sub.deadline ?? task.date ?? undefined,
+              // 截止日期为硬约束：仅用真实截止，或排期日期落在规划范围内时兜底，
+              // 避免伪造的过去日期把任务所有槽滤光
+              deadline:
+                sub.deadline ??
+                (task.date && task.date >= rangeStart ? task.date : undefined),
               task_id: task.id,
               subtask_id: sub.id,
             }))
@@ -1368,6 +1364,9 @@ export default function Home() {
         planning_range: { start: rangeStart, end: rangeEnd },
         weights: normalizePlanningWeights(
           current.settings?.planningWeights ?? DEFAULT_PLANNING_WEIGHTS
+        ),
+        time_preference: normalizeTimePreference(
+          current.settings?.timePreference
         ),
         provider: current.settings?.aiProvider ?? "auto",
       });
@@ -1872,6 +1871,7 @@ export default function Home() {
           }
           planningStyle={data.settings?.planningStyle}
           planningFocus={data.settings?.planningFocus}
+          timePreference={data.settings?.timePreference}
           onSave={saveSettings}
           onClose={() => setSettingsOpen(false)}
           onOpenMemory={() => {
