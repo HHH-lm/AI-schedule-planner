@@ -80,6 +80,7 @@ export type PlanningDimensionKey = keyof PlanningWeights;
 export type PlanningStyleId =
   | "balanced"
   | "focus"
+  | "deadline"
   | "stability"
   | "workload"
   | "custom";

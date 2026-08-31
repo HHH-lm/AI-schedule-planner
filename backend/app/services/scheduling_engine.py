@@ -537,16 +537,30 @@ def score_time_availability(
     return 0.1
 
 
-def score_priority(task: PlanV2Task, priority: str) -> float:
-    """任务优先级得分 (0.0-1.0)
+def score_priority(slot: FreeSlot, task: PlanV2Task, priority: str) -> float:
+    """任务优先级 × 时段匹配度 (0.0-1.0)
 
-    高优先级任务得分更高，表示需要优先安排到好时段。
+    高优先级任务在黄金时段（8-12 点）得分更高，低优先级任务在边缘时段得分相对更高。
+    这样 priority 权重不再是死重，切换 "截止优先" 风格时会把高优先级任务推向前午。
     """
-    return {
+    hour = _slot_hour(slot)
+    # 黄金时段系数：8-12 最佳，12-14 次之，14-18 中等，18-22 较低，其他最低
+    if 8 <= hour < 12:
+        slot_factor = 1.0
+    elif 12 <= hour < 14:
+        slot_factor = 0.7
+    elif 14 <= hour < 18:
+        slot_factor = 0.6
+    elif 18 <= hour < 22:
+        slot_factor = 0.4
+    else:
+        slot_factor = 0.2
+    base = {
         "high": 0.9,
         "medium": 0.5,
         "low": 0.2,
     }.get(priority, 0.5)
+    return base * slot_factor
 
 
 def score_conflict_risk(
@@ -661,7 +675,7 @@ class SlotScorer:
             t = 1.0 if period == pref else 0.15
         else:
             t = score_time_availability(slot, self.time_preference)
-        p = score_priority(task, priority)
+        p = score_priority(slot, task, priority)
         c = score_conflict_risk(slot, self.existing_schedule)
         w = score_workload_penalty(slot, self.existing_schedule, self.already_assigned)
 

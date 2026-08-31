@@ -108,6 +108,7 @@ describe("个性化规划权重", () => {
     expect(PLANNING_STYLE_PRESETS.map((preset) => preset.id)).toEqual([
       "balanced",
       "focus",
+      "deadline",
       "stability",
       "workload",
     ]);
@@ -120,8 +121,8 @@ describe("个性化规划权重", () => {
     }
   });
 
-  it("已移除的截止优先风格在存量数据中回退到均衡推荐", () => {
-    const style = getPlanningStyle("deadline" as unknown as Parameters<
+  it("不存在的风格 ID 回退到均衡推荐", () => {
+    const style = getPlanningStyle("unknown" as unknown as Parameters<
       typeof getPlanningStyle
     >[0]);
     expect(style.id).toBe("balanced");

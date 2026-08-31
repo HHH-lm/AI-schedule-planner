@@ -133,15 +133,17 @@ def test_score_time_availability_evening() -> None:
 
 
 def test_score_priority_high() -> None:
-    """高优先级任务得高分。"""
+    """高优先级任务在黄金时段得满分。"""
     task = PlanV2Task(title="重要任务", duration=60, priority="high")
-    assert score_priority(task, "high") == 0.9
+    slot = FreeSlot("2026-08-03", 9 * 60, 10 * 60)
+    assert score_priority(slot, task, "high") == 0.9
 
 
 def test_score_priority_low() -> None:
-    """低优先级任务得低分。"""
+    """低优先级任务在黄金时段得分低。"""
     task = PlanV2Task(title="无所谓", duration=60, priority="low")
-    assert score_priority(task, "low") == 0.2
+    slot = FreeSlot("2026-08-03", 9 * 60, 10 * 60)
+    assert score_priority(slot, task, "low") == 0.2
 
 
 def test_score_conflict_risk_no_nearby() -> None:
