@@ -25,9 +25,9 @@ class FreeSlot(NamedTuple):
     end: int       # 当天 0 点起分钟数
 
 
-# 默认可排时间范围
-DEFAULT_DAY_START = 6 * 60    # 06:00
-DEFAULT_DAY_END = 23 * 60     # 23:00
+# 默认可排时间范围（全天可排）
+DEFAULT_DAY_START = 0            # 00:00
+DEFAULT_DAY_END = 24 * 60       # 24:00
 
 
 def _get_occupied_minutes(
@@ -47,6 +47,17 @@ def _get_occupied_minutes(
     return occupied
 
 
+def _head_free_end(occupied: list[tuple[int, int]], day_end: int) -> int:
+    """次日从 0 点起的连续空闲分钟数（遇到占用即止）。"""
+    for occ_start, occ_end in occupied:
+        if occ_end <= 0:
+            continue
+        if occ_start <= 0:
+            return 0
+        return min(occ_start, day_end)
+    return day_end
+
+
 def find_free_slots(
     existing: list[ExistingBlock],
     start: date,
@@ -62,13 +73,15 @@ def find_free_slots(
         existing: 已有时间块列表
         start: 起始日期（含）
         end: 结束日期（含）
-        day_start: 每天可安排起始分钟数（默认 06:00）
-        day_end: 每天可安排结束分钟数（默认 23:00）
+        day_start: 每天可安排起始分钟数（默认 00:00）
+        day_end: 每天可安排结束分钟数（默认 24:00，全天可排）
         min_gap: 最短空闲间隔（分钟，默认 15）
         now_minutes: 当前本地时间（当天 0 点起分钟）；规划范围首日不得早于该时刻
 
     Returns:
-        按日期排序的空闲时段列表
+        按日期排序的空闲时段列表；跨午夜时段 end > 1440，
+        表示延伸到次日（仅在窗口包含午夜且次日仍在范围内时生成，
+        次日头段照常生成独立空闲槽，由引擎占用检查防止重复安排）
     """
     slots: list[FreeSlot] = []
     current = start
@@ -80,6 +93,7 @@ def find_free_slots(
         if now_minutes is not None and current == start:
             effective_day_start = max(day_start, now_minutes)
         cursor = effective_day_start
+        day_slots: list[FreeSlot] = []
         for occ_start, occ_end in occupied:
             if occ_end <= cursor:
                 continue
@@ -87,7 +101,7 @@ def find_free_slots(
                 free_end = min(occ_start, day_end)
                 gap = free_end - cursor
                 if gap >= min_gap:
-                    slots.append(FreeSlot(date_str, cursor, free_end))
+                    day_slots.append(FreeSlot(date_str, cursor, free_end))
             cursor = max(cursor, occ_end)
             if cursor >= day_end:
                 break
@@ -95,8 +109,18 @@ def find_free_slots(
         if cursor < day_end:
             gap = day_end - cursor
             if gap >= min_gap:
-                slots.append(FreeSlot(date_str, cursor, day_end))
+                day_slots.append(FreeSlot(date_str, cursor, day_end))
 
+        # 跨午夜延伸：日尾空闲槽与次日 0 点起的连续空闲段合并，
+        # 使任务结束时间可越过 24:00（块起点仍留在当天，date=开始日）
+        if current < end and day_start == 0 and day_slots and day_slots[-1].end == day_end:
+            next_occupied = _get_occupied_minutes(existing, current + timedelta(days=1))
+            head_end = _head_free_end(next_occupied, day_end)
+            if head_end > 0:
+                tail = day_slots[-1]
+                day_slots[-1] = FreeSlot(tail.date, tail.start, day_end + head_end)
+
+        slots.extend(day_slots)
         current += timedelta(days=1)
 
     return slots

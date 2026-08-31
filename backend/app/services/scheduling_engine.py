@@ -9,14 +9,13 @@
           └──────┬───────────────┘
                  ↓
           Scheduling Engine（本模块）
-          SlotScorer 七维评分：
-            Memory匹配度  × 0.30
-            + 理解匹配度   × 0.20
-            + 时间可用性   × 0.15
-            + 任务优先级   × 0.15
-            + 截止日期     × 0.10
-            - 冲突风险     × 0.05
-            - 负荷惩罚     × 0.05
+          SlotScorer 六维评分：
+            Memory匹配度  × 0.33
+            + 理解匹配度   × 0.22
+            + 时间可用性   × 0.17
+            + 任务优先级   × 0.17
+            + 冲突风险     × 0.06
+            + 负荷惩罚     × 0.05
                  ↓
           → 选最高分 → Final Plan
                  ↓
@@ -38,7 +37,7 @@ from app.schemas import (
     WorkStyleSpec,
 )
 from app.services.ai import parse_local_date
-from app.services.conflict import overlaps_with_any
+from app.services.conflict import MINUTES_PER_DAY, overlaps_with_any
 from app.services.nlp import guess_category
 from app.services.slot_finder import (
     DEFAULT_DAY_END,
@@ -262,7 +261,7 @@ def _cn_to_int(value: str) -> int | None:
 def _make_time_before_filter(hour: int) -> Any:
     """在 X 点前的时段不受限，X 点及之后的时段被排除。"""
     def _filter(slot: FreeSlot) -> bool:
-        slot_hour = slot.start // 60
+        slot_hour = slot.start // 60 % 24
         return slot_hour < hour
     return _filter
 
@@ -270,7 +269,7 @@ def _make_time_before_filter(hour: int) -> Any:
 def _make_time_after_filter(hour: int) -> Any:
     """在 X 点之后的时段不受限，X 点及之前的时段被排除。"""
     def _filter(slot: FreeSlot) -> bool:
-        slot_hour = slot.start // 60
+        slot_hour = slot.start // 60 % 24
         return slot_hour >= hour
     return _filter
 
@@ -389,12 +388,11 @@ def _build_task_blocks(
 
 
 # ── 评分权重 ──
-W_MEMORY = 0.30      # 时段偏好匹配（通用时段，对所有任务统一生效）
-W_UNDERSTANDING = 0.20  # 理解匹配度（LLM preferred_time/focus_level）
-W_TIME = 0.15        # 时间可用性
-W_PRIORITY = 0.15    # 任务优先级
-W_DEADLINE = 0.10    # 截止日期（1 - 紧迫度）
-W_CONFLICT = 0.05    # 冲突风险（1 - 风险）
+W_MEMORY = 0.33      # 记忆匹配度（仅午间降分等槽位差异参与落点）
+W_UNDERSTANDING = 0.22  # 理解匹配度（LLM preferred_time/focus_level）
+W_TIME = 0.17        # 时间可用性（时段偏好预设）
+W_PRIORITY = 0.17    # 任务优先级
+W_CONFLICT = 0.06    # 冲突风险（1 - 风险）
 W_WORKLOAD = 0.05    # 负荷惩罚（1 - 惩罚）
 
 PRIORITY_SCORE: dict[str, int] = {"high": 3, "medium": 2, "low": 1}
@@ -408,8 +406,8 @@ EVENING_END = 23           # 23:00
 
 
 def _slot_hour(slot: FreeSlot) -> float:
-    """空闲时段的中点小时数。"""
-    return (slot.start + slot.end) / 2.0 / 60.0
+    """空闲时段的中点小时数（跨午夜时归一化到 0-24）。"""
+    return ((slot.start + slot.end) / 2.0 / 60.0) % 24
 
 
 def _period_label(hour: float) -> str:
@@ -482,35 +480,60 @@ def score_understanding(
     return min(1.0, score)
 
 
-def score_time_availability(slot: FreeSlot) -> float:
-    """时间可用性 (0.0-1.0)
+# ── 时段可用性分值表（按用户时段偏好预设，设置页可选）──
+# 每档为 (起始小时, 结束小时, 分值) 的互斥区间表，覆盖 0-24 全天；
+# balanced 必须与历史固定分值逐档一致，保证默认行为不变。
+TIME_AVAILABILITY_TABLES: dict[str, list[tuple[int, int, float]]] = {
+    # 均衡：默认节奏
+    "balanced": [
+        (8, 12, 0.9),   # 上午最佳
+        (12, 14, 0.5),  # 午间一般
+        (14, 17, 0.7),  # 下午良好
+        (6, 8, 0.5),    # 清晨一般
+        (17, 20, 0.5),  # 傍晚一般
+        (20, 24, 0.3),  # 深夜边缘
+        (0, 6, 0.1),    # 凌晨低分
+    ],
+    # 早起型：清晨是黄金时段（峰值与均衡的上午错开）
+    "early_bird": [
+        (8, 12, 0.75),  # 上午次优
+        (12, 14, 0.4),  # 午间一般
+        (14, 18, 0.5),  # 下午中等
+        (6, 8, 1.0),    # 清晨黄金
+        (18, 24, 0.2),  # 晚间低分
+        (0, 6, 0.1),    # 凌晨低分
+    ],
+    # 夜猫型：晚上与夜间效率更高
+    "night_owl": [
+        (8, 12, 0.3),   # 上午低分
+        (12, 14, 0.5),  # 午间一般
+        (14, 18, 0.6),  # 下午中等
+        (6, 8, 0.15),   # 清晨低分
+        (18, 24, 0.95), # 晚间黄金
+        (0, 6, 0.5),    # 凌晨可用
+    ],
+}
 
-    根据一天中的时段评估可用性：
+
+def score_time_availability(
+    slot: FreeSlot,
+    time_preference: str = "balanced",
+) -> float:
+    """时间可用性 (0.0-1.0)，按用户时段偏好预设打分。
+
+    balanced 档与历史固定分值一致：
     - 上午 8:00-12:00 → 最佳 (0.9)
     - 午间 12:00-14:00 → 一般 (0.5)
     - 下午 14:00-17:00 → 良好 (0.7)
-    - 傍晚 17:00-20:00 → 一般 (0.5)
-    - 晚上 20:00-23:00 → 边缘 (0.3)
-    - 凌晨 23:00-6:00 → 低分 (0.1)
+    - 清晨 6:00-8:00 或傍晚 17:00-20:00 → 一般 (0.5)
+    - 深夜 20:00-24:00 → 边缘 (0.3)
+    - 凌晨 0:00-6:00 → 低分 (0.1)
     """
-    hour = _slot_hour(slot)
-
-    # 最佳时段：8:00-12:00
-    if 8 <= hour < 12:
-        return 0.9
-    # 午间时段：12:00-14:00
-    if 12 <= hour < 14:
-        return 0.5
-    # 良好时段：14:00-17:00
-    if 14 <= hour < 17:
-        return 0.7
-    # 一般时段：6:00-8:00 或 17:00-20:00
-    if 6 <= hour < 8 or 17 <= hour < 20:
-        return 0.5
-    # 边缘时段：20:00-23:00
-    if 20 <= hour <= 23:
-        return 0.3
-    # 凌晨时段：< 6:00
+    hour = _slot_hour(slot) % 24
+    table = TIME_AVAILABILITY_TABLES.get(time_preference) or TIME_AVAILABILITY_TABLES["balanced"]
+    for band_start, band_end, score in table:
+        if band_start <= hour < band_end:
+            return score
     return 0.1
 
 
@@ -524,33 +547,6 @@ def score_priority(task: PlanV2Task, priority: str) -> float:
         "medium": 0.5,
         "low": 0.2,
     }.get(priority, 0.5)
-
-
-def score_deadline_urgency(task: PlanV2Task) -> float:
-    """截止日期紧迫度 (0.0-1.0)，返回 1 - 紧迫度
-
-    紧迫度越高，得分越低（表示需要优先安排）。
-    """
-    if not task.deadline:
-        return 0.5  # 无截止日，中等分
-
-    deadline = parse_local_date(task.deadline)
-    if not deadline:
-        return 0.5
-
-    days_until = (deadline - date.today()).days
-
-    if days_until <= 0:
-        return 0.0    # 已过期
-    if days_until <= 1:
-        return 0.1    # 明天截止
-    if days_until <= 3:
-        return 0.3    # 3天内
-    if days_until <= 7:
-        return 0.5    # 1周内
-    if days_until <= 14:
-        return 0.7    # 2周内
-    return 0.9        # 时间充裕
 
 
 def score_conflict_risk(
@@ -626,11 +622,11 @@ class SlotScorer:
             + 理解匹配度   × W_UNDERSTANDING
             + 时间可用性   × W_TIME
             + 任务优先级   × W_PRIORITY
-            + 截止日期     × W_DEADLINE
             + 冲突风险     × W_CONFLICT
             + 负荷惩罚     × W_WORKLOAD
 
     最终得分范围 0.0-1.0，Python 选最高分。
+    截止日期不参与评分：作为硬约束在调度时强制。
     """
 
     def __init__(
@@ -638,10 +634,12 @@ class SlotScorer:
         existing_schedule: list[ExistingBlock] | None = None,
         already_assigned: list[PlanV2Block] | None = None,
         weights: PlanningWeights | None = None,
+        time_preference: str = "balanced",
     ):
         self.existing_schedule = existing_schedule or []
         self.already_assigned = already_assigned or []
         self.weights = weights or PlanningWeights()
+        self.time_preference = time_preference
 
     def score(
         self,
@@ -654,9 +652,16 @@ class SlotScorer:
         """计算一个空闲时段的综合评分。"""
         m = score_memory_match(slot, task, memories)
         u = score_understanding(slot, task, understanding)
-        t = score_time_availability(slot)
+        # 优先级语义：记忆/理解偏好 > 时段偏好预设。
+        # 理解层带明确时段偏好（来源于记忆/目标）时，时间维度不查预设分值表，
+        # 改为偏好时段命中记满分、未命中重罚；无明确偏好才按时段偏好预设打分。
+        pref = (understanding or {}).get("preferred_time", "any")
+        if pref in ("上午", "下午", "晚上"):
+            period = _period_label(slot.start / 60.0 % 24)
+            t = 1.0 if period == pref else 0.15
+        else:
+            t = score_time_availability(slot, self.time_preference)
         p = score_priority(task, priority)
-        d = score_deadline_urgency(task)
         c = score_conflict_risk(slot, self.existing_schedule)
         w = score_workload_penalty(slot, self.existing_schedule, self.already_assigned)
 
@@ -665,7 +670,6 @@ class SlotScorer:
             + u * self.weights.understanding
             + t * self.weights.time
             + p * self.weights.priority
-            + d * self.weights.deadline
             + c * self.weights.conflict
             + w * self.weights.workload
         )
@@ -679,10 +683,18 @@ class SlotScorer:
         understanding: dict[str, str] | None = None,
     ) -> list[tuple[FreeSlot, float]]:
         """对多个空闲时段评分，按分数降序排列。"""
-        scored = [
-            (slot, self.score(slot, task, priority, memories, understanding))
-            for slot in slots
-        ]
+        scored = []
+        for slot in slots:
+            # 跨午夜槽（end > 1440）按当天部分参与整槽排序，
+            # 避免多日槽中点落进次日造成排序失真；位置评分不受影响
+            scoring_slot = (
+                slot
+                if slot.end <= MINUTES_PER_DAY
+                else FreeSlot(slot.date, slot.start, MINUTES_PER_DAY)
+            )
+            scored.append(
+                (slot, self.score(scoring_slot, task, priority, memories, understanding))
+            )
         scored.sort(key=lambda x: -x[1])
         return scored
 
@@ -759,6 +771,7 @@ def schedule_tasks(
     day_end: int = DEFAULT_DAY_END,
     max_daily_workload: int = 480,
     now_minutes: int | None = None,
+    time_preference: str = "balanced",
 ) -> tuple[list[PlanV2Block], list[str], list[Any]]:
     """调度引擎主入口 — 将任务分配到最佳空闲时段。
 
@@ -778,10 +791,11 @@ def schedule_tasks(
         constraint_filters: hard constraint 过滤函数列表（True=允许该时段）
         work_style: 工作方式（分块时长 + 块间休息），如番茄钟 25/5
         weights: 个性化规划七维权重，缺省使用模块默认值
-        day_start: 每日可排起始分钟（默认 06:00）
-        day_end: 每日可排结束分钟（默认 23:00）
+        day_start: 每日可排起始分钟（默认 00:00）
+        day_end: 每日可排结束分钟（默认 24:00，全天可排）
         max_daily_workload: 每日最大工作量（分钟，默认 480=8h）
         now_minutes: 当前本地时间（当天 0 点起分钟），规划范围首日不得早于该时刻
+        time_preference: 时段偏好评分预设（balanced/early_bird/night_owl）
 
     Returns:
         (blocks, unassigned, validation_issues)
@@ -808,7 +822,7 @@ def schedule_tasks(
         now_minutes=now_minutes,
     )
     # 注：hard constraints 不在“整天空闲槽”粒度上过滤。
-    # find_free_slots 生成的空闲槽可能横跨一整天（如 06:00-23:00），
+    # find_free_slots 生成的空闲槽可能横跨一整天（如 00:00-24:00），
     # 而时间类约束（如“从14:00开始”）是按候选时段起点判断的，
     # 若在整槽粒度过滤会把整槽误判为非法，导致所有任务都无法排期。
     # 因此约束统一在下方候选位置（15 分钟粒度）上校验。
@@ -818,7 +832,7 @@ def schedule_tasks(
     unassigned: list[str] = []
     occupied = [b.model_copy() for b in existing_schedule]
 
-    scorer = SlotScorer(existing_schedule, blocks, weights)
+    scorer = SlotScorer(existing_schedule, blocks, weights, time_preference)
 
     for task, priority in resolved_tasks:
         # 工作方式分块：时长超过块长时拆成多块 + 块间休息
@@ -836,6 +850,17 @@ def schedule_tasks(
 
         available = filter_slots_by_duration(all_free_slots, span)
 
+        # 截止日期硬约束：块开始日期不得晚于截止日（截止当天可排）；
+        # 无合规时段时任务进入 unassigned，宁可缺排也不违规
+        deadline_limit = parse_local_date(task.deadline) if task.deadline else None
+        if deadline_limit is not None:
+            available = [
+                slot
+                for slot in available
+                if (slot_day := parse_local_date(slot.date)) is not None
+                and slot_day <= deadline_limit
+            ]
+
         if available:
             # 用 SlotScorer 评分并排序
             task_understanding = understandings.get(task.title)
@@ -849,7 +874,10 @@ def schedule_tasks(
                 slot_duration = slot.end - slot.start
                 if slot_duration < span:
                     continue
-                for minute_start in range(slot.start, slot.end - span + 1, 15):
+                # 块的 date 语义是"开始日"，起点不得越过当天 24:00；
+                # 跨午夜槽（end > 1440）只允许起点留在当天，让结束时间延伸到次日
+                last_start = min(slot.end - span, MINUTES_PER_DAY - 1)
+                for minute_start in range(slot.start, last_start + 1, 15):
                     candidate_blocks, candidate_occupied = _build_task_blocks(
                         task, priority, slot.date, minute_start, chunks, breaks
                     )

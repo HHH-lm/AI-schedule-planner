@@ -186,16 +186,20 @@ def _build_plan_prompt(
     )
     return "\n".join(
         [
-            "你是日程规划器，为任务列表生成不冲突的时间块，只输出 JSON。",
+            "你是日程规划器，为任务列表生成不冲突的时间块，只输出合法 JSON，不要包含任何其他文字、解释或格式。",
             '格式:{"blocks":[{"name":"事项名","date":"YYYY-MM-DD","start":分钟,"end":分钟,'
             '"category":"work|study|fitness|life|rest","location":"地点"}]}',
             f"可排日期：{start_date} 至 {end_date}。",
             "start/end 为当天0点起分钟数，end>start，至少 15 分钟。",
-            f"已有时间块：\n{existing_lines}",
+            f"已有时间块（可能为空）：\n{existing_lines}",
             "生成的块不得与已有时间块重叠。",
             f"待排任务：\n{task_lines}",
             "每个任务安排一个时间块；有子任务时可为每个子任务安排独立块。",
-            "单块不超过 120 分钟，只输出 JSON。",
+            "单块不超过 60 分钟。",
+            "若任务列表为空或日期范围无效，输出 {\"blocks\":[]}。",
+            "若无法为某个任务安排不冲突的时间块，跳过该任务并在 blocks 中省略它。",
+            "所有日期使用系统本地时区，end 不得跨过当天午夜（即 end 不超过 1440）。",
+            "只输出 JSON，不要输出任何额外内容。",
         ]
     )
 
@@ -219,6 +223,8 @@ def _sanitize_planned_block(
         return None
     safe_start = max(0, min(1439, block_start))
     safe_end = max(safe_start + 15, min(1439, block_end))
+    # 单块上限 60 分钟，须与 _build_plan_prompt 的约束保持一致
+    safe_end = min(safe_end, safe_start + 60)
     category = raw.get("category") if raw.get("category") in CATEGORY_VALUES else "life"
     location = None
     if isinstance(raw.get("location"), str) and raw["location"].strip():
@@ -323,6 +329,13 @@ async def plan_schedule(
             )
             blocks.append(candidate)
         if not blocks:
+            if not cleaned:
+                return PlanResponse(
+                    source=resolved_provider,
+                    blocks=[],
+                    blocked=[],
+                    message="AI 未能为任何任务安排时间块：所有任务可能都无法安排在不冲突的时段",
+                )
             raise ValueError("AI 生成的时间块全部与已有安排冲突")
         return PlanResponse(source=resolved_provider, blocks=blocks, blocked=blocked)
     except (httpx.TimeoutException, httpx.ConnectError) as error:

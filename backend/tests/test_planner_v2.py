@@ -76,7 +76,7 @@ def test_fallback_plan_v2_soft_memory_does_not_block() -> None:
     )
     assert len(response.blocks) == 1
     assert len(response.unassigned) == 0
-    # 无硬约束时任务可排在任何时段（默认最早 6:00）
+    # 无硬约束时任务全天可排（默认 00:00-24:00），由评分选择最佳时段
 
 
 def test_understanding_prompt_requests_constraints_when_only_memories() -> None:
@@ -262,7 +262,7 @@ def test_fallback_plan_v2_accepts_custom_weights() -> None:
         constraints=[],
         weights=PlanningWeights(
             memory=0, understanding=0, time=0, priority=0,
-            deadline=0, conflict=1.0, workload=0,
+            conflict=1.0, workload=0,
         ),
     )
     assert len(response.unassigned) == 0

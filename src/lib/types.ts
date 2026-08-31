@@ -71,7 +71,6 @@ export interface PlanningWeights {
   understanding: number;
   time: number;
   priority: number;
-  deadline: number;
   conflict: number;
   workload: number;
 }
@@ -80,11 +79,12 @@ export type PlanningDimensionKey = keyof PlanningWeights;
 
 export type PlanningStyleId =
   | "balanced"
-  | "deadline"
   | "focus"
   | "stability"
   | "workload"
   | "custom";
+
+export type TimePreference = "balanced" | "early_bird" | "night_owl";
 
 export interface AppSettings {
   obsidianVault?: string;
@@ -93,6 +93,7 @@ export interface AppSettings {
   timelineCollapsedRanges?: Array<{ start: number; end: number }>;
   planningWeights?: PlanningWeights;
   planningStyle?: PlanningStyleId;
+  timePreference?: TimePreference;
   planningFocus?: PlanningDimensionKey[];
 }
 

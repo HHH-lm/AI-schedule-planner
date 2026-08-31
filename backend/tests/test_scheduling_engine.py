@@ -14,7 +14,6 @@ from app.schemas import (
 from app.services.scheduling_engine import (
     SlotScorer,
     W_CONFLICT,
-    W_DEADLINE,
     W_MEMORY,
     W_PRIORITY,
     W_TIME,
@@ -29,7 +28,6 @@ from app.services.scheduling_engine import (
     score_understanding,
     score_time_availability,
     score_priority,
-    score_deadline_urgency,
     score_conflict_risk,
     score_workload_penalty,
 )
@@ -146,26 +144,6 @@ def test_score_priority_low() -> None:
     assert score_priority(task, "low") == 0.2
 
 
-def test_score_deadline_no_deadline() -> None:
-    """无截止日时返回中等分。"""
-    task = PlanV2Task(title="任务", duration=60)
-    assert score_deadline_urgency(task) == 0.5
-
-
-def test_score_deadline_urgent() -> None:
-    """明天截止得分极低。"""
-    deadline = (date.today() + timedelta(days=1)).isoformat()
-    task = PlanV2Task(title="紧急任务", duration=60, deadline=deadline)
-    assert score_deadline_urgency(task) <= 0.2
-
-
-def test_score_deadline_comfortable() -> None:
-    """时间充裕时得分高。"""
-    deadline = (date.today() + timedelta(days=30)).isoformat()
-    task = PlanV2Task(title="远期任务", duration=60, deadline=deadline)
-    assert score_deadline_urgency(task) == 0.9
-
-
 def test_score_conflict_risk_no_nearby() -> None:
     """无紧邻日程时冲突风险低（得分高）。"""
     slot = FreeSlot("2026-08-03", 9 * 60, 10 * 60)
@@ -265,20 +243,18 @@ def test_planning_weights_defaults_match_module_constants() -> None:
     assert weights.understanding == W_UNDERSTANDING
     assert weights.time == W_TIME
     assert weights.priority == W_PRIORITY
-    assert weights.deadline == W_DEADLINE
     assert weights.conflict == W_CONFLICT
     assert weights.workload == W_WORKLOAD
 
 
 def test_planning_weights_default_sum_is_one() -> None:
-    """七维权重默认值相加应等于 1。"""
+    """六维权重默认值相加应等于 1。"""
     weights = PlanningWeights()
     assert abs(sum((
         weights.memory,
         weights.understanding,
         weights.time,
         weights.priority,
-        weights.deadline,
         weights.conflict,
         weights.workload,
     )) - 1.0) < 1e-9
@@ -286,13 +262,12 @@ def test_planning_weights_default_sum_is_one() -> None:
 
 def test_planning_weights_custom_values_are_normalized() -> None:
     """用户自定义权重总和不为 1 时，应按比例归一化到 1。"""
-    weights = PlanningWeights(memory=0.35, understanding=0.25, time=0.15, priority=0.15, deadline=0.10, conflict=0.10, workload=0.10)
+    weights = PlanningWeights(memory=0.35, understanding=0.25, time=0.15, priority=0.15, conflict=0.10, workload=0.10)
     total = sum((
         weights.memory,
         weights.understanding,
         weights.time,
         weights.priority,
-        weights.deadline,
         weights.conflict,
         weights.workload,
     ))
@@ -313,7 +288,7 @@ def test_slot_scorer_custom_weights_scale_components() -> None:
     scorer_memory = SlotScorer(
         weights=PlanningWeights(
             memory=1.0, understanding=0, time=0, priority=0,
-            deadline=0, conflict=0, workload=0,
+            conflict=0, workload=0,
         )
     )
     assert scorer_memory.score(slot, task, "medium", []) == score_memory_match(slot, task, [])
@@ -321,7 +296,7 @@ def test_slot_scorer_custom_weights_scale_components() -> None:
     scorer_understanding = SlotScorer(
         weights=PlanningWeights(
             memory=0, understanding=1.0, time=0, priority=0,
-            deadline=0, conflict=0, workload=0,
+            conflict=0, workload=0,
         )
     )
     assert scorer_understanding.score(
@@ -356,7 +331,7 @@ def test_schedule_tasks_custom_weights_change_placement() -> None:
         understandings={"写代码": understanding},
         weights=PlanningWeights(
             memory=0, understanding=0, time=0, priority=0,
-            deadline=0, conflict=1.0, workload=0,
+            conflict=1.0, workload=0,
         ),
     )
 
@@ -364,8 +339,8 @@ def test_schedule_tasks_custom_weights_change_placement() -> None:
         f"默认权重应优先理解偏好的上午时段，实际 "
         f"{blocks_default[0].start // 60}:{blocks_default[0].start % 60:02d}"
     )
-    assert blocks_conflict[0].start == 6 * 60, (
-        f"冲突权重拉满时应选最早无紧邻冲突的 6:00，实际 "
+    assert blocks_conflict[0].start == 0, (
+        f"冲突权重拉满时应选最早无紧邻冲突的 0:00，实际 "
         f"{blocks_conflict[0].start // 60}:{blocks_conflict[0].start % 60:02d}"
     )
     assert blocks_default[0].start != blocks_conflict[0].start, "自定义权重应改变调度落点"
@@ -404,13 +379,27 @@ def test_schedule_tasks_full_day() -> None:
     """全天被占满时应返回未安排。"""
     tasks = [PlanV2Task(title="写代码", duration=60)]
     existing = [
-        ExistingBlock(date="2026-08-03", start=6 * 60, end=23 * 60, status="scheduled"),
+        ExistingBlock(date="2026-08-03", start=0, end=24 * 60, status="scheduled"),
     ]
     blocks, unassigned, _issues = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3))
     )
     assert len(blocks) == 0
     assert "写代码" in unassigned
+
+
+def test_schedule_tasks_night_slot_available() -> None:
+    """全天可排后，白天被占满时应能使用夜间时段（23:00-24:00）。"""
+    tasks = [PlanV2Task(title="写代码", duration=60)]
+    existing = [
+        ExistingBlock(date="2026-08-03", start=0, end=23 * 60, status="scheduled"),
+    ]
+    blocks, unassigned, _issues = schedule_tasks(
+        tasks, existing, (date(2026, 8, 3), date(2026, 8, 3))
+    )
+    assert len(blocks) == 1
+    assert blocks[0].start == 23 * 60
+    assert len(unassigned) == 0
 
 
 def test_schedule_tasks_avoids_existing() -> None:
@@ -1163,3 +1152,181 @@ def test_schedule_tasks_without_now_minutes_keeps_full_first_day() -> None:
     )
     assert len(unassigned) == 0
     assert blocks[0].start >= 6 * 60
+
+
+# ============================================================
+# 6. 时段偏好预设与跨午夜排期
+# ============================================================
+
+def test_time_availability_balanced_matches_legacy_table() -> None:
+    """balanced 档必须与历史固定分值逐档一致，保证默认行为不变。"""
+    cases = [
+        (FreeSlot("2026-08-03", 0, 60), 0.1),       # 凌晨
+        (FreeSlot("2026-08-03", 360, 420), 0.5),    # 清晨 6:30
+        (FreeSlot("2026-08-03", 480, 540), 0.9),    # 上午 8:30
+        (FreeSlot("2026-08-03", 720, 780), 0.5),    # 午间 12:30
+        (FreeSlot("2026-08-03", 840, 900), 0.7),    # 下午 14:30
+        (FreeSlot("2026-08-03", 1020, 1080), 0.5),  # 傍晚 17:30
+        (FreeSlot("2026-08-03", 1200, 1260), 0.3),  # 深夜 20:30
+        (FreeSlot("2026-08-03", 1380, 1440), 0.3),  # 深夜 23:30
+        (FreeSlot("2026-08-03", 1380, 1500), 0.1),  # 跨午夜中点归一化到凌晨
+    ]
+    for slot, expected in cases:
+        assert score_time_availability(slot) == expected
+        assert score_time_availability(slot, "balanced") == expected
+
+
+def test_time_availability_presets_shift_scores() -> None:
+    """早起型峰值锁定在清晨、与均衡的上午峰值错开；夜猫型相反；未知预设回退 balanced。"""
+    dawn = FreeSlot("2026-08-03", 360, 420)       # 6:30 清晨
+    morning = FreeSlot("2026-08-03", 480, 540)    # 8:30 上午
+    afternoon = FreeSlot("2026-08-03", 900, 960)  # 15:30 下午
+    evening = FreeSlot("2026-08-03", 1200, 1260)  # 20:30 晚间
+    # 早起型峰值结构：清晨 1.0 > 上午 0.75 > 下午 0.5 > 晚间 0.2
+    assert score_time_availability(dawn, "early_bird") == 1.0
+    assert score_time_availability(morning, "early_bird") == 0.75
+    assert score_time_availability(afternoon, "early_bird") == 0.5
+    assert score_time_availability(evening, "early_bird") == 0.2
+    assert score_time_availability(dawn, "early_bird") > score_time_availability(
+        dawn, "balanced"
+    )
+    # 夜猫型峰值在晚间
+    assert score_time_availability(evening, "night_owl") > score_time_availability(
+        morning, "night_owl"
+    )
+    assert score_time_availability(evening, "night_owl") > score_time_availability(
+        evening, "balanced"
+    )
+    assert score_time_availability(morning, "unknown") == score_time_availability(
+        morning, "balanced"
+    )
+
+
+def test_time_preference_night_owl_places_later() -> None:
+    """夜猫型应把无偏好任务排到晚间，晚于均衡档的上午落点。"""
+    tasks = [PlanV2Task(title="写代码", duration=60)]
+    balanced_blocks, _, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)), time_preference="balanced"
+    )
+    owl_blocks, _, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)), time_preference="night_owl"
+    )
+    assert balanced_blocks[0].start == 7 * 60 + 30  # 中点 8:00 落入上午高分档
+    assert owl_blocks[0].start == 17 * 60 + 30  # 中点 18:00 落入晚间高分档
+    assert owl_blocks[0].start > balanced_blocks[0].start
+
+
+def test_time_preference_early_bird_places_earlier_when_morning_taken() -> None:
+    """上午被占用时，早起型应排进清晨，早于均衡档的下午落点。"""
+    tasks = [PlanV2Task(title="写代码", duration=60)]
+    existing = [ExistingBlock(date="2026-08-03", start=8 * 60, end=12 * 60)]
+    balanced_blocks, _, _ = schedule_tasks(
+        tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)), time_preference="balanced"
+    )
+    bird_blocks, _, _ = schedule_tasks(
+        tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)), time_preference="early_bird"
+    )
+    assert balanced_blocks[0].start >= 13 * 60
+    assert bird_blocks[0].start < 8 * 60
+    assert bird_blocks[0].start < balanced_blocks[0].start
+
+
+def test_schedule_tasks_places_block_across_midnight() -> None:
+    """唯一可行的 8 小时空闲横跨午夜时，块应延伸到次日且不与次日日程冲突。"""
+    tasks = [PlanV2Task(title="值守", duration=480)]
+    existing = [
+        ExistingBlock(date="2026-08-03", start=0, end=22 * 60),
+        ExistingBlock(date="2026-08-04", start=6 * 60, end=15 * 60),
+        ExistingBlock(date="2026-08-04", start=17 * 60, end=24 * 60),
+    ]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, existing, (date(2026, 8, 3), date(2026, 8, 4))
+    )
+    assert len(unassigned) == 0
+    assert len(blocks) == 1
+    assert blocks[0].date == "2026-08-03"
+    assert blocks[0].start == 22 * 60
+    assert blocks[0].end == 24 * 60 + 6 * 60, "应跨午夜延伸到次日 06:00"
+
+
+def test_time_filters_reject_cross_midnight_chunk_against_day_start() -> None:
+    """跨午夜分块起点按次日真实小时判断：9 点后不安排应拦下 0:30 的块。"""
+    from app.services.scheduling_engine import _make_time_after_filter
+
+    night_chunk = FreeSlot("2026-08-04", 1470, 1500)  # 次日 00:30
+    assert _make_time_after_filter(9)(night_chunk) is False
+
+
+# ============================================================
+# 7. 截止日期硬约束与记忆偏好优先
+# ============================================================
+
+def test_schedule_tasks_respects_deadline_as_hard_constraint() -> None:
+    """截止日期为硬约束：所有块不得排在截止日之后。"""
+    tasks = [PlanV2Task(title="写报告", duration=60, deadline="2026-08-30")]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 29), date(2026, 9, 2))
+    )
+    assert len(unassigned) == 0
+    assert len(blocks) >= 1
+    assert all(block.date <= "2026-08-30" for block in blocks)
+
+
+def test_schedule_tasks_overdue_task_becomes_unassigned() -> None:
+    """截止日早于规划范围时无法合规排期，任务应进入 unassigned。"""
+    tasks = [PlanV2Task(title="逾期任务", duration=60, deadline="2026-08-20")]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 29), date(2026, 8, 30))
+    )
+    assert len(blocks) == 0
+    assert "逾期任务" in unassigned
+
+
+def test_deadline_day_allows_cross_midnight_start() -> None:
+    """截止当天开始的块允许跨午夜延伸到次日。"""
+    tasks = [PlanV2Task(title="值守", duration=120, deadline="2026-08-03")]
+    existing = [ExistingBlock(date="2026-08-03", start=0, end=22 * 60)]
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, existing, (date(2026, 8, 3), date(2026, 8, 4))
+    )
+    assert len(unassigned) == 0
+    assert blocks[0].date == "2026-08-03"
+    assert blocks[0].start >= 22 * 60
+
+
+def test_understanding_preferred_time_overrides_time_preference() -> None:
+    """记忆/理解带明确时段偏好时优先于时段偏好预设：晚上偏好+早起型→落晚间。"""
+    tasks = [PlanV2Task(title="专注工作", duration=60)]
+    understanding = {
+        "title": "专注工作",
+        "preferred_time": "晚上",
+        "focus_level": "flexible",
+        "notes": "",
+    }
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
+        understandings={"专注工作": understanding},
+        time_preference="early_bird",
+    )
+    assert len(unassigned) == 0
+    assert blocks[0].start >= 18 * 60
+
+
+def test_hard_constraint_and_preferred_time_apply_together() -> None:
+    """9 点前不安排硬约束与晚上偏好并存：块既不早于 9 点又落晚间。"""
+    tasks = [PlanV2Task(title="专注工作", duration=60)]
+    understanding = {
+        "title": "专注工作",
+        "preferred_time": "晚上",
+        "focus_level": "flexible",
+        "notes": "",
+    }
+    blocks, unassigned, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
+        understandings={"专注工作": understanding},
+        constraint_filters=parse_constraint_filters(["9点之前不安排任务"]),
+        time_preference="early_bird",
+    )
+    assert len(unassigned) == 0
+    assert blocks[0].start >= 9 * 60
+    assert blocks[0].start >= 18 * 60

@@ -186,7 +186,7 @@ def _build_understanding_prompt(
     """构建 LLM 理解层 prompt，只要求输出任务理解，不要求输出时间块。"""
     lines: list[str] = [
         "你是高级日程规划助手。根据用户目标、任务、记忆偏好和约束，理解每个任务的性质。",
-        "只输出 JSON，不要输出解释。",
+        "只输出合法 JSON，不要包含任何其他文字、解释或格式。",
         "",
         '格式: {"understandings": [{',
         '  "title": "任务名（必须与输入一致）",',
@@ -236,7 +236,7 @@ def _build_understanding_prompt(
     lines.append("3. 判断 focus_level：需要专注的任务（如写作、编程）→ deep，轻松的任务（如散步、休息）→ light，其他 → flexible")
     lines.append("4. 如果任务有 deadline，请在 notes 中标注时间紧迫性")
     lines.append("5. 任务 title 必须与输入完全一致，不要修改")
-    lines.append("6. 只输出 JSON")
+    lines.append("6. 只输出合法 JSON，不要输出任何额外内容")
     lines.append("7. 记忆偏好适用于全部任务：记忆明确提到上午/下午/晚上时，所有任务的 preferred_time 都应优先遵循该记忆，除非任务名称明显冲突")
 
     if constraints or memories:
@@ -327,6 +327,7 @@ def _fallback_plan_v2(
     work_style: WorkStyleSpec | None = None,
     now_minutes: int | None = None,
     weights: PlanningWeights | None = None,
+    time_preference: str = "balanced",
 ) -> PlanV2Response:
     """本地 fallback 规划器 — 直接使用 SchedulingEngine。"""
     constraint_filters = parse_constraint_filters((constraints or []) + _exclusion_memories(memories))
@@ -345,6 +346,7 @@ def _fallback_plan_v2(
         work_style=work_style,
         now_minutes=now_minutes,
         weights=weights,
+        time_preference=time_preference,
     )
     return PlanV2Response(
         source="local",
@@ -401,6 +403,7 @@ async def plan_v2_schedule(
             request.constraints,
             now_minutes=request.now_minutes,
             weights=request.weights,
+            time_preference=request.time_preference,
         )
         result.message = resolved_message
         _log_plan_v2_result(
@@ -495,6 +498,7 @@ async def plan_v2_schedule(
             work_style=work_style,
             now_minutes=request.now_minutes,
             weights=request.weights,
+            time_preference=request.time_preference,
         )
 
         # ── 步骤 3: LLM 解释层（可选） ──
@@ -548,6 +552,7 @@ async def plan_v2_schedule(
             work_style=work_style,
             now_minutes=request.now_minutes,
             weights=request.weights,
+            time_preference=request.time_preference,
         )
         _log_plan_v2_result(
             started, source="local", blocks=len(blocks),
@@ -582,6 +587,7 @@ async def plan_v2_schedule(
                 work_style=work_style,
                 now_minutes=request.now_minutes,
                 weights=request.weights,
+                time_preference=request.time_preference,
             )
             _log_plan_v2_result(
                 started, source="local", blocks=len(blocks),

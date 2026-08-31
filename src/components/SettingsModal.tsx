@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BookMarked, Bot, Brain, SlidersHorizontal, X } from "lucide-react";
+import { Clock, BookMarked, Bot, Brain, SlidersHorizontal, X } from "lucide-react";
 import { parseObsidianUrl } from "@/lib/obsidian";
 import type {
   AiProviderSetting,
   PlanningDimensionKey,
   PlanningStyleId,
   PlanningWeights,
+  TimePreference,
 } from "@/lib/types";
 import {
   DEFAULT_PLANNING_WEIGHTS,
@@ -19,6 +20,11 @@ import {
   clampWeight,
   normalizePlanningWeights,
 } from "@/lib/planningWeights";
+import {
+  DEFAULT_TIME_PREFERENCE,
+  TIME_PREFERENCE_PRESETS,
+  normalizeTimePreference,
+} from "@/lib/timePreference";
 
 interface Props {
   obsidianVault: string;
@@ -26,12 +32,14 @@ interface Props {
   planningWeights: PlanningWeights;
   planningStyle?: PlanningStyleId;
   planningFocus?: PlanningDimensionKey[];
+  timePreference?: TimePreference;
   onSave: (settings: {
     obsidianVault: string;
     aiProvider: AiProviderSetting;
     planningWeights: PlanningWeights;
     planningStyle?: PlanningStyleId;
     planningFocus?: PlanningDimensionKey[];
+    timePreference: TimePreference;
   }) => void;
   onClose: () => void;
   onOpenMemory?: () => void;
@@ -43,6 +51,7 @@ export default function SettingsModal({
   planningWeights: initialWeights,
   planningStyle: initialStyle,
   planningFocus: initialFocus,
+  timePreference: initialTimePreference,
   onSave,
   onClose,
   onOpenMemory,
@@ -52,8 +61,11 @@ export default function SettingsModal({
   const [weights, setWeights] = useState<PlanningWeights>(() =>
     normalizePlanningWeights(initialWeights)
   );
+  // "截止优先"风格已移除：存量数据（旧 localStorage 可能仍存有该值）回退为按权重推断
+  const storedStyle =
+    (initialStyle as string | undefined) === "deadline" ? undefined : initialStyle;
   const [styleId, setStyleId] = useState<PlanningStyleId>(() =>
-    initialStyle ??
+    storedStyle ??
     inferPlanningSelection(normalizePlanningWeights(initialWeights)).styleId
   );
   const [focus, setFocus] = useState<PlanningDimensionKey[]>(() =>
@@ -64,7 +76,10 @@ export default function SettingsModal({
     )
   );
   const [advancedOpen, setAdvancedOpen] = useState(
-    (initialStyle ?? inferPlanningSelection(weights).styleId) === "custom"
+    (storedStyle ?? inferPlanningSelection(weights).styleId) === "custom"
+  );
+  const [timePreference, setTimePreference] = useState<TimePreference>(() =>
+    normalizeTimePreference(initialTimePreference ?? DEFAULT_TIME_PREFERENCE)
   );
 
   useEffect(() => {
@@ -95,6 +110,7 @@ export default function SettingsModal({
       planningWeights: weights,
       planningStyle: styleId,
       planningFocus: focus.length > 0 ? focus : undefined,
+      timePreference,
     });
     onClose();
   };
@@ -288,7 +304,7 @@ export default function SettingsModal({
                     type="button"
                     onClick={() => selectStyle(preset.id)}
                     aria-pressed={selected}
-                    className={`rounded-xl border p-3 text-left transition ${
+                    className={`flex flex-col items-start justify-start rounded-xl border p-3 text-left transition ${
                       selected ? "shadow-sm" : ""
                     }`}
                     style={{
@@ -415,6 +431,49 @@ export default function SettingsModal({
               </div>
             )}
             </div>
+
+          <hr className="border-t border-[var(--border-subtle)]" />
+
+          <div>
+            <div className="field-hint">
+              <Clock size={13} />
+              <span>时段偏好</span>
+            </div>
+            <p className="text-xs text-ink-muted-48 mb-3">
+              影响规划时对各时段的评分：夜猫型会把任务更多排到晚间，早起型则偏向清晨与上午。
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {TIME_PREFERENCE_PRESETS.map((preset) => {
+                const selected = timePreference === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => setTimePreference(preset.id)}
+                    aria-pressed={selected}
+                    className={`flex flex-col items-start justify-start rounded-xl border p-3 text-left transition ${
+                      selected ? "shadow-sm" : ""
+                    }`}
+                    style={{
+                      borderColor: selected
+                        ? "var(--primary)"
+                        : "var(--hairline)",
+                      backgroundColor: selected
+                        ? "color-mix(in srgb, var(--primary) 6%, transparent)"
+                        : "transparent",
+                    }}
+                  >
+                    <span className="block text-sm font-medium text-ink">
+                      {preset.label}
+                    </span>
+                    <span className="mt-1 block text-xs leading-4 text-ink-muted-48">
+                      {preset.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           </div>
 
         <div className="modal-footer !justify-end">

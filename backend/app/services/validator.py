@@ -23,9 +23,9 @@ from app.services.conflict import iter_segments, overlaps_with_any
 # 默认每日最大工作量（分钟）
 DEFAULT_MAX_DAILY_WORKLOAD = 480  # 8 小时
 
-# 合理时间范围
-MIN_SCHEDULE_TIME = 5 * 60   # 05:00
-MAX_SCHEDULE_TIME = 23 * 60  # 23:00
+# 合理时间范围（全天可排：0点至24点）
+MIN_SCHEDULE_TIME = 0             # 00:00
+MAX_SCHEDULE_TIME = 24 * 60      # 24:00
 
 
 @dataclass

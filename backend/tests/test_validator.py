@@ -80,14 +80,22 @@ def test_validate_time_reasonableness_normal() -> None:
     assert len(issues) == 0
 
 
-def test_validate_time_reasonableness_too_early() -> None:
-    """开始时间过早应报错。"""
+def test_validate_time_reasonableness_early_morning_allowed() -> None:
+    """全天可排后，凌晨时段（如 4:00 开始）不应再报 time_too_early。"""
     blocks = [
         PlanV2Block(title="晨跑", date="2026-08-03", start=4 * 60, end=5 * 60),
     ]
     issues = validate_time_reasonableness(blocks)
-    assert len(issues) == 1
-    assert issues[0].code == "time_too_early"
+    assert len(issues) == 0
+
+
+def test_validate_time_reasonableness_late_night_allowed() -> None:
+    """全天可排后，深夜时段（如 23:00-24:00）不应再报 time_too_late。"""
+    blocks = [
+        PlanV2Block(title="夜班", date="2026-08-03", start=23 * 60, end=24 * 60),
+    ]
+    issues = validate_time_reasonableness(blocks)
+    assert len(issues) == 0
 
 
 def test_validate_time_reasonableness_too_short() -> None:

@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 
 Provider = Literal["auto", "openai", "deepseek", "local"]
 Category = Literal["work", "study", "fitness", "life", "rest"]
+TimePreference = Literal["balanced", "early_bird", "night_owl"]
 
 
 class ParsedSchedule(BaseModel):
@@ -240,35 +241,39 @@ class WorkStyleSpec(BaseModel):
 
 
 class PlanningWeights(BaseModel):
-    """SchedulingEngine 七维加权评分权重（0-1，用户可在设置页调节）。"""
-    memory: float = Field(default=0.30, ge=0.0, le=1.0, description="记忆匹配度权重")
-    understanding: float = Field(default=0.20, ge=0.0, le=1.0, description="理解匹配度权重")
-    time: float = Field(default=0.15, ge=0.0, le=1.0, description="时间可用性权重")
-    priority: float = Field(default=0.15, ge=0.0, le=1.0, description="任务优先级权重")
-    deadline: float = Field(default=0.10, ge=0.0, le=1.0, description="截止日期权重")
-    conflict: float = Field(default=0.05, ge=0.0, le=1.0, description="冲突风险权重")
+    """SchedulingEngine 六维加权评分权重（0-1，用户可在设置页调节）。
+
+    截止日期不参与评分：作为硬约束在调度时强制（排期不得越过截止日），
+    并通过自动优先级让截止任务优先认领时段。
+    """
+    memory: float = Field(default=0.33, ge=0.0, le=1.0, description="记忆匹配度权重")
+    understanding: float = Field(default=0.22, ge=0.0, le=1.0, description="理解匹配度权重")
+    time: float = Field(default=0.17, ge=0.0, le=1.0, description="时间可用性权重")
+    priority: float = Field(default=0.17, ge=0.0, le=1.0, description="任务优先级权重")
+    conflict: float = Field(default=0.06, ge=0.0, le=1.0, description="冲突风险权重")
     workload: float = Field(default=0.05, ge=0.0, le=1.0, description="负荷惩罚权重")
 
     @model_validator(mode="after")
     def normalize_sum_to_one(self):
-        """归一化权重，使七维总和恰好为 1。"""
+        """归一化权重，使六维总和恰好为 1。"""
+        dims = ("memory", "understanding", "time", "priority", "conflict", "workload")
         total = sum(
             getattr(self, dim)
-            for dim in ("memory", "understanding", "time", "priority", "deadline", "conflict", "workload")
+            for dim in dims
         )
         if total <= 0:
             return self
-        for dim in ("memory", "understanding", "time", "priority", "deadline", "conflict", "workload"):
+        for dim in dims:
             setattr(self, dim, round(getattr(self, dim) / total, 2))
         # 把舍入误差加到最大维度上
         current = sum(
             getattr(self, dim)
-            for dim in ("memory", "understanding", "time", "priority", "deadline", "conflict", "workload")
+            for dim in dims
         )
         diff = round(1.0 - current, 2)
         if diff != 0:
             largest = max(
-                ("memory", "understanding", "time", "priority", "deadline", "conflict", "workload"),
+                dims,
                 key=lambda d: getattr(self, d),
             )
             setattr(self, largest, round(getattr(self, largest) + diff, 2))
@@ -289,6 +294,10 @@ class PlanV2Request(BaseModel):
     weights: PlanningWeights | None = Field(
         default=None,
         description="个性化规划七维权重，缺省使用 SchedulingEngine 默认值",
+    )
+    time_preference: TimePreference = Field(
+        default="balanced",
+        description="时段偏好评分预设：balanced=均衡（默认节奏），early_bird=早起型，night_owl=夜猫型",
     )
     provider: Provider | None = None
 
