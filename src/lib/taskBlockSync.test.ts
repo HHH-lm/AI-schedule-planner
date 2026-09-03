@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   syncBlockDeletionToTasks,
   syncBlockDoneToSubtask,
+  syncBlockSaveToTasks,
   syncBlockToTask,
   syncSubtaskRenameToBlocks,
 } from "./taskBlockSync";
@@ -98,6 +99,63 @@ describe("syncBlockToTask", () => {
     expect(result.tasks[0].subtasks).toHaveLength(1);
     expect(result.tasks[0].subtasks[0].name).toBe("剪辑素材");
     expect(result.subtaskId).toBeDefined();
+  });
+});
+
+describe("syncBlockSaveToTasks", () => {
+  it("新建时勾选已完成会同步到创建的子任务", () => {
+    const task = makeTask("t1", "做视频", []);
+    const result = syncBlockSaveToTasks([task], {
+      taskId: "t1",
+      blockName: "写脚本",
+      done: true,
+    });
+
+    expect(result.subtaskId).toBeDefined();
+    expect(result.tasks[0].subtasks).toHaveLength(1);
+    expect(result.tasks[0].subtasks[0]).toMatchObject({
+      name: "写脚本",
+      done: true,
+    });
+  });
+
+  it("编辑时取消勾选会把同名子任务同步回未完成", () => {
+    const sub = makeSubtask("s1", "写脚本");
+    sub.done = true;
+    const task = makeTask("t1", "做视频", [sub]);
+    const result = syncBlockSaveToTasks([task], {
+      taskId: "t1",
+      subtaskId: "s1",
+      blockName: "写脚本",
+      done: false,
+    });
+
+    expect(result.tasks[0].subtasks[0].done).toBe(false);
+    expect(result.subtaskId).toBe("s1");
+  });
+
+  it("未关联任务时按名称匹配同步完成状态", () => {
+    const task = makeTask("t1", "做视频", [
+      makeSubtask("s1", "写脚本"),
+    ]);
+    const result = syncBlockSaveToTasks([task], {
+      blockName: "写脚本",
+      done: true,
+    });
+
+    expect(result.tasks[0].subtasks[0].done).toBe(true);
+    expect(result.subtaskId).toBe("s1");
+  });
+
+  it("找不到匹配子任务时任务保持不变", () => {
+    const task = makeTask("t1", "做视频", []);
+    const result = syncBlockSaveToTasks([task], {
+      blockName: "剪辑素材",
+      done: true,
+    });
+
+    expect(result.tasks).toEqual([task]);
+    expect(result.subtaskId).toBeUndefined();
   });
 });
 

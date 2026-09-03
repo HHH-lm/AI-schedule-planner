@@ -155,6 +155,29 @@ export function syncBlockToTask(
 }
 
 /**
+ * Combined save-path sync used when a time block is saved from the modal:
+ * establishes/repairs the subtask link like syncBlockToTask, then mirrors
+ * the block's saved completion state onto the owning subtask so checking
+ * "已完成" during creation reaches the task board.
+ */
+export function syncBlockSaveToTasks(
+  tasks: Task[],
+  link: BlockToTaskLink & { done: boolean }
+): { tasks: Task[]; subtaskId?: string } {
+  const synced = syncBlockToTask(tasks, link);
+  const subtaskId = synced.subtaskId ?? link.subtaskId;
+  const doneSynced = syncBlockDoneToSubtask(
+    synced.tasks,
+    { taskId: link.taskId, subtaskId, name: link.blockName },
+    link.done
+  );
+  return {
+    tasks: doneSynced.tasks,
+    subtaskId: doneSynced.subtaskId ?? subtaskId,
+  };
+}
+
+/**
  * Removes subtasks that become orphaned when their owning time blocks are
  * deleted. Only subtaskIds referenced by the deleted blocks are considered;
  * a subtask is removed only when no remaining block still references it, so

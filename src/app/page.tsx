@@ -96,7 +96,7 @@ import AccountModal from "@/components/AccountModal";
 import { buildObsidianUrl } from "@/lib/obsidian";
 import {
   syncBlockDoneToSubtask,
-  syncBlockToTask,
+  syncBlockSaveToTasks,
   syncSubtaskRenameToBlocks,
 } from "@/lib/taskBlockSync";
 import {
@@ -469,14 +469,15 @@ export default function Home() {
       const subtaskId = draft.subtaskId ?? existingBlock?.subtaskId;
       commitData((prev) => {
         if (!prev) return prev;
-        const synced = syncBlockToTask(prev.tasks, {
+        const synced = syncBlockSaveToTasks(prev.tasks, {
           taskId: taskId ?? undefined,
           subtaskId: subtaskId ?? undefined,
           blockName: name,
           previousBlockName: existingBlock?.name,
+          done: draft.done ?? false,
         });
         const tasks = synced.tasks;
-        const linkedSubtaskId = synced.subtaskId ?? subtaskId;
+        const linkedSubtaskId = synced.subtaskId;
         const block: TimeBlock = {
           id: id ?? uid(),
           name,
