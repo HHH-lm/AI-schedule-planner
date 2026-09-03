@@ -21,6 +21,7 @@ agentops-health-check-*.md
 .project-to-act/
 .zcode/
 backend/eval_snapshots/
+backups/
 
 
 .env*

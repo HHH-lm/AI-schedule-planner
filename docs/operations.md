@@ -188,8 +188,9 @@ grep '"event": "ai.response"' <日志> | python3 -c \
 ## 6. 备份与恢复
 
 - 本地模式：浏览器 localStorage 数据可通过统计周报的 Markdown 导出人工归档
-- Supabase 模式：在 Dashboard 使用 Database Backups 开启每日备份；恢复时先确认 `user_id` 作用域正确
-- 恢复演练：至少验证一次“从备份恢复后能正常加载时间块与任务”
+- Supabase Pro 模式：在 Dashboard 使用 Database Backups 开启每日备份；恢复时先确认 `user_id` 作用域正确
+- Supabase Free 模式（当前采用）：Dashboard 无 Daily Backups，用 `scripts/db_backup.sh` 每日 `pg_dump` 导出（连接串放 `.env.local` 的 `SUPABASE_DB_URL`，取自 Dashboard → Connect → Session pooler），备份保留最近 14 份于 `backups/db/`（已 gitignore，严禁提交）
+- 恢复演练：至少验证一次“从备份恢复后能正常加载时间块与任务”；步骤见 `scripts/db_backup.sh` 末尾注释（`pg_restore` 到本地临时库后查询 `schedule_state` / `reminder_log`）
 
 ## 7. 事故处理
 
