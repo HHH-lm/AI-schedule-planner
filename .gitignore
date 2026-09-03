@@ -20,6 +20,7 @@ docs/interview-ai-coding-answers.md
 agentops-health-check-*.md
 .project-to-act/
 .zcode/
+backend/eval_snapshots/
 
 
 .env*
