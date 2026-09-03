@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BarChart3,
   CalendarPlus,
@@ -74,7 +74,7 @@ import {
   signOutUser,
 } from "@/lib/supabase";
 import { logInfo } from "@/lib/logger";
-import { makeSampleData } from "@/lib/sample";
+import { isSampleData, makeSampleData } from "@/lib/sample";
 // import { buildWeekICS } from "@/lib/ics"; // 苹果日历导出暂未启用
 import WeekTimeline from "@/components/WeekTimeline";
 import TodayView from "@/components/TodayView";
@@ -138,6 +138,11 @@ export default function Home() {
     null
   );
   const data = historyState?.present ?? null;
+  // 当前展示的是内置演示数据（无本地/云端数据时的兜底），左上角予以提示
+  const showingSampleData = useMemo(
+    () => (data ? isSampleData(data) : false),
+    [data]
+  );
   const [hydrated, setHydrated] = useState(false);
   const [view, setView] = useState<ViewMode>(() => {
     if (typeof window !== "undefined") {
@@ -1455,6 +1460,9 @@ export default function Home() {
             <CalendarRange size={15} />
           </span>
           <span>AI日程</span>
+          {showingSampleData && (
+            <span className="nav-sample-tag">展示数据</span>
+          )}
         </div>
 
         <nav className="nav-links">

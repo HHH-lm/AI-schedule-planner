@@ -808,3 +808,14 @@ export function makeSampleData(): AppData {
 
   return { version: 1, tasks, timeBlocks };
 }
+
+/**
+ * 判断当前展示的数据是否为内置演示数据（无痕模式/无本地数据时的兜底内容）。
+ * 示例任务使用固定 ID，而用户自建任务的 ID 由 uid() 随机生成，
+ * 因此「全部任务 ID 都属于示例固定 ID」即可认定为演示数据。
+ */
+export function isSampleData(data: AppData): boolean {
+  if (data.tasks.length === 0) return false;
+  const sampleTaskIds = new Set(makeSampleData().tasks.map((task) => task.id));
+  return data.tasks.every((task) => sampleTaskIds.has(task.id));
+}
