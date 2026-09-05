@@ -391,7 +391,7 @@ async def plan_v2_schedule(
         )
 
     resolved_provider, resolved_message = resolve_ai_provider(
-        request.provider, settings
+        request.provider, settings, request.api_key
     )
     if not resolved_provider:
         result = _fallback_plan_v2(
@@ -428,6 +428,7 @@ async def plan_v2_schedule(
             resolved_provider,
             settings,
             operation="plan.understand",
+            credential=request.api_key,
         )
         understanding_content = _extract_content(understanding_data)
         understanding_payload = parse_model_json(understanding_content)
@@ -512,6 +513,7 @@ async def plan_v2_schedule(
                     settings,
                     temperature=0.7,
                     operation="plan.explain",
+                    credential=request.api_key,
                 )
                 explanation_content = _extract_content(explanation_data)
                 explanation = explanation_content.strip()[:500]

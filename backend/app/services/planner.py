@@ -99,6 +99,7 @@ async def breakdown_tasks(
     provider: str | None,
     today: str | None,
     settings: Settings,
+    api_key: str | None = None,
 ) -> BreakdownResponse:
     plan = plan.strip()
     started = time.perf_counter()
@@ -109,7 +110,7 @@ async def breakdown_tasks(
         )
         return BreakdownResponse(source="none", tasks=[], message="输入为空")
 
-    resolved_provider, resolved_message = resolve_ai_provider(provider, settings)
+    resolved_provider, resolved_message = resolve_ai_provider(provider, settings, api_key)
     if not resolved_provider:
         tasks = [BreakdownTask(name=name) for name in _split_plan_text(plan)]
         _log_breakdown_result(
@@ -123,7 +124,7 @@ async def breakdown_tasks(
         user_text = f"今天={prompt_today}。请拆解：\n{plan}"
         data = await call_chat_completions(
             _build_breakdown_prompt(), user_text, resolved_provider, settings,
-            operation="breakdown",
+            operation="breakdown", credential=api_key,
         )
         content = _extract_content(data)
         payload = parse_model_json(content)
@@ -292,7 +293,9 @@ async def plan_schedule(
     start_text = start.isoformat()
     end_text = end.isoformat()
 
-    resolved_provider, resolved_message = resolve_ai_provider(request.provider, settings)
+    resolved_provider, resolved_message = resolve_ai_provider(
+        request.provider, settings, request.api_key
+    )
     if not resolved_provider:
         blocks = _fallback_plan(request.tasks, request.existing_blocks, start, end)
         return PlanResponse(source="local", blocks=blocks, blocked=[], message=resolved_message)
@@ -306,6 +309,7 @@ async def plan_schedule(
             resolved_provider,
             settings,
             operation="plan",
+            credential=request.api_key,
         )
         content = _extract_content(data)
         payload = parse_model_json(content)

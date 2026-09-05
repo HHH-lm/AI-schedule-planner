@@ -26,6 +26,7 @@ import {
 } from "@/lib/blockTime";
 import { CATEGORIES } from "@/lib/categories";
 import { apiPost } from "@/lib/api";
+import { aiRequestFields } from "@/lib/settings";
 import {
   formatDeadlineShort,
   isDeadlineOverdue,
@@ -246,7 +247,7 @@ export default function TaskBoard({
         message?: string;
       }>("/breakdown", {
         plan,
-        provider: "auto",
+        ...aiRequestFields(data.settings),
         today: toDateKey(new Date()),
       });
       if (result.source === "none") {

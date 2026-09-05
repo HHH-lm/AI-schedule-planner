@@ -63,7 +63,9 @@ async def match_task(
     def _normalize(text: str) -> str:
         return re.sub(r"[\s\-_.,/]+", "", text).lower()
 
-    provider, provider_message = resolve_ai_provider(payload.provider, settings)
+    provider, provider_message = resolve_ai_provider(
+        payload.provider, settings, payload.api_key
+    )
     if not provider:
         normalized_name = _normalize(payload.name)
         for task in payload.tasks:
@@ -98,6 +100,7 @@ async def match_task(
         data = await call_chat_completions(
             system_prompt, user_text, provider, settings,
             temperature=0.5, operation="match_task",
+            credential=payload.api_key,
         )
         content = data["choices"][0]["message"]["content"]
         payload_json = parse_model_json(content)

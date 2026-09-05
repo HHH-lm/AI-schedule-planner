@@ -18,4 +18,7 @@ async def breakdown(
     payload: BreakdownRequest,
     settings: Settings = Depends(get_settings),
 ) -> BreakdownResponse:
-    return await breakdown_tasks(payload.plan, payload.provider, payload.today, settings)
+    return await breakdown_tasks(
+        payload.plan, payload.provider, payload.today, settings,
+        api_key=payload.api_key,
+    )

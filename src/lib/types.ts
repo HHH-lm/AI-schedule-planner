@@ -1,7 +1,7 @@
 export type Category = "work" | "study" | "fitness" | "life" | "rest";
 export type BlockStatus = "scheduled" | "pending";
 export type ViewMode = "today" | "week" | "board" | "stats";
-export type AiProviderSetting = "auto" | "openai" | "deepseek" | "local";
+export type AiProviderSetting = "openai" | "deepseek" | "local";
 export type TaskQuadrant = "urgent-important" | "important" | "urgent" | "neither";
 export type MemoryCategory =
   | "time-preference"
@@ -90,6 +90,9 @@ export type TimePreference = "balanced" | "early_bird" | "night_owl";
 export interface AppSettings {
   obsidianVault?: string;
   aiProvider?: AiProviderSetting;
+  /** 用户自备 API Key（随 AppData 云同步，RLS 隔离；随请求传给后端调用） */
+  openaiApiKey?: string;
+  deepseekApiKey?: string;
   hiddenBoardWeeks?: string[];
   timelineCollapsedRanges?: Array<{ start: number; end: number }>;
   planningWeights?: PlanningWeights;

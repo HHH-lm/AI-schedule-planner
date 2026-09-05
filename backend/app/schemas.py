@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 Provider = Literal["auto", "openai", "deepseek", "local"]
+# "auto" 仅作旧客户端兼容值：后端将其映射为环境变量 AI_PROVIDER（限 openai/deepseek/local），缺省 local。
 Category = Literal["work", "study", "fitness", "life", "rest"]
 TimePreference = Literal["balanced", "early_bird", "night_owl"]
 
@@ -29,6 +30,7 @@ class ParseRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
     provider: Provider | None = None
     today: str | None = None
+    api_key: str | None = Field(default=None, max_length=200)
 
 
 class ParseResponse(BaseModel):
@@ -64,6 +66,7 @@ class BreakdownRequest(BaseModel):
     plan: str = Field(min_length=1, max_length=4000)
     provider: Provider | None = None
     today: str | None = None
+    api_key: str | None = Field(default=None, max_length=200)
 
 
 class BreakdownResponse(BaseModel):
@@ -85,6 +88,7 @@ class PlanRequest(BaseModel):
     horizon_days: int = Field(default=7, ge=1, le=90)
     provider: Provider | None = None
     today: str | None = None
+    api_key: str | None = Field(default=None, max_length=200)
 
 
 class PlannedBlock(BaseModel):
@@ -119,6 +123,7 @@ class MatchTaskRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     tasks: list[MatchTaskItem] = Field(default_factory=list)
     provider: Provider | None = None
+    api_key: str | None = Field(default=None, max_length=200)
 
 
 class MatchTaskResponse(BaseModel):
@@ -300,6 +305,10 @@ class PlanV2Request(BaseModel):
         description="时段偏好评分预设：balanced=均衡（默认节奏），early_bird=早起型，night_owl=夜猫型",
     )
     provider: Provider | None = None
+    api_key: str | None = Field(
+        default=None, max_length=200,
+        description="用户自备 API Key（随请求传入，仅在本次调用生命周期内使用，不落日志）",
+    )
 
 
 class TaskUnderstanding(BaseModel):

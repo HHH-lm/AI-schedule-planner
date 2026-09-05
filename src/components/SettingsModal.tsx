@@ -29,6 +29,8 @@ import {
 interface Props {
   obsidianVault: string;
   aiProvider: AiProviderSetting;
+  openaiApiKey?: string;
+  deepseekApiKey?: string;
   planningWeights: PlanningWeights;
   planningStyle?: PlanningStyleId;
   planningFocus?: PlanningDimensionKey[];
@@ -36,6 +38,8 @@ interface Props {
   onSave: (settings: {
     obsidianVault: string;
     aiProvider: AiProviderSetting;
+    openaiApiKey?: string;
+    deepseekApiKey?: string;
     planningWeights: PlanningWeights;
     planningStyle?: PlanningStyleId;
     planningFocus?: PlanningDimensionKey[];
@@ -48,6 +52,8 @@ interface Props {
 export default function SettingsModal({
   obsidianVault: initialVault,
   aiProvider: initialProvider,
+  openaiApiKey: initialOpenaiKey,
+  deepseekApiKey: initialDeepseekKey,
   planningWeights: initialWeights,
   planningStyle: initialStyle,
   planningFocus: initialFocus,
@@ -58,6 +64,8 @@ export default function SettingsModal({
 }: Props) {
   const [vault, setVault] = useState(initialVault);
   const [provider, setProvider] = useState<AiProviderSetting>(initialProvider);
+  const [openaiKey, setOpenaiKey] = useState(initialOpenaiKey ?? "");
+  const [deepseekKey, setDeepseekKey] = useState(initialDeepseekKey ?? "");
   const [weights, setWeights] = useState<PlanningWeights>(() =>
     normalizePlanningWeights(initialWeights)
   );
@@ -106,6 +114,8 @@ export default function SettingsModal({
     onSave({
       obsidianVault: (parsed.vault ?? vault).trim(),
       aiProvider: provider,
+      openaiApiKey: openaiKey.trim() || undefined,
+      deepseekApiKey: deepseekKey.trim() || undefined,
       // 设置页联动已保证百分比总和为 100，直接保存 0-1 权重
       planningWeights: weights,
       planningStyle: styleId,
@@ -257,11 +267,28 @@ export default function SettingsModal({
                 setProvider(event.target.value as AiProviderSetting)
               }
             >
-              <option value="auto">自动（优先 OpenAI，其次 DeepSeek）</option>
               <option value="openai">OpenAI</option>
               <option value="deepseek">DeepSeek</option>
               <option value="local">本地规则</option>
             </select>
+            {provider !== "local" && (
+              <div className="mt-2">
+                <input
+                  type="password"
+                  className={inputClass}
+                  value={provider === "openai" ? openaiKey : deepseekKey}
+                  onChange={(event) => {
+                    if (provider === "openai") setOpenaiKey(event.target.value);
+                    else setDeepseekKey(event.target.value);
+                  }}
+                  placeholder={`${provider === "openai" ? "OpenAI" : "DeepSeek"} API Key（sk- 开头）`}
+                  autoComplete="off"
+                />
+                <p className="text-xs text-ink-muted-48 mt-1">
+                  使用你自己的 API Key，仅保存在你的账号数据中；未填写时将使用本地规则解析。
+                </p>
+              </div>
+            )}
           </div>
 
           <hr className="border-t border-[var(--border-subtle)]" />

@@ -47,29 +47,30 @@ def normalize_provider(value: str | None) -> str | None:
     return None
 
 
+PROVIDER_LABELS = {"openai": "OpenAI", "deepseek": "DeepSeek"}
+
+
 def resolve_ai_provider(
-    requested: str | None, settings: Settings
+    requested: str | None, settings: Settings, api_key: str | None = None
 ) -> tuple[str | None, str | None]:
-    target = normalize_provider(requested) or normalize_provider(settings.ai_provider) or "auto"
+    """解析本次请求实际可用的 AI provider。
+
+    用户自备 Key 模式：请求显式选择 openai/deepseek 且携带 api_key 才走 AI，
+    未携带则降级本地规则；路由层调用时不传 api_key，因此服务端环境变量 Key
+    不再服务用户请求（仅评测链路把环境变量 Key 以 api_key 显式传入）。
+    "auto"/缺省/非法值兼容映射到环境变量 AI_PROVIDER（限 openai/deepseek/local），
+    仍不带 Key 则同样降级本地。
+    """
+    target = normalize_provider(requested)
+    if target is None or target == "auto":
+        env_provider = normalize_provider(settings.ai_provider)
+        target = env_provider if env_provider in ("openai", "deepseek", "local") else "local"
     if target == "local":
         return None, None
-    if target == "openai":
-        return (
-            ("openai", None)
-            if settings.openai_api_key
-            else (None, "未配置 OPENAI_API_KEY，已使用本地规则")
-        )
-    if target == "deepseek":
-        return (
-            ("deepseek", None)
-            if settings.deepseek_api_key
-            else (None, "未配置 DEEPSEEK_API_KEY，已使用本地规则")
-        )
-    if settings.openai_api_key:
-        return "openai", None
-    if settings.deepseek_api_key:
-        return "deepseek", None
-    return None, "未配置 AI 服务，已使用本地规则"
+    if api_key:
+        return target, None
+    label = PROVIDER_LABELS.get(target, target)
+    return None, f"未填写 {label} API Key，已使用本地规则（设置页可填入自己的 Key）"
 
 
 def parse_local_date(date_text: str) -> date | None:
@@ -349,10 +350,13 @@ async def call_chat_completions(
     settings: Settings,
     temperature: float = 0.2,
     operation: str = "ai",
+    credential: str | None = None,
 ) -> dict[str, Any]:
     config = PROVIDER_CONFIG[provider]
     base_url = (getattr(settings, config["base_url_attr"]) or config["default_base_url"]).rstrip("/")
-    credential = getattr(settings, config["key_attr"])
+    resolved_credential = credential or getattr(settings, config["key_attr"])
+    if not resolved_credential:
+        raise RuntimeError(f"{PROVIDER_LABELS.get(provider, provider)} 未提供 API Key")
     model = getattr(settings, config["model_attr"]) or config["default_model"]
     timeout = settings.ai_timeout_ms / 1000
     started = time.perf_counter()
@@ -382,7 +386,7 @@ async def call_chat_completions(
                 f"{base_url}/chat/completions",
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {credential}",
+                    "Authorization": f"Bearer {resolved_credential}",
                 },
                 json=body,
             )
@@ -450,10 +454,12 @@ async def parse_with_ai(
     provider: str,
     today: str,
     settings: Settings,
+    api_key: str | None = None,
 ) -> tuple[str, list[ParsedSchedule], RejectReason | None, str | None]:
     try:
         data = await call_chat_completions(
-            build_system_prompt(today), text, provider, settings, operation="parse"
+            build_system_prompt(today), text, provider, settings,
+            operation="parse", credential=api_key,
         )
         content = _extract_content(data)
         schedules, rejected = sanitize_model_result(parse_model_json(content))

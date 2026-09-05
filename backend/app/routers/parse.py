@@ -75,7 +75,9 @@ async def parse_schedule(
         )
 
     today = payload.today if payload.today and parse_local_date(payload.today) else default_today()
-    provider, provider_message = resolve_ai_provider(payload.provider, settings)
+    provider, provider_message = resolve_ai_provider(
+        payload.provider, settings, payload.api_key
+    )
     if not provider:
         schedules, rejected = parse_schedule_with_feedback(text, parse_local_date(today))
         _log_parse_result(
@@ -91,7 +93,7 @@ async def parse_schedule(
         )
 
     source, schedules, rejected, ai_message = await parse_with_ai(
-        text, provider, today, settings
+        text, provider, today, settings, api_key=payload.api_key
     )
     if source == "none":
         _log_parse_result(

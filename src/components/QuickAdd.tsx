@@ -22,7 +22,8 @@ interface Props {
     parsed: ParsedSchedule[],
     deadline?: string
   ) => Promise<AddParsedResult>;
-  aiProvider?: AiProviderSetting;
+  /** AI 请求字段（provider + 用户自备 Key），由 page.tsx 用 aiRequestFields 组装 */
+  aiRequest?: { provider: AiProviderSetting; api_key?: string };
 }
 
 interface ParseApiResponse {
@@ -32,7 +33,7 @@ interface ParseApiResponse {
   message?: string;
 }
 
-export default function QuickAdd({ onAddParsed, aiProvider }: Props) {
+export default function QuickAdd({ onAddParsed, aiRequest }: Props) {
   const [text, setText] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<"ok" | "warn">("ok");
@@ -54,7 +55,7 @@ export default function QuickAdd({ onAddParsed, aiProvider }: Props) {
     try {
       const result = await apiPost<ParseApiResponse>("/parse", {
         text: input,
-        provider: aiProvider ?? "auto",
+        ...(aiRequest ?? { provider: "local" }),
         today: todayKey(),
       });
       if (result.source === "none") {

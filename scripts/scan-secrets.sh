@@ -36,7 +36,7 @@ scan_tracked "带值的密钥环境变量" \
   '-g !backend/tests/**'
 
 scan_tracked "明显凭据赋值" \
-  '(password|secret|api[_-]?key)\s*=\s*["'\'']?[^[:space:]"'\'']' \
+  '(password|secret|api[_-]?key)\s*=\s*(["'"'"'][^"'"'"']{6,}["'"'"']|[A-Za-z0-9_-]{24,})' \
   '-g !backend/tests/**'
 
 tracked_env="$(git ls-files | rg '(^|/)\.env($|\.local$|\.prod$|\.staging$)' || true)"

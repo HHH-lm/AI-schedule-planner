@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: str = "json"
 
-    ai_provider: str = "auto"
+    # 用户自备 Key 模式：请求未带 provider 时才回退此值（限 openai/deepseek/local）；
+    # 服务端 OPENAI/DEEPSEEK_API_KEY 仅供 golden 评测链路使用，不服务用户请求
+    ai_provider: str = "local"
     ai_timeout_ms: int = 15000
 
     openai_api_key: str | None = None

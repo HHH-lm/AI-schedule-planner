@@ -487,7 +487,14 @@ def compute_metrics(
 
 async def run_eval(args: argparse.Namespace) -> int:
     settings = get_settings()
-    provider, message = resolve_ai_provider(args.provider, settings)
+    # 评测链路把服务端环境变量 Key 作为请求级 api_key 传入（用户自备 Key 模式下
+    # 路由层不再消费服务端 Key，仅评测保留此通道）
+    env_key = (
+        settings.openai_api_key
+        if args.provider == "openai"
+        else settings.deepseek_api_key
+    )
+    provider, message = resolve_ai_provider(args.provider, settings, api_key=env_key)
     if not provider:
         print(json.dumps({"provider": args.provider, "error": message or "AI provider unavailable"}, ensure_ascii=False))
         return 2
@@ -516,7 +523,8 @@ async def run_eval(args: argparse.Namespace) -> int:
                 used_fallback = False
             else:
                 source, schedules, rejected, ai_message = await parse_with_ai(
-                    case["input"], provider, case["today"], settings
+                    case["input"], provider, case["today"], settings,
+                    api_key=env_key,
                 )
                 schedules, rejected, ai_message, used_fallback = _fallback_empty_ai_result(
                     case["input"], case["today"], schedules, rejected, ai_message
@@ -538,6 +546,7 @@ async def run_eval(args: argparse.Namespace) -> int:
                 "end": payload.pop("range_end"),
             }
             payload["provider"] = provider
+            payload["api_key"] = env_key
             response = await plan_v2_schedule(PlanV2Request(**payload), settings)
             result = score_planning_case(case, response)
             result["kind"] = kind
@@ -572,7 +581,7 @@ async def run_eval(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AI 解析与规划 golden set 评测")
-    parser.add_argument("--provider", choices=("auto", "openai", "deepseek"), default="auto")
+    parser.add_argument("--provider", choices=("openai", "deepseek"), default="deepseek")
     parser.add_argument(
         "--split",
         choices=("open", "heldout", "all"),

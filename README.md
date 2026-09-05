@@ -45,7 +45,7 @@ npm run dev
 | 层 | 技术 |
 | --- | --- |
 | 前端 | Next.js 15 · React 19 · Tailwind CSS 4 · Lucide React |
-| 后端 | FastAPI · Python 3.12+ · AI 代理（OpenAI / DeepSeek） |
+| 后端 | FastAPI · Python 3.12+ · AI 代理（OpenAI / DeepSeek，用户自备 Key） |
 | 数据 | localStorage（默认）· Supabase（可选） |
 | 测试 | Vitest（前端）· pytest（后端） |
 
@@ -53,10 +53,12 @@ npm run dev
 
 所有配置均有默认值，完整变量说明见 [.env.example](.env.example)。
 
+AI 解析使用**用户自备 Key**：在应用设置页选择 OpenAI / DeepSeek 并填入自己的 API Key（仅保存在用户自己的账号数据中，随请求传给后端调用）；未填写 Key 时使用本地中文规则解析。服务端 `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` 仅供 golden 评测链路使用。
+
 | 场景 | 关键变量 |
 | --- | --- |
 | 云同步 | `NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY` |
-| AI 解析 | `AI_PROVIDER`、`OPENAI_API_KEY` / `DEEPSEEK_API_KEY` |
+| AI 解析 | `AI_PROVIDER`（请求未带 provider 时兜底）；服务端 Key 仅评测用 |
 | 微信提醒 | `WECHAT_PUSH_TYPE`、`WECOM_WEBHOOK_URL` / `PUSHPLUS_TOKEN` / `SERVERCHAN_KEY` |
 | 定时提醒 | `ENABLE_SCHEDULER`、`CRON_SECRET`（Serverless 模式必填） |
 
