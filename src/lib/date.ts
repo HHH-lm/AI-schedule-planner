@@ -74,7 +74,12 @@ export function formatWeekRange(offset: number): string {
   const days = getWeekDays(offset);
   const first = days[0].date;
   const last = days[6].date;
-  return `${first.getMonth() + 1}月${first.getDate()}日 - ${last.getMonth() + 1}月${last.getDate()}日`;
+  const monthDay = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`;
+  const fullDate = (d: Date) => `${d.getFullYear()}年${monthDay(d)}`;
+  // 同年只在开头带一次年份；跨年周（如 12月29日 - 1月4日）两侧都带
+  return first.getFullYear() === last.getFullYear()
+    ? `${fullDate(first)} - ${monthDay(last)}`
+    : `${fullDate(first)} - ${fullDate(last)}`;
 }
 
 export function isoWeekNumber(d: Date): number {

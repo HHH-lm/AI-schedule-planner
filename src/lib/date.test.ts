@@ -81,8 +81,14 @@ describe("week helpers", () => {
     expect(getWeekDays(1, anchor)[0].key).toBe("2026-08-10");
   });
 
-  it("formatWeekRange 输出本周区间", () => {
-    expect(formatWeekRange(0)).toBe("8月3日 - 8月9日");
+  it("formatWeekRange 输出本周区间（含年份）", () => {
+    expect(formatWeekRange(0)).toBe("2026年8月3日 - 8月9日");
+  });
+
+  it("formatWeekRange 跨年周两侧都带年份", () => {
+    // 2026-12-28（周一）所在周：12月28日 - 2027年1月3日
+    vi.setSystemTime(new Date(2026, 11, 30, 12, 0, 0));
+    expect(formatWeekRange(0)).toBe("2026年12月28日 - 2027年1月3日");
   });
 
   it("weekdayName 与 ISO 周计算稳定", () => {

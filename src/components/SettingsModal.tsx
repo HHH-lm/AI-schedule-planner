@@ -90,7 +90,7 @@ export default function SettingsModal({
   const [timePreference, setTimePreference] = useState<TimePreference>(() =>
     normalizeTimePreference(initialTimePreference ?? DEFAULT_TIME_PREFERENCE)
   );
-  // 点击保存后才开始显示 Key 校验错误；填入 Key 或改选后提示自动消失
+  // 红色提示只在「未填 Key 且点击保存」后出现；改选服务商或编辑 Key 即消失，再次保存时重新校验
   const [saveAttempted, setSaveAttempted] = useState(false);
   const keyError = saveAttempted
     ? aiSettingError(provider, openaiKey, deepseekKey)
@@ -277,9 +277,10 @@ export default function SettingsModal({
             <select
               className={inputClass}
               value={provider}
-              onChange={(event) =>
-                setProvider(event.target.value as AiProviderSetting)
-              }
+              onChange={(event) => {
+                setProvider(event.target.value as AiProviderSetting);
+                setSaveAttempted(false);
+              }}
             >
               <option value="openai">OpenAI</option>
               <option value="deepseek">DeepSeek</option>
@@ -295,12 +296,13 @@ export default function SettingsModal({
                   onChange={(event) => {
                     if (provider === "openai") setOpenaiKey(event.target.value);
                     else setDeepseekKey(event.target.value);
+                    setSaveAttempted(false);
                   }}
                   placeholder={`${provider === "openai" ? "OpenAI" : "DeepSeek"} API Key（sk- 开头）`}
                   autoComplete="off"
                 />
                 <p className="text-xs text-ink-muted-48 mt-1">
-                  使用你自己的 API Key，仅保存在你的账号数据中；未填写时将使用本地规则解析。
+                  使用你自己的 API Key，仅保存在你的账号数据中
                 </p>
                 {keyError && (
                   <p

@@ -77,7 +77,7 @@ export default function TodayView({
   const today = new Date();
   const todayKeyValue = toDateKey(today);
   const tomorrowKeyValue = toDateKey(addDays(today, 1));
-  const todayLabel = `${today.getMonth() + 1}月${today.getDate()}日`;
+  const todayLabel = `${today.getFullYear()}年${today.getMonth() + 1}月${today.getDate()}日`;
 
   const todayBlocks = useMemo(
     () =>

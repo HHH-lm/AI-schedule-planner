@@ -38,6 +38,8 @@ export default function QuickAdd({ onAddParsed, aiRequest }: Props) {
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<"ok" | "warn">("ok");
   const [busy, setBusy] = useState(false);
+  // 是否走 AI 服务商解析（provider 为 AI 且用户 Key 已配置）；本地规则无网络等待，不显示「AI」与超时提示
+  const usesAi = Boolean(aiRequest?.api_key && aiRequest.provider !== "local");
 
   const showFeedback = (message: string, tone: "ok" | "warn" = "ok") => {
     setFeedback(message);
@@ -177,7 +179,9 @@ export default function QuickAdd({ onAddParsed, aiRequest }: Props) {
       {busy && (
         <div className="status-note-ok mt-3 inline-flex items-center gap-1.5 !py-1.5 text-xs">
           <Loader2 size={13} className="animate-spin" />
-          AI 解析中，最长约 {API_TIMEOUT_MS / 1000} 秒，请稍候
+          {usesAi
+            ? `AI 解析中，最长约 ${API_TIMEOUT_MS / 1000} 秒，请稍候`
+            : "解析中"}
         </div>
       )}
     </div>
