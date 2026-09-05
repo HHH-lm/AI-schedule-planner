@@ -222,6 +222,26 @@ def find_date(segment: str, anchor: date) -> dict[str, str] | None:
     if weekday_match:
         index = WEEKDAY_INDEX[weekday_match.group(1)]
         return {"key": to_date_key(next_weekday_date(index, anchor)), "raw": weekday_match.group(0)}
+    month_day = re.search(
+        r"(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*[号日]", segment
+    )
+    if month_day:
+        year = int(month_day.group(1)) if month_day.group(1) else None
+        month = int(month_day.group(2))
+        day = int(month_day.group(3))
+        candidates: list[date] = []
+        years = (year,) if year is not None else (anchor.year, anchor.year + 1)
+        for candidate_year in years:
+            try:
+                candidates.append(date(candidate_year, month, day))
+            except ValueError:
+                continue
+        if not candidates:
+            return None
+        # 无年份时取不早于今天的最近候选（已过则顺延下一年）；显式年份按字面使用
+        future = [value for value in candidates if value >= anchor]
+        target = min(future) if future else max(candidates)
+        return {"key": to_date_key(target), "raw": month_day.group(0)}
     if "今晚" in segment:
         return {"key": to_date_key(anchor), "raw": "今晚"}
     if "今天" in segment:
@@ -314,6 +334,72 @@ def split_sentences(text: str) -> list[str]:
     return [s.strip() for s in re.split(r"[，,。；;\n]+", text) if s.strip()]
 
 
+# 纯引导语段：「帮我记录一下」「帮我安排」「记录一下」等——整段只有指令词、
+# 无时间无事项，不生成时间块（段内冒号后跟内容的写法不受影响，fullmatch 不命中）
+_LEADIN_RE = re.compile(
+    r"^(?:请\s*)?(?:帮\s*(?:我)?|麻烦|帮忙)?(?:记录|记|备注|添加|新增|录入|安排|建)(?:一?\s*下|个|上)?$"
+)
+
+
+def _is_time_only_segment(raw_segment: str, anchor: date) -> bool:
+    """段是否为纯时间/日期表述（抽出时间与日期后无有效名称）。"""
+    segment = raw_segment.strip()
+    normalized = normalize_time_notation(segment)
+    range_match = match_time_range(normalized, anchor) or match_single_time(normalized)
+    remaining = normalized
+    if range_match:
+        remaining = remaining.replace(str(range_match["raw"]), "", 1)
+    date_info = find_date(remaining, anchor)
+    if date_info:
+        remaining = remaining.replace(str(date_info["raw"]), "", 1)
+    location = find_location(remaining)
+    if location:
+        remaining = re.sub(
+            r"(?:地点[:：]?|在|去)" + re.escape(location) + r"$", "", remaining
+        )
+    name = clean_name(remaining)
+    has_time_or_date = range_match is not None or date_info is not None
+    return has_time_or_date and (name == "未命名事项" or not has_meaningful_name(name))
+
+
+def _is_directive_segment(segment: str) -> bool:
+    return (
+        _LEADIN_RE.match(segment) is not None
+        or extract_link_directive(segment) is not None
+        or extract_detached_location(segment) is not None
+    )
+
+
+def _merge_segments(segments: list[str], anchor: date) -> list[str]:
+    """段预处理：剥离纯引导语段，并把纯时间表述段与相邻事项段结合。
+
+    「帮我记录一下,9月5号晚上6点半到9点,任务架构体检问题修复」经此处理成为
+    单段「9月5号晚上6点半到9点任务架构体检问题修复」，最终产出单个时间块，
+    避免引导语与事项段各自回填默认时段造成同一时段双写。
+    """
+    merged: list[str] = []
+    for segment in segments:
+        if _LEADIN_RE.match(segment):
+            continue
+        if merged:
+            previous = merged[-1]
+            previous_time_only = _is_time_only_segment(previous, anchor)
+            current_time_only = _is_time_only_segment(segment, anchor)
+            if (
+                previous_time_only
+                and not current_time_only
+                and not _is_directive_segment(segment)
+            ) or (
+                current_time_only
+                and not previous_time_only
+                and not _is_directive_segment(previous)
+            ):
+                merged[-1] = previous + segment
+                continue
+        merged.append(segment)
+    return merged
+
+
 _LINK_DIRECTIVE_RE = re.compile(
     r"^关联(?:到|至|给)?(?:任务|项目)?\s*[:：]?\s*(.+)$"
 )
@@ -382,7 +468,7 @@ def parse_schedule_with_feedback(
         return [], RejectReason(code="empty", message="输入为空，请输入包含时间和事项的句子")
 
     pending_link: str | None = None
-    for raw_segment in split_sentences(text):
+    for raw_segment in _merge_segments(split_sentences(text), anchor):
         link_target = extract_link_directive(raw_segment)
         if link_target:
             if schedules:

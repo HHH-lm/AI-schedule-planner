@@ -4,6 +4,7 @@ import type { AppSettings } from "./types";
 import {
   aiApiKeyFor,
   aiRequestFields,
+  aiSettingError,
   migrateSettings,
   normalizeAiProvider,
 } from "./settings";
@@ -79,5 +80,31 @@ describe("aiRequestFields", () => {
 
   it("无设置时默认 local", () => {
     expect(aiRequestFields(undefined)).toEqual({ provider: "local" });
+  });
+});
+
+describe("aiSettingError", () => {
+  it("本地规则始终可保存", () => {
+    expect(aiSettingError("local", undefined, undefined)).toBeNull();
+    expect(aiSettingError("local", "", "")).toBeNull();
+  });
+
+  it("选择 AI 服务商但未填对应 Key 时返回错误文案", () => {
+    expect(aiSettingError("openai", "", undefined)).toBe(
+      "已选择 OpenAI，请填入对应的 API Key，或改选「本地规则」"
+    );
+    expect(aiSettingError("deepseek", "sk-other", "   ")).toBe(
+      "已选择 DeepSeek，请填入对应的 API Key，或改选「本地规则」"
+    );
+  });
+
+  it("填入对应 Key（trim 后非空）即放行", () => {
+    expect(aiSettingError("openai", " sk-oa ", undefined)).toBeNull();
+    expect(aiSettingError("deepseek", undefined, "sk-ds")).toBeNull();
+  });
+
+  it("只校验当前 provider 对应的 Key", () => {
+    expect(aiSettingError("deepseek", "sk-oa", undefined)).not.toBeNull();
+    expect(aiSettingError("openai", undefined, "sk-ds")).not.toBeNull();
   });
 });

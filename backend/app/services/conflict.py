@@ -94,8 +94,10 @@ def split_schedule_conflicts(
     accepted: list[ParsedSchedule] = []
     blocked: list[ParsedSchedule] = []
     for item in parsed:
+        # 同批内互检：已接受的块累加进对比集，同批互相重叠的后续块进入 blocked
         if overlaps_with_any(item, active):
             blocked.append(item)
         else:
             accepted.append(item)
+            active.append(item)
     return accepted, blocked

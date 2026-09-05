@@ -32,6 +32,19 @@ export function aiApiKeyFor(
   return trimmed ? trimmed : undefined;
 }
 
+/** 保存前校验：选择了 AI 服务商但未填对应 Key 时返回错误文案，可保存时返回 null */
+export function aiSettingError(
+  provider: AiProviderSetting,
+  openaiKey: string | undefined,
+  deepseekKey: string | undefined
+): string | null {
+  if (provider === "local") return null;
+  const key = provider === "openai" ? openaiKey : deepseekKey;
+  if (key?.trim()) return null;
+  const label = provider === "openai" ? "OpenAI" : "DeepSeek";
+  return `已选择 ${label}，请填入对应的 API Key，或改选「本地规则」`;
+}
+
 /**
  * 组装发往 AI 端点的请求字段。provider 原样传递（不擅自改 local）——
  * 未填 Key 时由后端统一降级本地并在 message 中提示原因。

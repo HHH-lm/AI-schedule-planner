@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Clock, BookMarked, Bot, Brain, SlidersHorizontal, X } from "lucide-react";
 import { parseObsidianUrl } from "@/lib/obsidian";
+import { aiSettingError } from "@/lib/settings";
 import type {
   AiProviderSetting,
   PlanningDimensionKey,
@@ -89,6 +90,11 @@ export default function SettingsModal({
   const [timePreference, setTimePreference] = useState<TimePreference>(() =>
     normalizeTimePreference(initialTimePreference ?? DEFAULT_TIME_PREFERENCE)
   );
+  // 点击保存后才开始显示 Key 校验错误；填入 Key 或改选后提示自动消失
+  const [saveAttempted, setSaveAttempted] = useState(false);
+  const keyError = saveAttempted
+    ? aiSettingError(provider, openaiKey, deepseekKey)
+    : null;
 
   useEffect(() => {
     const previousHtmlOverflow = document.documentElement.style.overflow;
@@ -110,6 +116,8 @@ export default function SettingsModal({
   }, [onClose]);
 
   const handleSave = () => {
+    setSaveAttempted(true);
+    if (aiSettingError(provider, openaiKey, deepseekKey)) return;
     const parsed = parseObsidianUrl(vault);
     onSave({
       obsidianVault: (parsed.vault ?? vault).trim(),
@@ -287,6 +295,15 @@ export default function SettingsModal({
                 <p className="text-xs text-ink-muted-48 mt-1">
                   使用你自己的 API Key，仅保存在你的账号数据中；未填写时将使用本地规则解析。
                 </p>
+                {keyError && (
+                  <p
+                    className="text-xs mt-1"
+                    style={{ color: "#b3261e" }}
+                    role="alert"
+                  >
+                    {keyError}
+                  </p>
+                )}
               </div>
             )}
           </div>

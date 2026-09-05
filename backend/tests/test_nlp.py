@@ -265,3 +265,83 @@ def test_parse_user_report_input_no_polluted_block() -> None:
     assert linked[0].linkTask == "AI schedule"
     assert all("+ 关联" not in s.name for s in parsed)
     assert all(s.name != "关联 AI schedule" for s in parsed)
+
+
+# ── 引导语剥离 / 月-日日期 / 段结合（F-015 实测反馈修复） ──
+
+
+def test_parse_leadin_time_and_activity_merges_to_single_block() -> None:
+    """用户实测案例：引导语段剥离 + 纯时间表述段与事项段结合，产出单块。"""
+    parsed, rejected = parse_schedule_with_feedback(
+        "帮我记录一下，9月5号晚上6点半到9点，任务架构体检问题修复",
+        date(2026, 9, 5),
+    )
+    assert rejected is None
+    assert len(parsed) == 1
+    block = parsed[0]
+    assert block.name == "任务架构体检问题修复"
+    assert block.date == "2026-09-05"
+    assert block.start == 18 * 60 + 30
+    assert block.end == 21 * 60
+
+
+def test_parse_leadin_only_input_yields_no_schedule() -> None:
+    parsed, rejected = parse_schedule_with_feedback("帮我记录一下", ANCHOR)
+    assert parsed == []
+    assert rejected is None
+
+
+def test_parse_leadin_variants_not_added_as_block() -> None:
+    for leadin in ("帮我记一下", "帮我安排", "记录一下", "麻烦添加", "请帮我备注一下"):
+        parsed, _ = parse_schedule_with_feedback(
+            f"{leadin}，明天下午2点到4点开会", ANCHOR
+        )
+        assert len(parsed) == 1, leadin
+        assert parsed[0].name == "开会"
+
+
+def test_parse_month_day_date_current_year() -> None:
+    parsed = parse_schedule_text("9月10号下午2点到4点复盘", date(2026, 9, 5))
+    assert parsed[0].name == "复盘"
+    assert parsed[0].date == "2026-09-10"
+    assert parsed[0].start == 14 * 60
+    assert parsed[0].end == 16 * 60
+
+
+def test_parse_month_day_date_past_rolls_next_year() -> None:
+    parsed = parse_schedule_text("1月10号上午9点到10点年终总结", date(2026, 9, 5))
+    assert parsed[0].date == "2027-01-10"
+
+
+def test_parse_month_day_with_explicit_year() -> None:
+    parsed = parse_schedule_text("2027年3月8日下午3点到4点体检", date(2026, 9, 5))
+    assert parsed[0].date == "2027-03-08"
+
+
+def test_time_only_segment_merges_with_previous_activity() -> None:
+    """反序输入：事项段在前、纯时间表述段在后，同样结合为单块。"""
+    parsed, _ = parse_schedule_with_feedback("团队周会，9月5号晚上7点到8点半", date(2026, 9, 5))
+    assert len(parsed) == 1
+    assert parsed[0].name == "团队周会"
+    assert parsed[0].date == "2026-09-05"
+    assert parsed[0].start == 19 * 60
+    assert parsed[0].end == 20 * 60 + 30
+
+
+def test_two_time_only_segments_do_not_merge() -> None:
+    """两个纯时间表述段不互相合并（各自保持原语义，由拒答机制处理）。"""
+    parsed, rejected = parse_schedule_with_feedback(
+        "下午2点到3点，晚上7点到8点", ANCHOR
+    )
+    assert parsed == []
+    assert rejected is not None
+    assert rejected.code == "missing_action"
+
+
+def test_activity_segment_without_time_still_defaults() -> None:
+    """无时间但名称有效的独立段仍生成默认块（R-2026-08-10-6 既有设计保留）。"""
+    parsed = parse_schedule_text("写周报", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].name == "写周报"
+    assert parsed[0].start == 9 * 60
+    assert parsed[0].end == 10 * 60

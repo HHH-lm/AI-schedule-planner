@@ -106,3 +106,26 @@ def test_pending_blocks_do_not_block() -> None:
     accepted, blocked = split_schedule_conflicts(parsed, existing)
     assert len(accepted) == 1
     assert len(blocked) == 0
+
+
+def test_split_schedule_conflicts_intra_batch() -> None:
+    """同批内互相重叠的块：先到者 accepted，后来者 blocked（批内互检）。"""
+    parsed = [
+        ParsedSchedule(name="第一块", date="2026-08-03", start=9 * 60, end=11 * 60),
+        ParsedSchedule(name="同时段第二块", date="2026-08-03", start=10 * 60, end=12 * 60),
+        ParsedSchedule(name="不同时段", date="2026-08-03", start=14 * 60, end=15 * 60),
+    ]
+    accepted, blocked = split_schedule_conflicts(parsed, [])
+    assert [block.name for block in accepted] == ["第一块", "不同时段"]
+    assert [block.name for block in blocked] == ["同时段第二块"]
+
+
+def test_split_schedule_conflicts_intra_batch_cross_day() -> None:
+    """跨天块的批内互检：跨天块与次日块重叠时后来者 blocked。"""
+    parsed = [
+        ParsedSchedule(name="跨天值班", date="2026-08-03", start=22 * 60, end=26 * 60),
+        ParsedSchedule(name="次日清晨跑步", date="2026-08-04", start=1 * 60, end=1 * 60 + 30),
+    ]
+    accepted, blocked = split_schedule_conflicts(parsed, [])
+    assert [block.name for block in accepted] == ["跨天值班"]
+    assert [block.name for block in blocked] == ["次日清晨跑步"]
