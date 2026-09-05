@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Clock, BookMarked, Bot, Brain, SlidersHorizontal, X } from "lucide-react";
 import { parseObsidianUrl } from "@/lib/obsidian";
 import { aiSettingError } from "@/lib/settings";
@@ -95,6 +95,8 @@ export default function SettingsModal({
   const keyError = saveAttempted
     ? aiSettingError(provider, openaiKey, deepseekKey)
     : null;
+  // 校验失败时滚动定位回 Key 输入区，确保用户能看到红色提示
+  const keyInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const previousHtmlOverflow = document.documentElement.style.overflow;
@@ -117,7 +119,11 @@ export default function SettingsModal({
 
   const handleSave = () => {
     setSaveAttempted(true);
-    if (aiSettingError(provider, openaiKey, deepseekKey)) return;
+    if (aiSettingError(provider, openaiKey, deepseekKey)) {
+      keyInputRef.current?.focus({ preventScroll: true });
+      keyInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     const parsed = parseObsidianUrl(vault);
     onSave({
       obsidianVault: (parsed.vault ?? vault).trim(),
@@ -282,6 +288,7 @@ export default function SettingsModal({
             {provider !== "local" && (
               <div className="mt-2">
                 <input
+                  ref={keyInputRef}
                   type="password"
                   className={inputClass}
                   value={provider === "openai" ? openaiKey : deepseekKey}
