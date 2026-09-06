@@ -19,6 +19,7 @@ import {
   describePlanningWeights,
   inferPlanningSelection,
   clampWeight,
+  isPlanningStyleId,
   normalizePlanningWeights,
 } from "@/lib/planningWeights";
 import {
@@ -70,9 +71,8 @@ export default function SettingsModal({
   const [weights, setWeights] = useState<PlanningWeights>(() =>
     normalizePlanningWeights(initialWeights)
   );
-  // "截止优先"风格已移除：存量数据（旧 localStorage 可能仍存有该值）回退为按权重推断
-  const storedStyle =
-    (initialStyle as string | undefined) === "deadline" ? undefined : initialStyle;
+  // 历史遗留的非法风格值回退为按权重推断（读端迁移已剔除，这里兜底）
+  const storedStyle = isPlanningStyleId(initialStyle) ? initialStyle : undefined;
   const [styleId, setStyleId] = useState<PlanningStyleId>(() =>
     storedStyle ??
     inferPlanningSelection(normalizePlanningWeights(initialWeights)).styleId

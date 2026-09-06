@@ -1,4 +1,5 @@
 import type { AppData } from "./types";
+import { migrateAppData } from "./migration";
 
 const STORAGE_KEY = "ai-schedule-data-v1";
 
@@ -14,11 +15,7 @@ export function loadLocalData(): AppData | null {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as AppData;
-    if (!parsed || !Array.isArray(parsed.tasks) || !Array.isArray(parsed.timeBlocks)) {
-      return null;
-    }
-    return parsed;
+    return migrateAppData(JSON.parse(raw));
   } catch {
     return null;
   }

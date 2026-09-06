@@ -60,7 +60,7 @@ import {
   uid,
 } from "@/lib/storage";
 import { apiPost } from "@/lib/api";
-import { aiRequestFields, migrateSettings, normalizeAiProvider } from "@/lib/settings";
+import { aiRequestFields, normalizeAiProvider } from "@/lib/settings";
 import {
   extractLinkDirectives,
   resolveLinkTargetLocal,
@@ -255,13 +255,9 @@ export default function Home() {
         logInfo("app_hydrated", { storage: "local" });
       }
       if (!cancelled) {
+        // 两个读入口（loadLocalData/loadRemoteData）已统一过 migrateAppData 版本迁移
         const source = loaded ?? makeSampleData();
-        // 存量 aiProvider="auto" 一次性迁移为 local（auto 已下线）
-        const initial = {
-          ...source,
-          settings: migrateSettings(source.settings),
-        };
-        setHistoryState(createHistoryState(initial));
+        setHistoryState(createHistoryState(source));
         setHydrated(true);
       }
     })();
@@ -899,7 +895,7 @@ export default function Home() {
                 aiProvider: settings.aiProvider,
                 openaiApiKey: settings.openaiApiKey,
                 deepseekApiKey: settings.deepseekApiKey,
-                // 设置页已保证七维权重整数百分比总和为 100，直接存储
+                // 设置页已保证六维权重整数百分比总和为 100，直接存储
                 planningWeights: settings.planningWeights,
                 planningStyle: settings.planningStyle,
                 planningFocus: settings.planningFocus,

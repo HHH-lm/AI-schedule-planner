@@ -5,6 +5,7 @@ import {
   type SupabaseClient,
 } from "@supabase/supabase-js";
 import type { AppData } from "./types";
+import { migrateAppData } from "./migration";
 import { logError, logInfo, logWarn } from "./logger";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -129,7 +130,7 @@ export async function loadRemoteData(): Promise<AppData | null> {
       .eq("id", "singleton")
       .maybeSingle();
     if (error || !data) return null;
-    return (data as { data: AppData }).data ?? null;
+    return migrateAppData((data as { data: unknown }).data);
   } catch {
     logError("supabase_load_failed", { userId });
     return null;

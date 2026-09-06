@@ -93,6 +93,16 @@ export const PLANNING_STYLE_PRESETS: Array<PlanningStyle> = [
   },
 ];
 
+const VALID_STYLE_IDS: ReadonlySet<string> = new Set([
+  ...PLANNING_STYLE_PRESETS.map((preset) => preset.id),
+  "custom",
+]);
+
+/** 存量数据风格值合法性校验（迁移与设置页回显共用） */
+export function isPlanningStyleId(value: unknown): value is PlanningStyleId {
+  return typeof value === "string" && VALID_STYLE_IDS.has(value);
+}
+
 const FOCUS_WEIGHT_FOR_ONE = 35;
 const FOCUS_WEIGHT_FOR_TWO = 25;
 

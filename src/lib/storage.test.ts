@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadLocalData, saveLocalData, uid } from "./storage";
+import { APP_DATA_SCHEMA_VERSION } from "./migration";
 import type { AppData } from "./types";
 
 class MockStorage {
@@ -31,7 +32,7 @@ class MockStorage {
 }
 
 function makeData(): AppData {
-  return { version: 1, tasks: [], timeBlocks: [] };
+  return { version: APP_DATA_SCHEMA_VERSION, tasks: [], timeBlocks: [] };
 }
 
 beforeEach(() => {
@@ -64,6 +65,22 @@ describe("localStorage 持久化", () => {
     const windowMock = window as unknown as { localStorage: { setItem: (k: string, v: string) => void } };
     windowMock.localStorage.setItem("ai-schedule-data-v1", JSON.stringify({ version: 1 }));
     expect(loadLocalData()).toBeNull();
+  });
+
+  it("存量 v1 数据读出时完成版本迁移", () => {
+    const windowMock = window as unknown as { localStorage: { setItem: (k: string, v: string) => void } };
+    windowMock.localStorage.setItem(
+      "ai-schedule-data-v1",
+      JSON.stringify({
+        version: 1,
+        tasks: [],
+        timeBlocks: [],
+        settings: { aiProvider: "auto" },
+      })
+    );
+    const loaded = loadLocalData();
+    expect(loaded?.version).toBe(APP_DATA_SCHEMA_VERSION);
+    expect(loaded?.settings?.aiProvider).toBe("local");
   });
 });
 

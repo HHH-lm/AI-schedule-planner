@@ -1,4 +1,5 @@
 import type { AppData, Task, TimeBlock } from "./types";
+import { APP_DATA_SCHEMA_VERSION } from "./migration";
 import { getWeekDays } from "./date";
 
 export function makeSampleData(): AppData {
@@ -806,7 +807,7 @@ export function makeSampleData(): AppData {
     },
   ];
 
-  return { version: 1, tasks, timeBlocks };
+  return { version: APP_DATA_SCHEMA_VERSION, tasks, timeBlocks };
 }
 
 /**
