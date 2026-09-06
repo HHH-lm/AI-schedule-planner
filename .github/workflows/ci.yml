@@ -1,0 +1,53 @@
+# CI 门禁：push main / PR 到 main / 手动触发时自动执行全部门禁。
+# golden 评测需真实 DeepSeek Key（花钱且慢），维持手动执行，不入 CI。
+# 与 AGENTS.md「验收基线」命令逐字一致；仓库公开，Actions 免费。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+# 同分支新 push 自动取消还在跑的旧运行，省时长也避免结果错乱
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: 前端门禁（vitest / tsc / eslint / 密钥扫描）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: 安装依赖
+        run: npm ci
+      - name: 单元测试（vitest）
+        run: npm test
+      - name: 类型检查（tsc）
+        run: npx tsc --noEmit
+      - name: ESLint（零警告）
+        run: npm run lint
+      - name: 密钥与危险 API 扫描
+        run: npm run scan:secrets
+
+  backend:
+    name: 后端门禁（pytest）
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: 安装依赖（含 dev extra：pytest）
+        run: uv sync --project backend --extra dev
+      - name: 单元测试（pytest）
+        working-directory: backend
+        run: .venv/bin/python -m pytest -q
