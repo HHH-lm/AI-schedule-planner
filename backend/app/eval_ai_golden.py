@@ -3,9 +3,11 @@
 用法（backend 目录下）：
     .venv/bin/python -m app.eval_ai_golden --provider deepseek --split open
     .venv/bin/python -m app.eval_ai_golden --provider deepseek --split heldout
+    .venv/bin/python -m app.eval_ai_golden --provider deepseek --split breakdown
 
 每次评测会把日期、模型、prompt fingerprint、阈值、指标与逐条原始结果写入
-`--snapshot-dir`（默认 eval_snapshots）。
+`--snapshot-dir`（默认 eval_snapshots）。breakdown 为 record-only split：
+只记录宽松检查比率，不设门禁阈值，不并入 all。
 """
 
 from __future__ import annotations
@@ -25,10 +27,12 @@ from typing import Any
 from app.config import get_settings
 from app.golden_ai_cases import GOLDEN_AI_CASES, GOLDEN_ANCHOR_DATE, GOLDEN_SET_VERSION
 from app.golden_ai_cases_heldout import HELDOUT_AI_CASES, HELDOUT_GOLDEN_SET_VERSION
+from app.golden_breakdown_cases import BREAKDOWN_GOLDEN_CASES, BREAKDOWN_GOLDEN_VERSION
 from app.schemas import ExistingBlock, ParsedSchedule, PlanV2Request, PlanV2Task, RejectReason
 from app.services.ai import build_system_prompt, parse_local_date, parse_with_ai, resolve_ai_provider
 from app.services.conflict import iter_segments
 from app.services.nlp import parse_schedule_with_feedback
+from app.services.planner import _build_breakdown_prompt, breakdown_tasks
 from app.services.planner_v2 import _build_understanding_prompt, plan_v2_schedule
 
 
@@ -485,6 +489,129 @@ def compute_metrics(
     }
 
 
+def _breakdown_prompt_fingerprint() -> str:
+    """breakdown prompt 文本的 sha256 指纹（record-only split 的 prompt 版本）。"""
+    return hashlib.sha256(_build_breakdown_prompt().encode("utf-8")).hexdigest()[:12]
+
+
+def score_breakdown_case(case: dict[str, Any], response: Any) -> dict[str, Any]:
+    """breakdown 用例的宽松检查（record-only，不参与门禁阈值）。
+
+    结构性契约：source 为 AI、任务数 1-3、每任务子任务 0-5、名称非空；
+    错误路径用例断言 source="none" 且 message 含预期文案。语言跟随等
+    软质量不在此检查，靠快照逐条人工复核。
+    """
+    tasks = response.tasks
+    expected_error = case.get("expect_error")
+    if expected_error:
+        checks = {
+            "error_contract": response.source == "none"
+            and not tasks
+            and expected_error in (response.message or ""),
+        }
+        ai_error = False
+    else:
+        checks = {
+            "source_ai": response.source in ("openai", "deepseek"),
+            "task_count_1_3": 1 <= len(tasks) <= 3,
+            "subtasks_0_5": all(len(task.subtasks) <= 5 for task in tasks),
+            "names_nonempty": all(task.name.strip() for task in tasks),
+        }
+        ai_error = response.source == "none"
+    return {
+        "id": case["id"],
+        "name": case["name"],
+        "input": case["plan"],
+        "full_exact": all(checks.values()),
+        "check_results": checks,
+        "check_total": len(checks),
+        "check_passed": sum(1 for value in checks.values() if value),
+        "actual_count": len(tasks),
+        "actual": [task.model_dump() for task in tasks],
+        "source": response.source,
+        "message": response.message,
+        "ai_error": ai_error,
+        "kind": "breakdown",
+    }
+
+
+def compute_breakdown_metrics(results: list[dict[str, Any]]) -> dict[str, Any]:
+    """record-only 指标：只记录检查比率，不设门禁阈值，passed 恒 True。"""
+    total = len(results)
+    check_total = sum(result["check_total"] for result in results)
+    check_passed = sum(result["check_passed"] for result in results)
+    return {
+        "total_cases": total,
+        "ai_error_cases": sum(1 for result in results if result["ai_error"]),
+        "case_full_rate": round(
+            sum(1 for result in results if result["full_exact"]) / total, 4
+        ) if total else 0.0,
+        "check_passed": check_passed,
+        "check_total": check_total,
+        "check_accuracy": round(check_passed / check_total, 4) if check_total else 1.0,
+        "record_only": True,
+        "passed": True,
+    }
+
+
+def _write_breakdown_snapshot(
+    args: argparse.Namespace,
+    provider: str,
+    metrics: dict[str, Any],
+    results: list[dict[str, Any]],
+    settings: Any,
+) -> Path:
+    """breakdown record-only 快照：独立版本号与 prompt 指纹，不与解析/规划快照混用。"""
+    snapshots = Path(args.snapshot_dir)
+    snapshots.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    path = snapshots / f"eval-{BREAKDOWN_GOLDEN_VERSION}-breakdown-{timestamp}.json"
+    payload = {
+        "golden_set_version": BREAKDOWN_GOLDEN_VERSION,
+        "split": "breakdown",
+        "record_only": True,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "provider": provider,
+        "model": _provider_model(provider, settings),
+        "prompt_version": f"sha256:{_breakdown_prompt_fingerprint()}",
+        "thresholds": None,
+        "metrics": metrics,
+        "results": results,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("SNAPSHOT=" + str(path))
+    return path
+
+
+async def run_breakdown_eval(
+    args: argparse.Namespace,
+    provider: str,
+    env_key: str | None,
+    settings: Any,
+) -> int:
+    """执行 breakdown record-only 评测：逐条落快照、只记比率，退出码恒 0。"""
+    cases = BREAKDOWN_GOLDEN_CASES
+    print(f"split=breakdown provider={provider} cases={len(cases)} (record-only)")
+    results: list[dict[str, Any]] = []
+    for case in cases:
+        response = await breakdown_tasks(
+            case["plan"], provider, case.get("today"), settings, api_key=env_key
+        )
+        result = score_breakdown_case(case, response)
+        results.append(result)
+        mark = "OK" if result["full_exact"] else "FAIL"
+        print(f"[{case['id']}] breakdown      {mark:4} {case['name'][:36]}")
+        if not result["full_exact"]:
+            failed = {key: value for key, value in result["check_results"].items() if not value}
+            print("    failed_checks=" + json.dumps(failed, ensure_ascii=False))
+            print(f"    source={result['source']} message={result.get('message')}")
+            print("    actual=" + json.dumps(result["actual"], ensure_ascii=False))
+    metrics = compute_breakdown_metrics(results)
+    print("METRICS=" + json.dumps(metrics, ensure_ascii=False, indent=2))
+    _write_breakdown_snapshot(args, provider, metrics, results, settings)
+    return 0
+
+
 async def run_eval(args: argparse.Namespace) -> int:
     settings = get_settings()
     # 评测链路把服务端环境变量 Key 作为请求级 api_key 传入（用户自备 Key 模式下
@@ -498,6 +625,9 @@ async def run_eval(args: argparse.Namespace) -> int:
     if not provider:
         print(json.dumps({"provider": args.provider, "error": message or "AI provider unavailable"}, ensure_ascii=False))
         return 2
+
+    if args.split == "breakdown":
+        return await run_breakdown_eval(args, provider, env_key, settings)
 
     split = args.split
     if split == "heldout":
@@ -584,9 +714,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--provider", choices=("openai", "deepseek"), default="deepseek")
     parser.add_argument(
         "--split",
-        choices=("open", "heldout", "all"),
+        choices=("open", "heldout", "all", "breakdown"),
         default="open",
-        help="open=调参集；heldout=预留集；all=两者一起",
+        help="open=调参集；heldout=预留集；all=两者一起；breakdown=任务拆解 record-only（只记录不设门禁，不并入 all）",
     )
     parser.add_argument(
         "--snapshot-dir",
