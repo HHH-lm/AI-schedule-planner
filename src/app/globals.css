@@ -65,16 +65,20 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-button {
-  font: inherit;
-  color: inherit;
-}
+/* 元素级 reset 必须放进 base 层：Tailwind v4 中未分层规则的优先级高于
+   utilities 层，裸写的 button/input font:inherit 会压掉元素上的字号/颜色工具类 */
+@layer base {
+  button {
+    font: inherit;
+    color: inherit;
+  }
 
-input,
-textarea,
-select {
-  font: inherit;
-  color: inherit;
+  input,
+  textarea,
+  select {
+    font: inherit;
+    color: inherit;
+  }
 }
 
 ::selection {
@@ -357,6 +361,7 @@ select {
   top: 44px;
   z-index: 30;
   display: flex;
+  /* DESIGN.md sub-nav-frosted 规格：高度 52px */
   min-height: 52px;
   align-items: center;
   justify-content: space-between;
@@ -370,7 +375,9 @@ select {
 .sub-nav-left {
   display: flex;
   min-width: 0;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
 }
 
 .sub-nav-title {
@@ -386,7 +393,7 @@ select {
 }
 
 .sub-nav-meta {
-  margin-top: 2px;
+  flex-shrink: 0;
   font-size: 12px;
   line-height: 1.2;
   color: var(--ink-muted-48);
@@ -397,6 +404,26 @@ select {
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
+}
+
+/* 吸顶栏按钮统一紧凑尺寸：主按钮与 chip/ghost 同高（约 27px），使 52px 栏内左右两侧均衡 */
+.sub-nav-actions .chip-btn,
+.sub-nav-actions .btn-ghost,
+.sub-nav-actions .btn-ghost-primary,
+.sub-nav-actions .btn-primary-pill {
+  padding: 4px 12px;
+  font-size: 14px;
+  line-height: 1.2;
+  gap: 6px;
+}
+
+.sub-nav-actions .btn-primary-pill {
+  padding: 5px 14px;
+}
+
+.sub-nav-actions svg {
+  width: 14px;
+  height: 14px;
 }
 
 .content-shell {
@@ -550,6 +577,25 @@ select {
 .btn-ghost-primary:hover {
   border-color: var(--primary);
   background: rgba(0, 102, 204, 0.05);
+}
+
+/* 面板内联按钮的紧凑变体：与 btn-ghost / btn-dark-utility 同高（约 37px） */
+.btn-sm.btn-primary-pill,
+.btn-sm.btn-secondary-pill {
+  padding: 8px 16px;
+  font-size: 14px;
+  gap: 6px;
+}
+
+/* secondary 带 1px 描边，上下各收 1px 与实心按钮等高 */
+.btn-sm.btn-secondary-pill {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.btn-sm svg {
+  width: 14px;
+  height: 14px;
 }
 
 .icon-btn {
@@ -1160,6 +1206,13 @@ textarea.input-rect {
 
 .board-task-row.dragging {
   opacity: 0.5;
+}
+
+/* 已完成任务折叠态：左列收紧，右侧时间块以单行 chip 呈现，降低行高 */
+.board-task-row.done-collapsed .board-task-name-col {
+  gap: 2px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 .board-week-header {

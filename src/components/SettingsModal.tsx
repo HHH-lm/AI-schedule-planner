@@ -369,7 +369,7 @@ export default function SettingsModal({
                         : "transparent",
                     }}
                   >
-                    <span className="block text-sm font-medium text-ink">
+                    <span className="block text-sm font-semibold text-ink">
                       {preset.label}
                     </span>
                     <span className="mt-1 block text-xs leading-4 text-ink-muted-48">
@@ -381,7 +381,7 @@ export default function SettingsModal({
             </div>
 
             <div className="mt-4">
-              <p className="text-sm font-medium text-ink-muted-80 mb-2">
+              <p className="text-sm font-semibold text-ink-muted-80 mb-2">
                 重点加强（最多 2 个）
               </p>
               <div className="flex flex-wrap gap-2">
@@ -516,7 +516,7 @@ export default function SettingsModal({
                         : "transparent",
                     }}
                   >
-                    <span className="block text-sm font-medium text-ink">
+                    <span className="block text-sm font-semibold text-ink">
                       {preset.label}
                     </span>
                     <span className="mt-1 block text-xs leading-4 text-ink-muted-48">

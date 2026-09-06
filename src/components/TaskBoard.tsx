@@ -33,6 +33,7 @@ import {
   extractDeadline,
 } from "@/lib/deadline";
 import { normalizeQuadrant, QUADRANT_META } from "@/lib/priorities";
+import { orderTasks } from "@/lib/taskOrder";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import RestoreWeeksModal from "@/components/RestoreWeeksModal";
 
@@ -73,12 +74,12 @@ interface Props {
   onAddSubtaskBlock: (taskId: string, subtaskId: string, subtaskName: string, dateKey: string) => void;
   onReorderTask: (fromTaskId: string, toTaskId: string, before: boolean) => void;
   onToggleTaskPinned: (taskId: string) => void;
+  onToggleTaskStatus: (taskId: string) => void;
   onEditBlock: (block: TimeBlock) => void;
   onToggleBlockDone: (blockId: string) => void;
   onOpenObsidian?: (block: TimeBlock) => void;
-  onPlanTasks: (
-    tasks: Task[]
-  ) => Promise<{ added: number; blockedCount: number; message?: string | null }>;
+  /** 标题栏 AI 规划的结果提示（page 级状态，4 秒自动清除） */
+  planFeedback?: string | null;
 }
 
 export default function TaskBoard({
@@ -95,13 +96,27 @@ export default function TaskBoard({
   onAddSubtaskBlock,
   onReorderTask,
   onToggleTaskPinned,
+  onToggleTaskStatus,
   onEditBlock,
   onToggleBlockDone,
   onOpenObsidian,
-  onPlanTasks,
+  planFeedback,
 }: Props) {
   const [dragTaskId, setDragTaskId] = useState<string | null>(null);
   const [dragSubtaskId, setDragSubtaskId] = useState<string | null>(null);
+  // 已完成任务的子任务默认折叠；记录用户手动展开过的任务 id
+  const [expandedDoneTasks, setExpandedDoneTasks] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  const toggleDoneSubtasks = (taskId: string) => {
+    setExpandedDoneTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
   const [reorderTaskId, setReorderTaskId] = useState<string | null>(null);
   const [reorderTarget, setReorderTarget] = useState<{
     taskId: string;
@@ -110,7 +125,6 @@ export default function TaskBoard({
   const [macroText, setMacroText] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [breakdownBusy, setBreakdownBusy] = useState(false);
-  const [planBusy, setPlanBusy] = useState(false);
   const [weekCount, setWeekCount] = useState(INITIAL_WEEKS);
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(() => {
     const currentMondayKey = toDateKey(startOfWeek(new Date()));
@@ -141,10 +155,7 @@ export default function TaskBoard({
   }, [hiddenWeeks]);
 
   const orderedTasks = useMemo(
-    () =>
-      [...data.tasks].sort(
-        (a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
-      ),
+    () => orderTasks(data.tasks),
     [data.tasks]
   );
 
@@ -282,32 +293,6 @@ export default function TaskBoard({
     }
   };
 
-  const handlePlan = async () => {
-    if (planBusy || data.tasks.length === 0) {
-      if (data.tasks.length === 0) setFeedback("请先添加任务，再使用 AI 规划");
-      return;
-    }
-    setPlanBusy(true);
-    try {
-      const result = await onPlanTasks(data.tasks);
-      const message =
-        result.message ??
-        (result.added > 0
-          ? `AI 规划完成：新增 ${result.added} 个时间块${
-              result.blockedCount > 0 ? `，跳过 ${result.blockedCount} 个冲突` : ""
-            }`
-          : "AI 没有生成新的时间块，请调整任务或已有安排后重试");
-      setFeedback(message);
-    } catch (error) {
-      setFeedback(
-        error instanceof Error ? error.message : "AI 规划失败，请稍后重试"
-      );
-    } finally {
-      setPlanBusy(false);
-      window.setTimeout(() => setFeedback(null), 4000);
-    }
-  };
-
   const handleDrop = (event: React.DragEvent, dayKey: string) => {
     event.preventDefault();
     event.stopPropagation();
@@ -388,6 +373,24 @@ export default function TaskBoard({
     </button>
   );
 
+  // 已完成任务折叠态的时间块：单行小 chip，点击仍可编辑
+  const renderBlockChip = (block: TimeBlock) => {
+    const meta = CATEGORIES[block.category];
+    return (
+      <button
+        key={block.id}
+        type="button"
+        onClick={() => onEditBlock(block)}
+        title={`${block.name} ${formatBlockRange(block)}，点击编辑`}
+        className={`w-full cursor-pointer truncate rounded-[6px] border-l-2 px-1 py-0.5 text-left text-[10px] leading-tight text-ink-muted-80 ${
+          block.done ? "opacity-55" : ""
+        } ${meta.bg} ${meta.border}`}
+      >
+        {block.name}
+      </button>
+    );
+  };
+
   const renderBlockCard = (block: TimeBlock, compact: boolean) => {
     const meta = CATEGORIES[block.category];
     const hasObsidian = Boolean(
@@ -465,7 +468,11 @@ export default function TaskBoard({
     );
   };
 
-  const renderDayCell = (taskBlocks: TimeBlock[], day: BoardDay) => {
+  const renderDayCell = (
+    taskBlocks: TimeBlock[],
+    day: BoardDay,
+    mini = false
+  ) => {
     const dayBlocks = taskBlocks.filter((b) => blockOverlapsDate(b, day.key));
     const pendingBlocks = dayBlocks.filter((b) => b.status === "pending");
     const scheduledBlocks = dayBlocks.filter((b) => b.status === "scheduled");
@@ -481,7 +488,7 @@ export default function TaskBoard({
           day.isToday ? "today" : ""
         }`}
       >
-        <div className="flex min-h-[68px] flex-col gap-1">
+        <div className={`flex flex-col gap-1 ${mini ? "min-h-[36px]" : "min-h-[68px]"}`}>
           {scheduledBlocks.length === 0 && pendingBlocks.length === 0 && (
             <div className="flex h-full items-center justify-center">
               <span className="text-[10px] text-ink-muted-48 opacity-0 transition group-hover:opacity-100">
@@ -489,7 +496,9 @@ export default function TaskBoard({
               </span>
             </div>
           )}
-          {scheduledBlocks.map((block) => renderBlockCard(block, false))}
+          {mini
+            ? scheduledBlocks.map(renderBlockChip)
+            : scheduledBlocks.map((block) => renderBlockCard(block, false))}
           {pendingBlocks.map(renderPendingChip)}
         </div>
       </div>
@@ -498,7 +507,8 @@ export default function TaskBoard({
 
   const renderCollapsedWeekCell = (
     taskBlocks: TimeBlock[],
-    week: BoardWeek
+    week: BoardWeek,
+    mini = false
   ) => {
     const endKey = toDateKey(addDays(week.start, 7));
     const weekBlocks = taskBlocks.filter(
@@ -516,7 +526,7 @@ export default function TaskBoard({
         onDrop={(event) => handleDrop(event, week.key)}
         className="board-day-cell group"
       >
-        <div className="flex min-h-[68px] flex-col gap-1">
+        <div className={`flex flex-col gap-1 ${mini ? "min-h-[36px]" : "min-h-[68px]"}`}>
           {scheduledBlocks.length === 0 && pendingBlocks.length === 0 && (
             <div className="flex h-full items-center justify-center">
               <span className="text-[10px] text-ink-muted-48 opacity-0 transition group-hover:opacity-100">
@@ -524,7 +534,9 @@ export default function TaskBoard({
               </span>
             </div>
           )}
-          {scheduledBlocks.map((block) => renderBlockCard(block, true))}
+          {mini
+            ? scheduledBlocks.map(renderBlockChip)
+            : scheduledBlocks.map((block) => renderBlockCard(block, true))}
           {pendingBlocks.map(renderPendingChip)}
         </div>
       </div>
@@ -556,7 +568,7 @@ export default function TaskBoard({
               type="button"
               onClick={handleMacro}
               disabled={breakdownBusy}
-              className="btn-primary-pill"
+              className="btn-primary-pill btn-sm"
             >
               {breakdownBusy ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -567,25 +579,11 @@ export default function TaskBoard({
             </button>
             <button
               type="button"
-              onClick={handlePlan}
-              disabled={planBusy || data.tasks.length === 0}
-              className="btn-secondary-pill"
-              title="为当前任务自动生成时间块"
-            >
-              {planBusy ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Sparkles size={14} />
-              )}
-              {planBusy ? "规划中" : "AI 规划"}
-            </button>
-            <button
-              type="button"
               onClick={onNewTask}
-              className="btn-secondary-pill"
+              className="btn-secondary-pill btn-sm"
             >
               <Plus size={14} />
-              新建
+              新建任务
             </button>
           </div>
         </div>
@@ -595,6 +593,13 @@ export default function TaskBoard({
         <div className="status-note-ok mb-3 inline-flex w-fit items-center gap-1.5 !py-1.5 text-xs">
           <CheckCircle2 size={13} />
           {feedback}
+        </div>
+      )}
+
+      {planFeedback && (
+        <div className="status-note-ok mb-3 inline-flex w-fit items-center gap-1.5 !py-1.5 text-xs">
+          <Sparkles size={13} />
+          {planFeedback}
         </div>
       )}
 
@@ -693,7 +698,7 @@ export default function TaskBoard({
               <button
                 type="button"
                 onClick={() => setRestoreModalOpen(true)}
-                className="flex shrink-0 items-center gap-1 border-r border-[#f0f0f0] px-2.5 text-[11px] font-medium text-ink-muted-48 hover:bg-canvas-parchment"
+                className="flex shrink-0 items-center gap-1 border-r border-[#f0f0f0] px-2.5 text-[11px] font-semibold text-ink-muted-48 hover:bg-canvas-parchment"
                 title="恢复隐藏周显示"
               >
                 <Eye size={13} />
@@ -703,7 +708,7 @@ export default function TaskBoard({
             <button
               type="button"
               onClick={extendWeek}
-              className="flex shrink-0 items-center gap-1 border-r border-[#f0f0f0] px-2.5 text-[11px] font-medium text-ink-muted-48 hover:bg-canvas-parchment"
+              className="flex shrink-0 items-center gap-1 border-r border-[#f0f0f0] px-2.5 text-[11px] font-semibold text-ink-muted-48 hover:bg-canvas-parchment"
               title="追加一周"
             >
               <Plus size={13} />
@@ -721,12 +726,14 @@ export default function TaskBoard({
             const taskBlocks = data.timeBlocks.filter(
               (b) => b.taskId === task.id
             );
+            const taskDone = task.status === "done";
+            const taskCollapsed = taskDone && !expandedDoneTasks.has(task.id);
             return (
               <div
                 key={task.id}
                 className={`board-task-row ${
                   dragTaskId === task.id ? "opacity-50" : ""
-                }`}
+                } ${taskCollapsed ? "done-collapsed" : ""}`}
               >
                 <div
                   className="board-task-name-col"
@@ -766,7 +773,13 @@ export default function TaskBoard({
                           className={`h-2 w-2 shrink-0 rounded-full ${QUADRANT_META[normalizeQuadrant(task.priority)].dot}`}
                           title={QUADRANT_META[normalizeQuadrant(task.priority)].label}
                         />
-                        <span className="truncate text-sm font-medium text-ink">
+                        <span
+                          className={`truncate text-sm font-semibold ${
+                            task.status === "done"
+                              ? "text-ink-muted-48 line-through"
+                              : "text-ink"
+                          }`}
+                        >
                         {task.name}
                         </span>
                       </span>
@@ -784,18 +797,67 @@ export default function TaskBoard({
                         fill={task.pinned ? "currentColor" : "none"}
                       />
                     </button>
-                    {task.status === "done" ? (
-                      <CheckCircle2
-                        size={15}
-                        className="shrink-0 text-primary"
-                      />
-                    ) : (
-                      <Circle size={15} className="shrink-0 text-ink-muted-48" />
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => onToggleTaskStatus(task.id)}
+                      title={task.status === "done" ? "标记未完成" : "标记完成"}
+                      aria-label={
+                        task.status === "done" ? "标记未完成" : "标记完成"
+                      }
+                      className="shrink-0"
+                    >
+                      {task.status === "done" ? (
+                        <CheckCircle2
+                          size={15}
+                          className="text-primary"
+                        />
+                      ) : (
+                        <Circle
+                          size={15}
+                          className="text-ink-muted-48 hover:text-ink"
+                        />
+                      )}
+                    </button>
                   </div>
 
-                  {task.subtasks.length > 0 && (
-                    <div className="ml-5 space-y-1">
+                  {taskDone && (task.subtasks.length > 0 || taskBlocks.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={() => toggleDoneSubtasks(task.id)}
+                      className="ml-5 flex w-fit items-center gap-1.5 rounded px-1 py-0.5 text-[11px] text-ink-muted-80 transition hover:bg-canvas-parchment"
+                      title={
+                        expandedDoneTasks.has(task.id)
+                          ? "收起子任务与时间块"
+                          : "展开子任务与时间块"
+                      }
+                    >
+                      {expandedDoneTasks.has(task.id) ? (
+                        <ChevronDown
+                          size={12}
+                          className="shrink-0 text-ink-muted-48"
+                        />
+                      ) : (
+                        <ChevronRight
+                          size={12}
+                          className="shrink-0 text-ink-muted-48"
+                        />
+                      )}
+                      {[
+                        task.subtasks.length > 0
+                          ? `${task.subtasks.length} 个子任务`
+                          : null,
+                        taskBlocks.length > 0
+                          ? `${taskBlocks.length} 个时间块`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </button>
+                  )}
+
+                  {task.subtasks.length > 0 &&
+                    (!taskDone || expandedDoneTasks.has(task.id)) && (
+                      <div className="ml-5 space-y-1">
                       {task.subtasks.map((sub) => {
                         const matchedBlock = taskBlocks.find(
                           (b) =>
@@ -854,9 +916,9 @@ export default function TaskBoard({
                             {sub.deadline && (
                               <span
                                 title={`截止日期 ${sub.deadline}`}
-                                className={`ml-auto shrink-0 rounded-full px-1.5 py-px text-[10px] font-medium leading-none ${
-                                  isDeadlineOverdue(sub.deadline)
-                                    ? "bg-[rgba(190,40,60,0.08)] text-[#b3261e]"
+                                className={`ml-auto shrink-0 rounded-full px-1.5 py-px text-[10px] font-semibold leading-none ${
+                                  taskDone || sub.done || isDeadlineOverdue(sub.deadline)
+                                    ? "bg-[rgba(142,142,147,0.12)] text-[#6e6e73]"
                                     : "bg-[rgba(0,102,204,0.08)] text-primary"
                                 }`}
                               >
@@ -871,7 +933,13 @@ export default function TaskBoard({
                                 </span>
                               )}
                             {!matchedBlock && (
-                              <span className={`${sub.deadline ? "" : "ml-auto "}shrink-0 rounded-full bg-[rgba(201,110,18,0.1)] px-1.5 py-px text-[10px] text-[#9a5b12]`}>
+                              <span
+                                className={`${sub.deadline ? "" : "ml-auto "}shrink-0 rounded-full px-1.5 py-px text-[10px] ${
+                                  taskDone || sub.done
+                                    ? "bg-[rgba(142,142,147,0.12)] text-[#6e6e73]"
+                                    : "bg-[rgba(201,110,18,0.1)] text-[#9a5b12]"
+                                }`}
+                              >
                                 未排期
                               </span>
                             )}
@@ -880,7 +948,7 @@ export default function TaskBoard({
                       })}
                     </div>
                   )}
-                  {task.subtasks.length === 0 && (
+                  {!taskDone && task.subtasks.length === 0 && (
                     <div className="ml-5 text-[11px] text-ink-muted-48">
                       无子任务，点击编辑添加
                     </div>
@@ -890,9 +958,9 @@ export default function TaskBoard({
                 {visibleWeeks.map((week) => {
                   const collapsed = collapsedWeeks.has(week.key);
                   return collapsed
-                    ? renderCollapsedWeekCell(taskBlocks, week)
+                    ? renderCollapsedWeekCell(taskBlocks, week, taskCollapsed)
                     : week.days.map((day) =>
-                        renderDayCell(taskBlocks, day)
+                        renderDayCell(taskBlocks, day, taskCollapsed)
                       );
                 })}
                 {reorderTarget && reorderTarget.taskId === task.id && (

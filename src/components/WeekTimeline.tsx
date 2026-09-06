@@ -700,7 +700,7 @@ export default function WeekTimeline({
           >
             <div className="flex items-center justify-center gap-0.5 border-b border-divider-soft px-1 py-1 opacity-0 transition group-hover:opacity-100">
               <ChevronUp size={11} className="text-ink-muted-48" />
-              <span className="text-[9px] font-medium text-ink-muted-48 select-none">折叠</span>
+              <span className="text-[9px] font-semibold text-ink-muted-48 select-none">折叠</span>
             </div>
             {Array.from({ length: 24 }, (_, hour) => {
               const minutes = hour * 60;
@@ -766,7 +766,7 @@ export default function WeekTimeline({
                 }}
                 >
                 <div className="relative border-t-2 border-primary">
-                  <span className="absolute -top-2.5 left-1 rounded-[5px] bg-primary px-1 py-px text-[9px] font-medium leading-tight text-white">
+                  <span className="absolute -top-2.5 left-1 rounded-[5px] bg-primary px-1 py-px text-[9px] font-semibold leading-tight text-white">
                     现在
                   </span>
                 </div>
@@ -970,7 +970,7 @@ export default function WeekTimeline({
                   ) : height < 42 ? (
                     <div className="flex h-full min-h-0 flex-col justify-start gap-0 overflow-hidden px-1.5 py-0.5">
                       <div className="flex items-center justify-between gap-1">
-                        <div className="text-[10px] font-medium tabular-nums leading-tight text-ink-muted-48">
+                        <div className="text-[10px] font-semibold tabular-nums leading-tight text-ink-muted-48">
                           {blockRangeLabel}
                         </div>
                         <div className="flex shrink-0 items-center gap-0.5">
@@ -1004,7 +1004,7 @@ export default function WeekTimeline({
                     <div className="flex h-full min-h-0 flex-col justify-between gap-1 overflow-hidden px-1.5 py-1">
                       <div className="flex min-w-0 items-start justify-between gap-1">
                         <div className="min-w-0 flex-1">
-                          <div className="text-[10px] font-medium tabular-nums leading-tight text-ink-muted-48">
+                          <div className="text-[10px] font-semibold tabular-nums leading-tight text-ink-muted-48">
                             {blockRangeLabel}
                           </div>
                           <div className="truncate text-xs font-semibold leading-tight text-ink">
@@ -1079,7 +1079,7 @@ export default function WeekTimeline({
               setSelectedBlocks(new Set());
             }}
             disabled={selectedBlocks.size === 0}
-            className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+            className="btn-dark-utility"
           >
             删除选中
           </button>
@@ -1089,7 +1089,7 @@ export default function WeekTimeline({
               onBatchModeChange(false);
               setSelectedBlocks(new Set());
             }}
-            className="rounded-lg bg-canvas-parchment px-4 py-1.5 text-sm font-medium text-ink hover:bg-divider-soft"
+            className="btn-ghost"
           >
             取消
           </button>

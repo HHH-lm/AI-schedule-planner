@@ -12,11 +12,13 @@ import {
   CloudOff,
   ListTodo,
   ListChecks,
+  Loader2,
   LogIn,
   LogOut,
   Plus,
   Redo2,
   Settings,
+  Sparkles,
   Undo2,
   User,
 } from "lucide-react";
@@ -76,6 +78,11 @@ import {
 } from "@/lib/supabase";
 import { logInfo } from "@/lib/logger";
 import { isSampleData, makeSampleData } from "@/lib/sample";
+import {
+  completeTask,
+  reviveTask,
+  type TaskDoneSnapshot,
+} from "@/lib/taskOrder";
 // import { buildWeekICS } from "@/lib/ics"; // 苹果日历导出暂未启用
 import WeekTimeline from "@/components/WeekTimeline";
 import TodayView from "@/components/TodayView";
@@ -175,6 +182,9 @@ export default function Home() {
   const [memoryModalOpen, setMemoryModalOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // 任务看板 AI 规划（标题栏入口）：执行状态与结果提示
+  const [planBusy, setPlanBusy] = useState(false);
+  const [planFeedback, setPlanFeedback] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [taskModalOpen, setTaskModalOpen] = useState(false);
   // 截止日期关联流程：QuickAdd 未匹配任务时的引导弹窗 + 新建任务预填
@@ -201,8 +211,18 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
+  // AI 规划结果提示 4 秒自动清除
+  useEffect(() => {
+    if (!planFeedback) return;
+    const timer = setTimeout(() => setPlanFeedback(null), 4000);
+    return () => clearTimeout(timer);
+  }, [planFeedback]);
+
 
   const dataRef = useRef<AppData | null>(null);
+
+  // 任务完成前的位置快照（会话内存活）：反勾选时恢复原位置与置顶
+  const taskDoneSnapshots = useRef<Map<string, TaskDoneSnapshot>>(new Map());
 
   useEffect(() => {
     dataRef.current = data;
@@ -1190,6 +1210,33 @@ export default function Home() {
     );
   }, [commitData]);
 
+  const toggleTaskStatus = useCallback((taskId: string) => {
+    const snapshot = taskDoneSnapshots.current.get(taskId);
+    // updater 必须保持纯函数（dev StrictMode 会调用两次），
+    // 快照簿记放在 commit 外、基于点击前的 dataRef 状态只执行一次
+    commitData((prev) => {
+      if (!prev) return prev;
+      const done = completeTask(prev.tasks, taskId);
+      if (done) return { ...prev, tasks: done.tasks };
+      const revived = reviveTask(prev.tasks, taskId, snapshot);
+      if (!revived) return prev;
+      return { ...prev, tasks: revived };
+    });
+    const before = dataRef.current?.tasks.find((task) => task.id === taskId);
+    if (!before) return;
+    if (before.status === "todo") {
+      // 本次点击是完成：记录完成前的位置与置顶
+      const index = dataRef.current!.tasks.findIndex((task) => task.id === taskId);
+      taskDoneSnapshots.current.set(taskId, {
+        index,
+        pinned: before.pinned ?? false,
+      });
+    } else if (snapshot) {
+      // 本次点击是反勾选：快照已消费
+      taskDoneSnapshots.current.delete(taskId);
+    }
+  }, [commitData]);
+
   const deleteTask = useCallback((id: string) => {
     commitData((prev) =>
       prev
@@ -1420,6 +1467,33 @@ export default function Home() {
     [commitData]
   );
 
+  // 标题栏 AI 规划入口：结果经看板顶部状态条展示
+  const handlePlanFromNav = useCallback(async () => {
+    if (planBusy) return;
+    if (!data || data.tasks.length === 0) {
+      setPlanFeedback("请先添加任务，再使用 AI 规划");
+      return;
+    }
+    setPlanBusy(true);
+    try {
+      const result = await planTasks(data.tasks);
+      setPlanFeedback(
+        result.message ??
+          (result.added > 0
+            ? `AI 规划完成：新增 ${result.added} 个时间块${
+                result.blockedCount > 0 ? `，跳过 ${result.blockedCount} 个冲突` : ""
+              }`
+            : "AI 没有生成新的时间块，请调整任务或已有安排后重试")
+      );
+    } catch (error) {
+      setPlanFeedback(
+        error instanceof Error ? error.message : "AI 规划失败，请稍后重试"
+      );
+    } finally {
+      setPlanBusy(false);
+    }
+  }, [planBusy, planTasks, data]);
+
   const days = getWeekDays(weekOffset);
 
   /* 苹果日历导出暂未启用
@@ -1457,7 +1531,7 @@ export default function Home() {
       ? "今天要做的安排与任务"
       : view === "week" || view === "stats"
         ? formatWeekRange(weekOffset)
-        : "宏观拆解 · 拖拽排期";
+        : "";
 
   return (
     <div className="app-shell">
@@ -1564,7 +1638,7 @@ export default function Home() {
       <section className="sub-nav">
         <div className="sub-nav-left">
           <span className="sub-nav-title">{subTitle}</span>
-          <span className="sub-nav-meta">{subMeta}</span>
+          {subMeta && <span className="sub-nav-meta">{subMeta}</span>}
         </div>
         <div className="sub-nav-actions">
           {view === "week" && (
@@ -1630,14 +1704,21 @@ export default function Home() {
           {view === "board" && (
             <button
               type="button"
-              onClick={() => {
-                setEditingTask(null);
-                setTaskModalOpen(true);
-              }}
+              onClick={handlePlanFromNav}
+              disabled={planBusy || data.tasks.length === 0}
               className="btn-primary-pill"
+              title={
+                data.tasks.length === 0
+                  ? "请先添加任务，再使用 AI 规划"
+                  : "为当前任务自动生成时间块"
+              }
             >
-              <Plus size={16} />
-              新建任务
+              {planBusy ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Sparkles size={16} />
+              )}
+              {planBusy ? "规划中" : "AI 规划"}
             </button>
           )}
           {view === "stats" && (
@@ -1732,13 +1813,14 @@ export default function Home() {
           onAddSubtaskBlock={addSubtaskBlock}
           onReorderTask={reorderTask}
           onToggleTaskPinned={toggleTaskPinned}
+          onToggleTaskStatus={toggleTaskStatus}
           onEditBlock={(block) => {
             setEditingBlock(block);
             setBlockModalOpen(true);
           }}
           onToggleBlockDone={toggleBlockDone}
           onOpenObsidian={handleOpenObsidian}
-          onPlanTasks={planTasks}
+          planFeedback={planFeedback}
         />
       )}
 

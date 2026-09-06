@@ -143,7 +143,7 @@ export default function QuickAdd({ onAddParsed, aiRequest }: Props) {
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <Sparkles size={18} className="shrink-0 text-primary" />
           <input
-            className="input-pill"
+            className="input-rect"
             value={text}
             onChange={(event) => setText(event.target.value)}
             onKeyDown={(event) => {
@@ -157,7 +157,7 @@ export default function QuickAdd({ onAddParsed, aiRequest }: Props) {
             type="button"
             onClick={handleGenerate}
             disabled={busy}
-            className="btn-primary-pill"
+            className="btn-primary-pill btn-sm"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
             {busy ? "解析中" : "生成"}

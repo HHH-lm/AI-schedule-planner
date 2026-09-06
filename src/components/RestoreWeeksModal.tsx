@@ -44,7 +44,7 @@ export default function RestoreWeeksModal({
                 key={weekKey}
                 className="flex items-center justify-between gap-3 rounded-lg border border-[var(--hairline)] px-3 py-2.5"
               >
-                <span className="text-sm font-medium text-ink">
+                <span className="text-sm font-semibold text-ink">
                   {start.getMonth() + 1}/{start.getDate()} - {end.getMonth() + 1}/
                   {end.getDate()}
                 </span>

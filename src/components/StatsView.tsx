@@ -122,7 +122,7 @@ export default function StatsView({ data, days }: Props) {
               return (
                 <div key={stat.category}>
                   <div className="mb-1 flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-1.5 font-medium text-ink-muted-80">
+                    <span className="flex items-center gap-1.5 font-semibold text-ink-muted-80">
                       <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
                       {meta.label}
                     </span>
@@ -238,10 +238,8 @@ export default function StatsView({ data, days }: Props) {
             <button
               type="button"
               onClick={handleCopy}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ${
-                copied
-                  ? "status-note-ok !border !py-1.5"
-                  : "btn-ghost"
+              className={`btn-ghost ${
+                copied ? "!border-[rgba(30,140,90,0.28)] !bg-[rgba(30,140,90,0.08)] !text-[#146b46]" : ""
               }`}
             >
               {copied ? <CheckCheck size={14} /> : <ClipboardCopy size={14} />}
@@ -250,10 +248,8 @@ export default function StatsView({ data, days }: Props) {
             <button
               type="button"
               onClick={handleDownload}
-              className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium ${
-                downloaded
-                  ? "status-note-ok !border !py-1.5"
-                  : "btn-ghost"
+              className={`btn-ghost ${
+                downloaded ? "!border-[rgba(30,140,90,0.28)] !bg-[rgba(30,140,90,0.08)] !text-[#146b46]" : ""
               }`}
             >
               <Download size={14} />

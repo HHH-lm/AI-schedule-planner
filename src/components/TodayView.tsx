@@ -213,7 +213,7 @@ export default function TodayView({
             <span className="shrink-0 text-xs font-semibold tabular-nums text-ink">
               {formatBlockRange(block)}
             </span>
-            <span className="truncate text-sm font-medium text-ink">{block.name}</span>
+            <span className="truncate text-sm font-semibold text-ink">{block.name}</span>
           </span>
           {block.location && (
             <span className="flex items-center gap-1 text-[11px] text-ink-muted-48">
@@ -240,7 +240,7 @@ export default function TodayView({
           {formatBlockRange(block)}
         </span>
         <span className="min-w-0">
-          <span className="block truncate text-sm font-medium text-ink">{block.name}</span>
+          <span className="block truncate text-sm font-semibold text-ink">{block.name}</span>
           {block.location && (
             <span className="mt-0.5 flex items-center gap-1 text-xs text-ink-muted-48">
               <MapPin size={11} />
@@ -283,7 +283,7 @@ export default function TodayView({
               }`}
             />
             <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-ink">
+              <span className="block truncate text-sm font-semibold text-ink">
                 {subtask.name}
               </span>
               <span className="block truncate text-[11px] text-ink-muted-48">
@@ -325,7 +325,7 @@ export default function TodayView({
             }`}
           />
           <span className="min-w-0">
-            <span className="block truncate text-sm font-medium text-ink">
+            <span className="block truncate text-sm font-semibold text-ink">
               {subtask.name}
             </span>
             <span className="mt-0.5 block text-xs text-ink-muted-48">

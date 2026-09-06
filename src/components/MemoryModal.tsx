@@ -260,7 +260,7 @@ export default function MemoryModal({
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Lightbulb size={14} className="text-amber-500" />
-                  <span className="text-xs font-medium text-amber-700">
+                  <span className="text-xs font-semibold text-amber-700">
                     候选记忆
                   </span>
                   {suggestions.length > 0 && (
@@ -292,7 +292,7 @@ export default function MemoryModal({
                         className="shrink-0 mt-0.5 text-amber-500"
                       />
                       <div className="min-w-0">
-                        <p className="text-xs font-medium leading-relaxed whitespace-pre-wrap text-amber-900">
+                        <p className="text-xs font-semibold leading-relaxed whitespace-pre-wrap text-amber-900">
                           {suggestion.conclusion || suggestion.content}
                         </p>
                         {suggestion.conclusion && suggestion.conclusion !== suggestion.content && (
@@ -316,7 +316,7 @@ export default function MemoryModal({
                     {suggestion.reasoning && (
                       <div className="mb-2 ml-6">
                         <p className="text-[11px] text-ink-muted-48 leading-relaxed">
-                          <span className="font-medium">依据：</span>
+                          <span className="font-semibold">依据：</span>
                           {suggestion.reasoning}
                         </p>
                       </div>
@@ -338,7 +338,7 @@ export default function MemoryModal({
                             }}
                           />
                         </div>
-                        <span className="text-[11px] font-medium text-amber-700 shrink-0 w-8 text-right">
+                        <span className="text-[11px] font-semibold text-amber-700 shrink-0 w-8 text-right">
                           {Math.round(suggestion.confidence * 100)}%
                         </span>
                       </div>
