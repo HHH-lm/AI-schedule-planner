@@ -268,6 +268,27 @@ Axiom（APL，生产首选）：
 - 后端速率限制（slowapi）是进程内存态，Serverless 多实例下为近似限流，不作为精确安全边界
 - ICS 导出暂缓，不参与发布验收
 
+### 8.1 路由限流清单
+
+各路由限流额度（slowapi per-IP，装饰于各 router，共享实例 `backend/app/limiter.py`，`get_remote_address` 取 `request.client.host`）：
+
+| 路由 | 额度 |
+|---|---|
+| POST /api/v1/parse | 20/min |
+| POST /api/v1/memories/analyze | 10/min |
+| POST /api/v1/memories/context | 30/min |
+| POST /api/v1/breakdown | 10/min |
+| POST /api/v1/plan-v2 | 10/min |
+| POST /api/v1/conflicts/check | 30/min |
+| POST /api/v1/match-task | 20/min |
+| GET /api/v1/reminders/status | 30/min |
+| POST /api/v1/reminders/run | 10/min |
+| GET /api/v1/reminders/cron | 10/min |
+
+- `/api/v1/health` 等未装饰路由仅受全局共享桶兜底（`main.py` 中间件实例，60/min、每路径全站共享）；已装饰路由同时消耗 per-IP 桶与全局桶。
+- `get_remote_address` 不解析 X-Forwarded-For：经代理/CDN 转发时可能按代理或边缘节点 IP 计数，多用户共享同一 per-IP 桶；如需按真实客户端 IP 计数需更换 key 函数。
+- 回归测试：`backend/tests/test_rate_limit.py`（parse / memories/analyze / memories/context / breakdown 四条参数化用例，第 N+1 次请求断言 429）。
+
 ## 9. 自托管形态（备选，保留版本）
 
 `deploy/self-host-001` 标签保留了完整自托管产物：`Dockerfile`、`docker-compose.yml`、`deploy/systemd/` 与历史部署文档。切换回自托管时，`ENABLE_SCHEDULER` 保持 `true`（默认），由 APScheduler 常驻扫描，无需外部定时器。
