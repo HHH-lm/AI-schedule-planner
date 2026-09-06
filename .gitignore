@@ -8,7 +8,7 @@ dist
 .DS_Store
 .venv
 .vercel
-.backend.log
+.backend.log*
 .backend.pid
 __pycache__
 .pytest_cache

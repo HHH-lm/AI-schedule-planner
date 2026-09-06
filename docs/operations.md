@@ -180,15 +180,13 @@ Hobby 版 Vercel 无 Log Drain（Pro 专属功能），生产日志留存短且�
 - 任何发送失败（网络异常/非 2xx）静默丢弃并计数，绝不影响业务请求；缓冲上限 500 行，超限丢最旧
 - 本地未配置凭据时 handler 不挂载，零开销
 
-告警（Axiom Monitors，建议按下表配置，通知默认 email，亦支持 webhook）：
+告警（Axiom Monitors，通知默认 email，亦支持 webhook；**免费 Personal 版上限 3 条 Monitors**，故合并为 3 条，覆盖面与细分方案等价）：
 
 | 告警 | 查询条件 | 阈值 | 含义 |
 |---|---|---|---|
-| AI 服务异常 | `event in ("ai.error","ai.timeout")` | 15 分钟内 ≥ 3 次 | AI 服务商故障或 Key 问题 |
-| 提醒扫描失败 | `event == "reminder.scan.error"` | 出现即告警 | Supabase 读取失败，提醒停摆 |
-| 服务端错误 | `event == "http.request" and status >= 500` | 出现即告警 | 未捕获异常（日志含 `exc` 堆栈） |
-| 推送失败 | `event in ("push.failure","reminder.push.failed")` | 出现即告警 | 微信通道故障 |
-| 扫描心跳缺失 | `event == "reminder.scan.done"` | 超过 1 小时无数据 | GitHub Actions 定时器停摆（配合 UptimeRobot 探活双保险） |
+| 关键错误 | `event in ("reminder.scan.error","push.failure","reminder.push.failed") or (event == "http.request" and status >= 500)` | 出现即告警 | 提醒扫描失败 / 微信推送失败 / 未捕获异常（合并条，邮件不区分具体类，收到后到 Stream 按事件名细查） |
+| AI 服务异常 | `event in ("ai.error","ai.timeout")` | 15 分钟内 ≥ 3 次 | AI 服务商故障或 Key 问题（单独设频次阈值，避免偶发超时误报） |
+| 扫描心跳缺失 | `event == "reminder.scan.done"` | 超过 1 小时无数据（below 1 + Alert on no data） | GitHub Actions 定时器停摆（配合 UptimeRobot 探活双保险） |
 
 ### 4.5 排查示例
 
