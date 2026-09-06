@@ -127,8 +127,13 @@ FastAPI 后端默认输出 **JSON Lines 结构化日志**（每行一个 JSON �
 |---|---|---|
 | `LOG_LEVEL` | `INFO` | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL |
 | `LOG_FORMAT` | `json` | `json`（JSON Lines，推荐）或 `text`（人类可读） |
+| `AXIOM_API_URL` | `https://us-east-1.aws.edge.axiom.co` | Axiom **ingest 专用边缘域名**（`api.axiom.co` 只承担管理接口，用于 ingest 会 404）；组织所在区在 Axiom Settings → General → Edge deployment 查看，欧区改为 `https://eu-central-1.aws.edge.axiom.co` |
+| `AXIOM_API_TOKEN` | 空 | Axiom ingest 权限 API Token，与 `AXIOM_DATASET` 都配置后启用日志直发（见 4.4） |
+| `AXIOM_DATASET` | 空 | Axiom 数据集名（建议 `ai-schedule-backend`） |
+| `LOG_SHIP_ENABLED` | `true` | 日志直发紧急停发开关 |
+| `LOG_SHIP_TIMEOUT_SECONDS` | `2` | 直发超时（秒），超时静默丢弃不影响业务 |
 
-日志写入 stderr：Docker 部署直接 `docker logs` / 平台日志采集；systemd 部署见 `journalctl -u <service>`；本地 dev 见 `.backend.log`。
+日志写入 stdout（Serverless 平台标准约定，Vercel 采集默认转发 stdout）：Docker 部署直接 `docker logs` / 平台日志采集；systemd 部署见 `journalctl -u <service>`；本地 dev 见 `.backend.log`。
 
 ### 4.2 日志字段
 
@@ -136,7 +141,8 @@ FastAPI 后端默认输出 **JSON Lines 结构化日志**（每行一个 JSON �
 - `level`：INFO / WARNING / ERROR
 - `logger`：模块名（`app.ai`、`app.push`、`app.reminders`、`app.http` 等）
 - `event`：事件名
-- `request_id`：请求级关联 ID（HTTP 请求 12 位 hex；提醒扫描为 `scan-<时间戳>`），用于把一次请求的多个事件串起来
+- `request_id`：请求级关联 ID（HTTP 请求 12 位 hex；提醒扫描为 `scan-<时间戳>`），用于把一次请求的多个事件串起来；同时随响应头 `X-Request-ID` 返回，报障时可直接提供该头对号入座
+- `exc`：未捕获异常的堆栈文本（仅 5xx 路径）
 - 其余字段为事件附加字段（provider / model / duration_ms / status / 数量等）
 
 ### 4.3 关键事件
@@ -156,7 +162,35 @@ FastAPI 后端默认输出 **JSON Lines 结构化日志**（每行一个 JSON �
 | `reminder.push.failed` / `reminder.push.skipped` | ERROR / INFO | block_id, error | 单条提醒推送失败 / 去重跳过 |
 | `reminder.scan.error` | ERROR | error | 扫描过程中 Supabase 读取失败 |
 
-### 4.4 排查示例
+### 4.4 外部日志汇聚与告警（Axiom 直发）
+
+Hobby 版 Vercel 无 Log Drain（Pro 专属功能），生产日志留存短且不可检索；本项目由后端代码把 JSON Lines 直发到 Axiom 免费版（500GB/月、30 天留存、含告警，无需信用卡），SLO 数据与错误告警不再依赖人工翻 Vercel Logs。
+
+配置步骤（一次性，控制台操作）：
+
+1. 注册 Axiom 免费账号（可 GitHub 登录）
+2. 创建 dataset，建议命名 `ai-schedule-backend`
+3. Settings → API Tokens → 新建 token，权限只勾该 dataset 的 **Ingest**（ingest 端点只认 API token，不认个人 PAT）
+4. 配置后端环境变量（Vercel 项目 `ai-schedule-backend` 与本地 `.env.local`）：`AXIOM_API_TOKEN` 与 `AXIOM_DATASET=ai-schedule-backend`（两者齐备自动启用；`LOG_SHIP_ENABLED=false` 紧急停发）
+5. 部署后访问任一 API（如 `/api/v1/health`），Axiom dataset 的 Stream 应出现 `http.request` 事件；响应头 `X-Request-ID` 可与日志对号验证
+
+工作机制与边界（`backend/app/log_shipper.py`）：
+
+- 每个请求/扫描周期缓冲 JSON 行，在响应结束前同步 POST（NDJSON）到 Axiom ingest，规避 Serverless 冻结；请求尾延迟约增加几十毫秒
+- 任何发送失败（网络异常/非 2xx）静默丢弃并计数，绝不影响业务请求；缓冲上限 500 行，超限丢最旧
+- 本地未配置凭据时 handler 不挂载，零开销
+
+告警（Axiom Monitors，建议按下表配置，通知默认 email，亦支持 webhook）：
+
+| 告警 | 查询条件 | 阈值 | 含义 |
+|---|---|---|---|
+| AI 服务异常 | `event in ("ai.error","ai.timeout")` | 15 分钟内 ≥ 3 次 | AI 服务商故障或 Key 问题 |
+| 提醒扫描失败 | `event == "reminder.scan.error"` | 出现即告警 | Supabase 读取失败，提醒停摆 |
+| 服务端错误 | `event == "http.request" and status >= 500` | 出现即告警 | 未捕获异常（日志含 `exc` 堆栈） |
+| 推送失败 | `event in ("push.failure","reminder.push.failed")` | 出现即告警 | 微信通道故障 |
+| 扫描心跳缺失 | `event == "reminder.scan.done"` | 超过 1 小时无数据 | GitHub Actions 定时器停摆（配合 UptimeRobot 探活双保险） |
+
+### 4.5 排查示例
 
 ```bash
 # 最近 30 分钟 AI 超时/失败
@@ -174,7 +208,24 @@ grep '"event": "ai.response"' <日志> | python3 -c \
    [print(r['duration_ms'], r.get('operation'), r.get('provider')) for r in sorted(rows, key=lambda x:-x['duration_ms'])[:20]]"
 ```
 
-### 4.5 隐私与安全约定
+Axiom（APL，生产首选）：
+
+```sql
+-- 某次请求的完整链路（request_id 取自响应头 X-Request-ID）
+['ai-schedule-backend'] | where request_id == 'abc123def456'
+
+-- 最近 24h AI 超时/失败按小时分布
+['ai-schedule-backend']
+| where event in ('ai.error', 'ai.timeout')
+| summarize count() by bin(_time, 1h)
+
+-- AI 成功率与耗时（SLO 口径）
+['ai-schedule-backend']
+| where event in ('ai.response', 'ai.timeout', 'ai.error')
+| summarize total = count(), ok = countif(event == 'ai.response'), p95 = percentile(duration_ms, 95)
+```
+
+### 4.6 隐私与安全约定
 
 - 日志只记录脱敏元数据（长度、数量、状态码、耗时、错误类型/截断信息），**不记录**自然语言输入、日程文本、推送令牌、API Key 等敏感内容。
 - `request_id` 仅用于关联日志，不包含用户身份信息。

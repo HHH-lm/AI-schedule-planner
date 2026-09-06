@@ -3,9 +3,11 @@
 - 记录频率:上线首周每日一次(G7-001 发布 Gate 通过当日记 Day 1,此后连续 7 天)
 - 指标:AI 解析调用成功率与耗时、微信推送成功率、cron 定时器可用性
 - 数据来源:
-  - AI:Vercel Logs(后端项目)过滤 `ai.response`(取 `duration_ms`)、`ai.timeout` / `ai.error`;成功率 = `ai.response` 数 /(`ai.response` + `ai.timeout` + `ai.error`)数
-  - 推送:GitHub Actions `reminder-cron` 运行日志中 `/api/v1/reminders/cron` 返回的 `pushed` / `errors`;或 Vercel Logs 中 `reminder.push.failed` / `push.failure` 计数
-  - 定时器:GitHub Actions 页 reminder-cron 每日应有 ~288 次触发(`*/5`),关注连续失败或长时间未触发
+  - 首选 Axiom(dataset `ai-schedule-backend`,后端日志直发,见 `docs/operations.md` §4.4):
+    - AI:`ai.response`(取 `duration_ms`)/ `ai.timeout` / `ai.error`;成功率 = `ai.response` 数 /(`ai.response` + `ai.timeout` + `ai.error`)数,APL 查询示例见运维手册 §4.5
+    - 推送:`reminder.scan.done` 的 pushed/errors 字段与 `reminder.push.failed` / `push.failure` 计数
+    - 定时器心跳:`reminder.scan.done` 每 5 分钟一条,Monitor 配置超 1 小时缺失即告警
+  - 备选(直发未配置/失败时):Vercel Logs(后端项目)人工过滤同名事件;GitHub Actions `reminder-cron` 运行日志
 - 阈值参考(自用软件,无硬性 SLO,以下为观察基线):AI 成功率 ≥ 95%(不含服务商故障时段)、推送失败自动重试后成功、定时器无连续 3 次以上未触发
 
 ## 每日记录

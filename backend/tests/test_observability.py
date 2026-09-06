@@ -5,11 +5,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings, get_settings
 from app.logging_setup import (
@@ -20,7 +23,7 @@ from app.logging_setup import (
     set_request_id,
     setup_logging,
 )
-from app.main import app
+from app.main import app, structured_request_log
 from app.services.ai import call_chat_completions
 from app.services.push import push_wechat_message
 from app.services.reminders import scan_reminders
@@ -101,6 +104,22 @@ def test_setup_logging_is_idempotent() -> None:
     assert len(root.handlers) == count
 
 
+def test_setup_logging_writes_to_stdout() -> None:
+    setup_logging("INFO", "json")
+    structured = [
+        handler
+        for handler in logging.getLogger().handlers
+        if getattr(handler, "_ai_schedule_structured", False)
+    ]
+    assert structured
+    assert all(handler.stream is sys.stdout for handler in structured)
+
+
+def test_setup_logging_quiets_httpx_info_noise() -> None:
+    setup_logging("INFO", "json")
+    assert logging.getLogger("httpx").getEffectiveLevel() == logging.WARNING
+
+
 # ── HTTP 中间件 ────────────────────────────────────────────
 
 
@@ -116,6 +135,49 @@ def test_http_middleware_logs_request(caplog) -> None:
     assert fields["status"] == 200
     assert fields["duration_ms"] >= 0
     assert fields["request_id"]
+
+
+def test_response_carries_request_id_header(caplog) -> None:
+    with caplog.at_level(logging.INFO, logger="app"):
+        response = client.get("/api/v1/health")
+    assert response.status_code == 200
+    header_id = response.headers.get("X-Request-ID")
+    assert header_id
+    # 响应头与访问日志中的 request_id 一致，报障可对号
+    events = _records(caplog, "http.request")
+    assert events[-1].fields["request_id"] == header_id
+
+
+def test_http_middleware_logs_500_with_stack_trace(caplog) -> None:
+    boom_app = FastAPI()
+    boom_app.add_middleware(
+        BaseHTTPMiddleware, dispatch=structured_request_log
+    )
+
+    @boom_app.get("/boom")
+    async def boom():
+        raise RuntimeError("kaboom")
+
+    boom_client = TestClient(boom_app, raise_server_exceptions=False)
+    with caplog.at_level(logging.INFO, logger="app.http"):
+        response = boom_client.get("/boom")
+    assert response.status_code == 500
+    events = _records(caplog, "http.request")
+    assert events
+    record = events[-1]
+    assert record.fields["status"] == 500
+    # 未捕获异常必须带堆栈，且仍带 request_id 上下文
+    assert record.exc_info
+    assert "kaboom" in str(record.exc_info[1])
+
+
+def test_http_middleware_flushes_shipped_logs(monkeypatch) -> None:
+    calls: list[int] = []
+    monkeypatch.setattr("app.main.flush_logs", lambda: calls.append(1))
+    response = client.get("/api/v1/health")
+    assert response.status_code == 200
+    # 请求尾必须触发一次日志直发（Serverless 冻结前）
+    assert calls
 
 
 def test_parse_result_event_logged(caplog) -> None:

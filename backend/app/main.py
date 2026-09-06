@@ -15,6 +15,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_settings
+from app.log_shipper import flush_logs, install_shipper
 from app.logging_setup import (
     get_logger,
     log_event,
@@ -29,6 +30,8 @@ from app.services.reminders import scan_reminders
 
 settings = get_settings()
 setup_logging(settings.log_level, settings.log_format)
+# 配置了 Axiom 凭据时挂载日志直发 handler（未配置则零开销）
+install_shipper(settings)
 
 limiter = Limiter(key_func=lambda: "global", default_limits=["60/minute"])
 
@@ -84,7 +87,11 @@ app.add_middleware(SlowAPIMiddleware)
 
 @app.middleware("http")
 async def structured_request_log(request: Request, call_next):
-    """结构化访问日志：方法/路径/状态码/耗时，附加 request_id 贯穿请求。"""
+    """结构化访问日志：方法/路径/状态码/耗时，附加 request_id 贯穿请求。
+
+    响应头带 X-Request-ID 供报障对号；未捕获异常先记 ERROR（含堆栈）再抛出，
+    两条路径都在 request_id 重置前把缓冲日志直发到 Axiom，规避响应后执行冻结。
+    """
     request_id = uuid.uuid4().hex[:12]
     token = set_request_id(request_id)
     started = time.perf_counter()
@@ -101,7 +108,9 @@ async def structured_request_log(request: Request, call_next):
             path=request.url.path,
             status=500,
             duration_ms=duration_ms,
+            exc_info=True,
         )
+        flush_logs()
         raise
     finally:
         reset_request_id(token)
@@ -123,6 +132,8 @@ async def structured_request_log(request: Request, call_next):
         status=response.status_code,
         duration_ms=duration_ms,
     )
+    response.headers["X-Request-ID"] = request_id
+    flush_logs()
     return response
 
 

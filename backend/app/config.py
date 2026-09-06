@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     pushplus_token: str | None = None
     serverchan_key: str | None = None
 
+    # Axiom 日志直发（Hobby 版 Vercel 无 Log Drain，应用内直发替代）：
+    # 未配置 token/dataset 时自动禁用；LOG_SHIP_ENABLED 可作紧急停发开关。
+    # ingest 接口走边缘部署域名（api.axiom.co 仅承担管理类接口），SDK 默认 US East 1；
+    # 组织所在区在 Axiom Settings → General → Edge deployment 查看（欧区为
+    # eu-central-1.aws.edge.axiom.co）
+    axiom_api_url: str = "https://us-east-1.aws.edge.axiom.co"
+    axiom_api_token: str | None = None
+    axiom_dataset: str | None = None
+    log_ship_enabled: bool = True
+    log_ship_timeout_seconds: float = 2.0
+
 
 @lru_cache
 def get_settings() -> Settings:

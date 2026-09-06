@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from app.config import Settings
+from app.log_shipper import flush_logs
 from app.logging_setup import (
     get_logger,
     log_event,
@@ -297,4 +298,6 @@ async def scan_reminders(settings: Settings) -> dict[str, Any]:
             "errors": [str(exc)],
         }
     finally:
+        # 扫描收尾直发缓冲日志（Serverless 下扫描结束后进程即冻结）
+        flush_logs()
         reset_request_id(token)

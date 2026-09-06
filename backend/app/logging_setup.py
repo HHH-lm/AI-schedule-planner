@@ -76,9 +76,14 @@ def _parse_level(value: str) -> int:
 
 
 def setup_logging(level: str = "INFO", fmt: str = "json") -> None:
-    """配置根 logger（幂等）：默认 JSON Lines 输出到 stderr，fmt 支持 json/text。"""
+    """配置根 logger（幂等）：默认 JSON Lines 输出到 stdout，fmt 支持 json/text。
+
+    输出到 stdout 是 Serverless 平台的标准约定（Vercel 日志采集默认转发 stdout）；
+    httpx 压到 WARNING 过滤每次请求的 INFO 噪音行。
+    """
     root = logging.getLogger()
     root.setLevel(_parse_level(level))
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     if fmt == "text":
         formatter = logging.Formatter(
             "%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -89,7 +94,7 @@ def setup_logging(level: str = "INFO", fmt: str = "json") -> None:
         if getattr(handler, "_ai_schedule_structured", False):
             handler.setFormatter(formatter)
             return
-    handler = logging.StreamHandler(sys.stderr)
+    handler = logging.StreamHandler(sys.stdout)
     handler._ai_schedule_structured = True  # type: ignore[attr-defined]
     handler.setFormatter(formatter)
     root.addHandler(handler)
@@ -103,7 +108,9 @@ def log_event(
     logger: logging.Logger,
     level: int,
     event: str,
+    *,
+    exc_info: bool = False,
     **fields: Any,
 ) -> None:
-    """关键事件埋点：记录带 event 与附加字段的结构化日志。"""
-    logger.log(level, event, extra={"event": event, "fields": fields})
+    """关键事件埋点：记录带 event 与附加字段的结构化日志；exc_info=True 附带异常堆栈。"""
+    logger.log(level, event, extra={"event": event, "fields": fields}, exc_info=exc_info)
