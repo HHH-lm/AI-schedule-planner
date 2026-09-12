@@ -144,7 +144,9 @@ export default function BlockModal({
         end: endOffset,
         category,
         location: location.trim() || undefined,
-        subtaskId: block?.subtaskId,
+        // 用户改动过关联任务后，旧 subtaskId 已失效，不能透传，
+        // 否则保存逻辑会把旧子任务改名而忽略新选的任务。
+        subtaskId: taskIdTouched ? undefined : block?.subtaskId,
         taskId: taskId || undefined,
         syncTask: !taskIdTouched,
         obsidianVault: resolvedVault,

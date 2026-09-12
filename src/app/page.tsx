@@ -103,6 +103,7 @@ import MemoryModal from "@/components/MemoryModal";
 import AccountModal from "@/components/AccountModal";
 import { buildObsidianUrl } from "@/lib/obsidian";
 import {
+  syncBlockDeletionToTasks,
   syncBlockDoneToSubtask,
   syncBlockSaveToTasks,
   syncSubtaskRenameToBlocks,
@@ -439,25 +440,33 @@ export default function Home() {
   }, [commitData]);
 
   const deleteBlock = useCallback((id: string) => {
-    commitData((prev) =>
-      prev
-        ? {
-            ...prev,
-            timeBlocks: prev.timeBlocks.filter((block) => block.id !== id),
-          }
-        : prev
-    );
+    commitData((prev) => {
+      if (!prev) return prev;
+      const remaining = prev.timeBlocks.filter((block) => block.id !== id);
+      const deleted = prev.timeBlocks.filter((block) => block.id === id);
+      return {
+        ...prev,
+        timeBlocks: remaining,
+        tasks: syncBlockDeletionToTasks(prev.tasks, remaining, deleted),
+      };
+    });
   }, [commitData]);
 
   const deleteBlocks = useCallback((ids: string[]) => {
-    commitData((prev) =>
-      prev
-        ? {
-            ...prev,
-            timeBlocks: prev.timeBlocks.filter((block) => !ids.includes(block.id)),
-          }
-        : prev
-    );
+    commitData((prev) => {
+      if (!prev) return prev;
+      const remaining = prev.timeBlocks.filter(
+        (block) => !ids.includes(block.id)
+      );
+      const deleted = prev.timeBlocks.filter((block) =>
+        ids.includes(block.id)
+      );
+      return {
+        ...prev,
+        timeBlocks: remaining,
+        tasks: syncBlockDeletionToTasks(prev.tasks, remaining, deleted),
+      };
+    });
   }, [commitData]);
 
   const saveBlock = useCallback(
@@ -488,16 +497,28 @@ export default function Home() {
           // API 失败，保持不关联
         }
       }
-      const subtaskId = draft.subtaskId ?? existingBlock?.subtaskId;
+      // BlockModal 已在用户改动关联任务时清掉旧 subtaskId，这里不再回退
+      // 到 existingBlock?.subtaskId，否则旧链接会被复活、新任务被忽略。
+      const subtaskId = draft.subtaskId;
+      const linkMoved = Boolean(
+        id && taskId && taskId !== existingBlock?.taskId
+      );
       commitData((prev) => {
         if (!prev) return prev;
-        const synced = syncBlockSaveToTasks(prev.tasks, {
-          taskId: taskId ?? undefined,
-          subtaskId: subtaskId ?? undefined,
-          blockName: name,
-          previousBlockName: existingBlock?.name,
-          done: draft.done ?? false,
-        });
+        const synced = syncBlockSaveToTasks(
+          prev.tasks,
+          {
+            taskId: taskId ?? undefined,
+            subtaskId: subtaskId ?? undefined,
+            blockName: name,
+            previousBlockName: existingBlock?.name,
+            done: draft.done ?? false,
+            linkMoved,
+          },
+          // 除被保存块以外的全部块：判断关联子任务是否被其他块共享，
+          // 共享时改名不得劫持子任务名。
+          prev.timeBlocks.filter((block) => block.id !== id)
+        );
         const tasks = synced.tasks;
         const linkedSubtaskId = synced.subtaskId;
         const block: TimeBlock = {
