@@ -1189,6 +1189,15 @@ textarea.input-rect {
   padding: 6px;
 }
 
+/* 恢复隐藏周入口窄条：与折叠周同款视觉（宽度由内联 var(--board-day-w) 给定），
+   钉在任务列旁不随横向滚动消失 */
+.board-hidden-strip {
+  position: sticky;
+  left: var(--board-task-w);
+  z-index: 25;
+  background: rgba(255, 255, 255, 0.96);
+}
+
 .board-day-cell.today {
   background: rgba(0, 102, 204, 0.045);
 }

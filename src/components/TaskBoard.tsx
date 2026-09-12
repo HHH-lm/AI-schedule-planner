@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   BookMarked,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
   Circle,
-  Eye,
   GripVertical,
   Loader2,
   MapPin,
@@ -17,8 +22,21 @@ import {
 } from "lucide-react";
 import type { AppData, Task, TimeBlock } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
-import { addDays, minutesToHHMM, startOfWeek, toDateKey, weekdayName } from "@/lib/date";
-import { getBoardStart } from "@/lib/board";
+import {
+  addDays,
+  minutesToHHMM,
+  parseDateKey,
+  startOfWeek,
+  toDateKey,
+  weekdayName,
+} from "@/lib/date";
+import {
+  BOARD_MIN_WEEKS,
+  getPastWeekKeys,
+  getBoardStart,
+  resolveBoardWeekCount,
+  resolveInitialCollapsedWeeks,
+} from "@/lib/board";
 import {
   blockOverlapsDate,
   blockOverlapsRange,
@@ -37,8 +55,20 @@ import { orderTasks } from "@/lib/taskOrder";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import RestoreWeeksModal from "@/components/RestoreWeeksModal";
 
-const INITIAL_WEEKS = 4;
 const EXTEND_THRESHOLD = 480;
+const LS_WEEK_COUNT = "board-week-count";
+const LS_COLLAPSED_WEEKS = "board-collapsed-weeks";
+
+function readSavedCollapsedWeeks(): string[] | null {
+  try {
+    const raw = localStorage.getItem(LS_COLLAPSED_WEEKS);
+    if (raw === null) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
 
 interface BoardDay {
   key: string;
@@ -125,20 +155,31 @@ export default function TaskBoard({
   const [macroText, setMacroText] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [breakdownBusy, setBreakdownBusy] = useState(false);
-  const [weekCount, setWeekCount] = useState(INITIAL_WEEKS);
+  // 追加周数持久化到 localStorage：刷新后保留用户扩展的窗口长度
+  const [weekCount, setWeekCount] = useState(() => {
+    let saved: number | null = null;
+    try {
+      const raw = localStorage.getItem(LS_WEEK_COUNT);
+      if (raw !== null) saved = Number(raw);
+    } catch {
+      saved = null;
+    }
+    return resolveBoardWeekCount(saved);
+  });
+  // 过去的周默认折叠；用户的展开/折叠状态持久化，刷新后原样恢复
   const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(() => {
-    const currentMondayKey = toDateKey(startOfWeek(new Date()));
-    const collapsed = new Set<string>();
+    const currentMonday = startOfWeek(new Date());
     const keys: string[] = [];
     for (const task of data.tasks) if (task.date) keys.push(task.date);
     for (const block of data.timeBlocks) keys.push(block.date);
-    const earliestDateKey = keys.sort()[0];
-    const boardStart = getBoardStart(days[0].date, earliestDateKey);
-    for (let i = 0; i < INITIAL_WEEKS; i++) {
-      const weekKey = toDateKey(addDays(boardStart, i * 7));
-      if (weekKey < currentMondayKey) collapsed.add(weekKey);
-    }
-    return collapsed;
+    const boardStart = getBoardStart(days[0].date, keys.sort()[0]);
+    return new Set(
+      resolveInitialCollapsedWeeks(
+        boardStart,
+        currentMonday,
+        readSavedCollapsedWeeks()
+      )
+    );
   });
   const [hideConfirmWeek, setHideConfirmWeek] = useState<BoardWeek | null>(
     null
@@ -153,6 +194,26 @@ export default function TaskBoard({
   useEffect(() => {
     if (hiddenWeeks.length === 0) setRestoreModalOpen(false);
   }, [hiddenWeeks]);
+
+  // 追加周数与折叠状态变化即写入 localStorage（仅本机，不进云同步/撤销历史）
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_WEEK_COUNT, String(weekCount));
+    } catch {
+      // 存储不可用时静默降级为会话内状态
+    }
+  }, [weekCount]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        LS_COLLAPSED_WEEKS,
+        JSON.stringify(Array.from(collapsedWeeks))
+      );
+    } catch {
+      // 存储不可用时静默降级
+    }
+  }, [collapsedWeeks]);
 
   const orderedTasks = useMemo(
     () => orderTasks(data.tasks),
@@ -170,38 +231,67 @@ export default function TaskBoard({
     return keys.sort()[0];
   }, [data.tasks, data.timeBlocks]);
 
-  const boardStart = useMemo(
+  // 数据最早周的周一；无数据或数据不早于本周一时等于本周一
+  const dataStart = useMemo(
     () => getBoardStart(days[0].date, earliestDateKey),
     [days, earliestDateKey]
   );
 
+  // 渲染窗口起点固定为本周一：今天与后续日期始终落在"本周起 N 周"窗口内；
+  // 更早的历史周以折叠条形式保留在窗口左侧（见下方 weeks useMemo）
+  const boardStart = useMemo(() => startOfWeek(days[0].date), [days]);
+
+  // 数据加载完成后一次性校正：挂载时 localStorage 可能晚于首帧写入，这里确保
+  // 历史周默认折叠在首帧也生效（不影响已被持久化覆盖的用户状态语义）
+  const dataStartKey = toDateKey(dataStart);
+  const boardStartKey = toDateKey(boardStart);
+  const collapseInitRef = useRef(readSavedCollapsedWeeks() !== null);
+  useEffect(() => {
+    if (collapseInitRef.current) return;
+    if (dataStartKey >= boardStartKey) return;
+    collapseInitRef.current = true;
+    setCollapsedWeeks((prev) => {
+      if (prev.size > 0) return prev;
+      return new Set(getPastWeekKeys(dataStart, boardStart));
+    });
+  }, [dataStartKey, boardStartKey, dataStart, boardStart]);
+
+  // 窗口需要覆盖历史周时，自动把周数扩展到"本周起 4 周"所需的最小长度；
+  // 只增不减，用户手动追加的周数不受影响
+  useEffect(() => {
+    const required =
+      getPastWeekKeys(dataStart, boardStart).length + BOARD_MIN_WEEKS;
+    setWeekCount((count) => (count < required ? required : count));
+  }, [dataStart, boardStart]);
+
   const todayKeyValue = toDateKey(new Date());
   const weeks = useMemo<BoardWeek[]>(() => {
-    return Array.from({ length: weekCount }, (_, index) => {
-      const start = addDays(boardStart, index * 7);
-      return {
-        key: toDateKey(start),
-        start,
-        days: Array.from({ length: 7 }, (_, dayIndex) => {
-          const date = addDays(start, dayIndex);
-          return {
-            key: toDateKey(date),
-            date,
-            isToday: toDateKey(date) === todayKeyValue,
-          };
-        }),
-      };
+    const buildWeek = (start: Date): BoardWeek => ({
+      key: toDateKey(start),
+      start,
+      days: Array.from({ length: 7 }, (_, dayIndex) => {
+        const date = addDays(start, dayIndex);
+        return {
+          key: toDateKey(date),
+          date,
+          isToday: toDateKey(date) === todayKeyValue,
+        };
+      }),
     });
-  }, [boardStart, weekCount, todayKeyValue]);
+    // 历史周（本周一之前）以折叠条保留在窗口左侧，可展开、可拖入排期
+    const past = getPastWeekKeys(dataStart, boardStart).map((key) =>
+      buildWeek(parseDateKey(key))
+    );
+    const future = Array.from({ length: weekCount }, (_, index) =>
+      buildWeek(addDays(boardStart, index * 7))
+    );
+    return [...past, ...future];
+  }, [dataStart, boardStart, weekCount, todayKeyValue]);
 
   const visibleWeeks = useMemo(
     () => weeks.filter((week) => !hiddenWeeks.includes(week.key)),
     [weeks, hiddenWeeks]
   );
-
-  const extendWeek = () => {
-    setWeekCount((count) => count + 1);
-  };
 
   const handleBoardScroll = () => {
     const el = scrollRef.current;
@@ -210,6 +300,23 @@ export default function TaskBoard({
       setWeekCount((count) => count + 1);
     }
   };
+
+  // 挂载时若有历史折叠周，初始视口定位到本周一（刷新永远回到从本周起的窗口，
+  // 不记住用户滑到多远的未来——窗口本身已持久化，追加的周刷新后仍在）
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const pastCount = getPastWeekKeys(dataStart, boardStart).length;
+    if (pastCount === 0) return;
+    const dayWidth = parseFloat(
+      getComputedStyle(el).getPropertyValue("--board-day-w")
+    );
+    if (Number.isFinite(dayWidth) && dayWidth > 0) {
+      el.scrollLeft = pastCount * dayWidth;
+    }
+    // 依赖数组刻意为空：只在挂载时定位一次，后续滚动由用户控制
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const toggleWeekCollapse = (weekKey: string) => {
     setCollapsedWeeks((prev) => {
@@ -616,6 +723,28 @@ export default function TaskBoard({
                 左右排期 · 上下排序
               </span>
             </div>
+            {/* 恢复隐藏周入口：与折叠周同款窄条，钉在任务列旁不随滚动消失 */}
+            {hiddenWeeks.length > 0 && (
+              <div
+                className="board-week-header board-hidden-strip"
+                style={{ width: "var(--board-day-w)" }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setRestoreModalOpen(true)}
+                  className="flex w-full items-center gap-1 px-2 py-1.5 text-left hover:bg-canvas-parchment"
+                  title="恢复隐藏周显示"
+                >
+                  <ChevronRight
+                    size={13}
+                    className="shrink-0 text-ink-muted-48"
+                  />
+                  <span className="truncate text-[10px] font-semibold text-ink-muted-80">
+                    {hiddenWeeks.length} 周已隐藏
+                  </span>
+                </button>
+              </div>
+            )}
             {visibleWeeks.map((week) => {
               const collapsed = collapsedWeeks.has(week.key);
               const weekBlocks = data.timeBlocks.filter(
@@ -694,26 +823,6 @@ export default function TaskBoard({
                 </div>
               );
             })}
-            {hiddenWeeks.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setRestoreModalOpen(true)}
-                className="flex shrink-0 items-center gap-1 border-r border-[#f0f0f0] px-2.5 text-[11px] font-semibold text-ink-muted-48 hover:bg-canvas-parchment"
-                title="恢复隐藏周显示"
-              >
-                <Eye size={13} />
-                隐藏 {hiddenWeeks.length} 周
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={extendWeek}
-              className="flex shrink-0 items-center gap-1 border-r border-[#f0f0f0] px-2.5 text-[11px] font-semibold text-ink-muted-48 hover:bg-canvas-parchment"
-              title="追加一周"
-            >
-              <Plus size={13} />
-              一周
-            </button>
           </div>
 
           {data.tasks.length === 0 && (
