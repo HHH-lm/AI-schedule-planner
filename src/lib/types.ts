@@ -118,6 +118,8 @@ export interface ParsedSchedule {
   category: Category;
   location?: string;
   linkTask?: string | null;
+  /** 完成指令（「标记为已完成」等）：解析产出即已完成的块；后端省略时视为 false */
+  done?: boolean;
 }
 
 export interface WeekStat {

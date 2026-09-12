@@ -405,6 +405,42 @@ _LINK_DIRECTIVE_RE = re.compile(
 )
 _LINK_HANG_RE = re.compile(r"^挂到\s*[:：]?\s*(.+?)下$")
 
+# 「标记为已完成」类完成指令段：整段仅为指令、无时间无事项，应用已完成状态到相邻块。
+# 必须含显式标记动词（标记/记/设/算/勾选）或完成体标记（已/了/掉/啦），
+# 裸「完成」不构成指令，避免误伤「3点前完成」这类截止表述与截断输入。
+_DONE_DIRECTIVE_RE = re.compile(
+    r"^(?:请\s*)?(?:帮\s*(?:我)?\s*)?(?:"
+    r"(?:标记|记|设|算|勾选)(?:为|成|作)?(?:已经?)?完成"
+    r"|(?:都|全部)?已经?完成了?"
+    r"|完成(?:了|掉)[。.！!～~]?"
+    r"|(?:做|办)完了[。.！!～~]?"
+    r")[。.！!～~]?$"
+)
+
+# 段内后缀形式：「明天下午3点开会 标记为已完成」——从段尾剥离指令子句，其余部分照常解析
+_DONE_SUFFIX_RE = re.compile(
+    r"[\s，,、；;。]*"
+    r"(?:"
+    r"(?:标记|记|设|算|勾选)(?:为|成|作)?(?:已经?)?完成"
+    r"|已经?完成了?"
+    r"|完成(?:了|掉)"
+    r"|(?:做|办)完了"
+    r")\s*[。.！!～~]?$"
+)
+
+
+def extract_done_directive(segment: str) -> bool:
+    """识别「标记为已完成」指令段：整段为完成指令返回 True，否则 False。"""
+    return _DONE_DIRECTIVE_RE.match(segment.strip()) is not None
+
+
+def strip_done_directive(segment: str) -> tuple[str, bool]:
+    """剥离段尾完成指令子句：返回 (剥离后的段, 是否命中指令)。"""
+    match = _DONE_SUFFIX_RE.search(segment)
+    if not match:
+        return segment, False
+    return segment[: match.start()], True
+
 
 def extract_link_directive(segment: str) -> str | None:
     """识别「关联 X」指令段：返回关联目标名；非指令段返回 None。"""
@@ -468,7 +504,15 @@ def parse_schedule_with_feedback(
         return [], RejectReason(code="empty", message="输入为空，请输入包含时间和事项的句子")
 
     pending_link: str | None = None
+    pending_done = False
     for raw_segment in _merge_segments(split_sentences(text), anchor):
+        if extract_done_directive(raw_segment):
+            if schedules:
+                schedules[-1].done = True
+            else:
+                pending_done = True
+            continue
+
         link_target = extract_link_directive(raw_segment)
         if link_target:
             if schedules:
@@ -492,11 +536,16 @@ def parse_schedule_with_feedback(
                 )
             continue
 
-        rejected = detect_reject_reason(raw_segment, anchor)
+        segment, done_directive = strip_done_directive(raw_segment)
+        rejected = detect_reject_reason(segment, anchor)
         if rejected:
             rejections.append(rejected)
             continue
-        schedules.append(parse_segment(raw_segment, anchor))
+        parsed = parse_segment(segment, anchor)
+        if done_directive or pending_done:
+            parsed.done = True
+            pending_done = False
+        schedules.append(parsed)
 
     if pending_link and schedules and not schedules[0].linkTask:
         schedules[0].linkTask = pending_link

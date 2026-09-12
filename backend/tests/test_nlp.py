@@ -345,3 +345,77 @@ def test_activity_segment_without_time_still_defaults() -> None:
     assert parsed[0].name == "写周报"
     assert parsed[0].start == 9 * 60
     assert parsed[0].end == 10 * 60
+
+
+def test_done_directive_suffix_sets_done_and_cleans_name() -> None:
+    """「标记为已完成」独立分句：应用到前一块，指令子句不得拼入名称。"""
+    parsed, rejected = parse_schedule_with_feedback(
+        "明天下午3点到4点开会，标记为已完成", ANCHOR
+    )
+    assert rejected is None
+    assert len(parsed) == 1
+    assert parsed[0].name == "开会"
+    assert parsed[0].date == "2026-08-04"
+    assert parsed[0].done is True
+
+
+def test_done_directive_leading_applies_to_next_schedule() -> None:
+    """指令在前的反序输入：pending 完成态回填到第一块（仿 pending_link）。"""
+    parsed, _ = parse_schedule_with_feedback("标记为已完成，明天下午3点开会", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].name == "开会"
+    assert parsed[0].done is True
+
+
+def test_done_directive_inline_suffix_stripped_from_name() -> None:
+    """无标点内联形式：「开会标记为已完成」——指令剥离、置 done。"""
+    parsed, _ = parse_schedule_with_feedback("明天下午3点开会标记为已完成", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].name == "开会"
+    assert parsed[0].done is True
+
+
+def test_done_directive_aspect_forms() -> None:
+    """完成体表述（已/已经/完成了）同样识别为完成指令。"""
+    for text in (
+        "周二下午2点到5点写代码 已完成",
+        "周二下午2点到5点写代码，已经完成",
+        "周二下午2点到5点写代码，完成了",
+    ):
+        parsed, _ = parse_schedule_with_feedback(text, ANCHOR)
+        assert len(parsed) == 1, text
+        assert parsed[0].done is True, text
+
+
+def test_done_directive_without_schedule_pending_dropped() -> None:
+    """纯指令段且无任何事项：不生成块（与「关联X」单独成段行为一致）。"""
+    parsed, rejected = parse_schedule_with_feedback("标记为已完成", ANCHOR)
+    assert parsed == []
+    assert rejected is None
+
+
+def test_todo_action_with_completion_word_is_not_done_directive() -> None:
+    """「完成报告/写完周报」是待办动作不是完成指令，不得置 done。"""
+    parsed, _ = parse_schedule_with_feedback("明天下午3点完成作业", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].name == "完成作业"
+    assert parsed[0].done is False
+
+    parsed, _ = parse_schedule_with_feedback("明天下午3点写完周报", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].done is False
+
+
+def test_deadline_phrase_before_completion_word_not_done() -> None:
+    """「3点前完成」是截止表述：裸「完成」无完成体标记，不得置 done。"""
+    parsed, _ = parse_schedule_with_feedback("明天下午3点前完成报告", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].done is False
+
+
+def test_completed_modifier_inside_name_not_done() -> None:
+    """「已完成」作定语（已完成的项目复盘会）不构成完成指令。"""
+    parsed, _ = parse_schedule_with_feedback("明天下午3点开已完成项目的复盘会", ANCHOR)
+    assert len(parsed) == 1
+    assert parsed[0].name == "开已完成项目的复盘会"
+    assert parsed[0].done is False

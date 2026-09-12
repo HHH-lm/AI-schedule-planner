@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 
-GOLDEN_SET_VERSION = "0.5.0"
+GOLDEN_SET_VERSION = "0.6.0"
 
 
 GOLDEN_CASE_META: dict[str, dict[str, str]] = {
@@ -122,6 +122,25 @@ GOLDEN_CASE_META: dict[str, dict[str, str]] = {
         "added_in": "0.5.0",
         "rationale": "用户真实缺陷回归：关联指令曾被当作独立事项经同时段合并污染名字"
         "（「截止日期修改 + 关联 AI schedule」）；锁定 linkTask 字段契约与凌晨 0 点边界。",
+    },
+    "qa16": {
+        "name": "跑步并标记为已完成",
+        "description": "「周三下午3点到4点去世纪公园跑步，标记为已完成」中「标记为已完成」是完成指令："
+        "生成 name=跑步、地点=世纪公园、done=true 的单个 fitness 块，"
+        "严禁把指令子句拼入 name 或当作独立事项。",
+        "source": "synthetic",
+        "added_in": "0.6.0",
+        "rationale": "用户提出的完成指令回归：指令子句须剥离出 name 并输出 done=true，"
+        "锁定 done 字段契约与地点提取组合。",
+    },
+    "qa17": {
+        "name": "写日报已经完成",
+        "description": "「周五晚上8点到9点写日报，已经完成」句尾「已经完成」是完成指令："
+        "生成 name=写日报、done=true 的单个 work 块。",
+        "source": "synthetic",
+        "added_in": "0.6.0",
+        "rationale": "覆盖无「标记」动词的完成体表述（已经完成），与 qa16 组成完成指令多措辞回归；"
+        "其余 schedule 期望未声明 done，默认锁定无指令输入不得乱标完成。",
     },
     "b01": {
         "name": "空输入拒答",

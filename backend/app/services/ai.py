@@ -131,7 +131,7 @@ def build_system_prompt(today: str) -> str:
                 "",
                 "## Profile",
                 "- Author: prompt-optimizer",
-                "- Version: 2.1",
+                "- Version: 2.2",
                 "- Language: 中文",
                 "- Description: 你是一名精确、严谨的中文自然语言日程解析引擎，能够处理模糊时间和相对日期，"
                 "严格输出结构化JSON数据，并拒绝无效信息。你遵循所有解析约束，绝不产生多余的文本或自创规则。",
@@ -157,8 +157,8 @@ def build_system_prompt(today: str) -> str:
                 "",
                 "## Constraints",
                 "- 必须只输出JSON对象，禁止任何解释性前缀、markdown代码块标记或JSON之外的任何字符。",
-                "- 必须严格遵循输出格式的JSON结构（schedules数组或rejected对象），字段名（name, date, start, end, category, location, linkTask）"
-                "不得随意增删（linkTask为可选字段，仅存在关联指令时输出）。成功输出中category必须是work/study/fitness/life/rest之一，不得为null或省略。",
+                "- 必须严格遵循输出格式的JSON结构（schedules数组或rejected对象），字段名（name, date, start, end, category, location, linkTask, done）"
+                "不得随意增删（linkTask与done为可选字段：仅存在关联指令时输出linkTask，仅存在完成指令时输出done为true）。成功输出中category必须是work/study/fitness/life/rest之一，不得为null或省略。",
                 "- 严禁将过去的“周X”日期当作未来的日期；必须严格按提供的“本周日期映射”进行推算，不得自行假设。",
                 "- 所有时间计算必须以date当天0点为基准转换为分钟数，end必须大于start且至少相差15分钟；"
                 "跨天时end可超过1440，但必须按天数和次日分钟数准确计算。",
@@ -192,13 +192,19 @@ def build_system_prompt(today: str) -> str:
                 "其中X是关联目标（任务或项目名称）而非独立事项：将该子句整体剔除出name与分句，"
                 "并把目标名称X原样写入该schedule的linkTask字段（省略「关联」「任务」等指令词）；"
                 "严禁把「关联…」子句当作事项名、独立schedule或参与同时段合并；无关联指令时省略linkTask字段。",
+                "  (e) **完成指令**：检测「标记为已完成」「标记已完成」「标记为完成」以及独立分句或句尾的「已完成」"
+                "等表示该事项已经做完的子句——将该子句整体剔除出name与分句，并对对应schedule输出\"done\":true"
+                "（省略「标记」等指令词，不参与name拼接）；指令独立成句时应用到相邻的schedule；"
+                "严禁把完成子句当作事项名或独立schedule；无完成指令时省略done字段；"
+                "特别注意区分：以完成开头的待办动作（如「完成报告」「写完周报」）不是完成指令，严禁对其输出done:true。",
                 "3. **语义分类与时间段合并**：基于**分类决策优先级原则**（见 Constraints 中独立成节的「分类决策优先级」）"
                 "逐级判断每个name所属的category，而非机械查表。对每个已提取的日程，依优先级自上而下匹配："
                 "首先判断是否涉及赚钱/职业/工作/求职（work），其次是否涉及学习/技能/考试（study），"
                 "然后是否涉及身体/运动（fitness），再然后是否涉及日常起居/通勤/家务/社交（life），"
                 "最后是否涉及休息/放松/无产出（rest）。若仍无法确定，则按上下文选择最合理的类别。"
                 "当某个name的date、start、end与另一个已生成的schedule完全相同，则合并为一个schedule，name用“ + ”连接；"
-                "category冲突时，按分类决策优先级列表中更靠前的类别为准（即优先级高者胜出）；合并时linkTask取首个非空值，不参与name拼接。",
+                "category冲突时，按分类决策优先级列表中更靠前的类别为准（即优先级高者胜出）；合并时linkTask取首个非空值，不参与name拼接；"
+                "合并时done取逻辑与（所有子项均为true才输出true）。",
                 "4. **跨天时间修正与JSON组装**：对任一schedule，若其结束时间在次日或更晚，则计算最终的end值："
                 "若end分钟数超过1440或计算出的绝对时间落在次日，则设定date为开始日期，"
                 "end = 天数差值*1440 + 次日结束时刻的分钟数（如今天22:00到次日08:00，date为今天，start=1320，end=1920）。"
@@ -215,8 +221,9 @@ def build_system_prompt(today: str) -> str:
                 "## OutputFormat",
                 "- 最终输出必须是严格的JSON对象。成功时格式为："
                 "{\"schedules\":[{\"name\":\"事项名\",\"date\":\"YYYY-MM-DD\",\"start\":分钟,\"end\":分钟,"
-                "\"category\":\"work|study|fitness|life|rest\",\"location\":\"地点\",\"linkTask\":\"关联目标\"}]}。"
-                "linkTask为可选字段：仅当输入含关联指令时输出目标名称，否则整个字段省略（不输出null）。",
+                "\"category\":\"work|study|fitness|life|rest\",\"location\":\"地点\",\"linkTask\":\"关联目标\",\"done\":true}]}。"
+                "linkTask为可选字段：仅当输入含关联指令时输出目标名称，否则整个字段省略（不输出null）。"
+                "done为可选字段：仅当输入含完成指令（「标记为已完成」等）时输出true，否则整个字段省略。",
                 "- 当某个schedule的类别因语义模糊而依据兜底规则选出时，该schedule对象在location字段后增加"
                 "\"message\":\"分类不确定，原因为：...（中文说明）\"字段，不影响整体结构。",
                 "- 失败时格式为：{\"schedules\":[],\"rejected\":{\"code\":\"garbage|invalid_weekday|missing_action|"
@@ -284,6 +291,8 @@ def sanitize_schedule(raw: Any) -> ParsedSchedule | None:
     link_task = None
     if isinstance(raw.get("linkTask"), str) and raw["linkTask"].strip():
         link_task = raw["linkTask"].strip()[:40]
+    raw_done = raw.get("done")
+    done = raw_done is True or (isinstance(raw_done, str) and raw_done.strip().lower() == "true")
     return ParsedSchedule(
         name=name[:80],
         date=item_date,
@@ -292,6 +301,7 @@ def sanitize_schedule(raw: Any) -> ParsedSchedule | None:
         category=category,  # type: ignore[arg-type]
         location=location,
         linkTask=link_task,
+        done=done,
     )
 
 
@@ -325,6 +335,8 @@ def merge_same_slot_schedules(
                 target.location = item.location
             if not target.linkTask and item.linkTask:
                 target.linkTask = item.linkTask
+            # 完成态取逻辑与：合并块代表全部子项，任一未完成则整体不算完成
+            target.done = target.done and item.done
     return merged
 
 

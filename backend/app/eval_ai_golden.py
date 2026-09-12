@@ -36,7 +36,7 @@ from app.services.planner import _build_breakdown_prompt, breakdown_tasks
 from app.services.planner_v2 import _build_understanding_prompt, plan_v2_schedule
 
 
-FIELDS = ("name", "date", "start", "end", "category", "location", "linkTask")
+FIELDS = ("name", "date", "start", "end", "category", "location", "linkTask", "done")
 _NORMALIZE_RE = re.compile(r"[\s，。；;、,.!！?？:：]+")
 
 
@@ -56,12 +56,14 @@ def schedule_matches(actual: dict[str, Any], expected: dict[str, Any]) -> dict[s
     link_task_ok = normalize_text(actual.get("linkTask")) == normalize_text(
         expected.get("linkTask")
     )
+    # done 两侧均按布尔比较：期望未声明视为 False，可抓住模型对普通输入乱标完成的回归
+    done_ok = bool(actual.get("done")) == bool(expected.get("done", False))
     return {
         "full": name_ok and date_ok and start_ok and end_ok and category_ok and location_ok
-        and link_task_ok,
+        and link_task_ok and done_ok,
         "time": date_ok and start_ok and end_ok,
         "correct": sum(
-            (name_ok, date_ok, start_ok, end_ok, category_ok, location_ok, link_task_ok)
+            (name_ok, date_ok, start_ok, end_ok, category_ok, location_ok, link_task_ok, done_ok)
         ),
     }
 
@@ -175,7 +177,7 @@ def score_case(
         "full_exact": full_exact,
         "time_exact": time_exact,
         "correct_fields": sum(item["correct"] for item in mapping),
-        "field_total": 7 * len(expected_schedules),
+        "field_total": 8 * len(expected_schedules),
         "schedule_full_count": sum(1 for item in mapping if item["full"]),
         "schedule_time_count": sum(1 for item in mapping if item["time"]),
         "expected_count": len(expected_schedules),

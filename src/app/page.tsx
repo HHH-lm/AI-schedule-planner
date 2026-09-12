@@ -67,6 +67,7 @@ import {
   extractLinkDirectives,
   resolveLinkTargetLocal,
 } from "@/lib/linkDirective";
+import { extractDoneDirective } from "@/lib/doneDirective";
 import { DEFAULT_TASK_PRIORITY, normalizeQuadrant } from "@/lib/priorities";
 import {
   getSession,
@@ -622,6 +623,26 @@ export default function Home() {
             : block
         );
       }
+      // 完成指令守卫（仿 linkTask 的两道防线）：LLM 偶发不服从提示词、
+      // 把「标记为已完成」拼进块名时，本地剥离指令子句并置 done=true；
+      // 后端 done 字段已置位时无需守卫也能命中（守卫只追加不回退）。
+      const doneFlags = new Set<number>();
+      const doneCleanedNames = new Map<number, string>();
+      accepted.forEach((block, index) => {
+        const extraction = extractDoneDirective(block.name);
+        if (!extraction.done) return;
+        doneFlags.add(index);
+        if (extraction.cleanedName !== block.name) {
+          doneCleanedNames.set(index, extraction.cleanedName);
+        }
+      });
+      if (doneCleanedNames.size > 0) {
+        accepted = accepted.map((block, index) =>
+          doneCleanedNames.has(index)
+            ? { ...block, name: doneCleanedNames.get(index) ?? block.name }
+            : block
+        );
+      }
       const matchedTaskIds = new Map<string, string | undefined>();
       for (const [index, block] of accepted.entries()) {
         const boundTaskId = directiveBound.get(index);
@@ -685,6 +706,8 @@ export default function Home() {
         const newBlocks = accepted.map<ParsedSchedule & TimeBlock>((item, index) => {
           const itemTaskId = matchedTaskIds.get(item.name);
           const isDeadlineTarget = index === deadlineTargetIndex;
+          // 完成指令：后端 done 字段或前端名字守卫任一命中即创建为已完成
+          const isDone = item.done === true || doneFlags.has(index);
           let itemSubtaskId: string | undefined;
           if (itemTaskId) {
             const taskIdx = tasks.findIndex((t) => t.id === itemTaskId);
@@ -705,11 +728,24 @@ export default function Home() {
                       : t
                   );
                 }
+                // 创建即已完成的块：完成态当场传导到既有同名子任务（与保存弹窗同步语义一致）
+                if (isDone && !existing.done) {
+                  tasks = tasks.map((t) =>
+                    t.id === itemTaskId
+                      ? {
+                          ...t,
+                          subtasks: t.subtasks.map((s) =>
+                            s.id === existing.id ? { ...s, done: true } : s
+                          ),
+                        }
+                      : t
+                  );
+                }
               } else {
                 const newSub = {
                   id: uid(),
                   name: item.name,
-                  done: false,
+                  done: isDone,
                   ...(isDeadlineTarget && deadline ? { deadline } : {}),
                 };
                 itemSubtaskId = newSub.id;
@@ -726,9 +762,10 @@ export default function Home() {
             id: newBlockIds[index],
             taskId: itemTaskId,
             subtaskId: itemSubtaskId,
-            done: false,
+            done: isDone,
             status: "scheduled",
-            remindAt: defaultRemindAtISO(item.date, item.start),
+            // 已完成的块不再设默认提醒（无需为已做完的事推送）
+            remindAt: isDone ? undefined : defaultRemindAtISO(item.date, item.start),
           };
         });
         return {

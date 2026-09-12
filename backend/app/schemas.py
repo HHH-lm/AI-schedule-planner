@@ -19,6 +19,8 @@ class ParsedSchedule(BaseModel):
     category: Category = "life"
     location: str | None = None
     linkTask: str | None = None
+    # 完成指令（「标记为已完成」等）：解析产出即已完成的块；无指令时省略或 False
+    done: bool = False
 
 
 class RejectReason(BaseModel):

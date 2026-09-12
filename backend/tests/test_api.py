@@ -250,3 +250,45 @@ def test_analyze_memories_with_pattern_has_no_message() -> None:
     body = response.json()
     assert body["suggestions"], "应有建议生成"
     assert body["message"] is None
+
+
+def test_parse_local_done_directive() -> None:
+    """本地规则链路：完成指令产出 done=true 且指令子句剥离出 name。"""
+    response = client.post(
+        "/api/v1/parse",
+        json={"text": "明天下午3点到4点开会，标记为已完成", "today": "2026-08-03"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "local"
+    schedule = body["schedules"][0]
+    assert schedule["name"] == "开会"
+    assert schedule["date"] == "2026-08-04"
+    assert schedule["done"] is True
+    assert "标记" not in schedule["name"]
+
+
+def test_parse_local_without_directive_done_false() -> None:
+    response = client.post(
+        "/api/v1/parse",
+        json={"text": "明天下午3点到4点开会", "today": "2026-08-03"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["schedules"][0]["done"] is False
+
+
+def test_conflicts_check_preserves_done_field() -> None:
+    """冲突检查复用 ParsedSchedule：done 字段请求→响应原样透传。"""
+    response = client.post(
+        "/api/v1/conflicts/check",
+        json={
+            "schedules": [
+                {"name": "写代码", "date": "2026-08-04", "start": 840, "end": 1020, "done": True}
+            ],
+            "existing_blocks": [],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["accepted"][0]["done"] is True

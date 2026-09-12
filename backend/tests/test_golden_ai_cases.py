@@ -22,13 +22,13 @@ from app.golden_ai_cases_heldout import HELDOUT_AI_CASES, HELDOUT_GOLDEN_SET_VER
 from app.services.ai import build_system_prompt
 
 
-def test_golden_set_has_38_cases_with_expected_distribution() -> None:
-    assert len(GOLDEN_AI_CASES) == 38
-    assert GOLDEN_SET_VERSION == "0.5.0"
+def test_golden_set_has_40_cases_with_expected_distribution() -> None:
+    assert len(GOLDEN_AI_CASES) == 40
+    assert GOLDEN_SET_VERSION == "0.6.0"
     ids = [case["id"] for case in GOLDEN_AI_CASES]
-    assert len(set(ids)) == 38
+    assert len(set(ids)) == 40
     counts = Counter(case["kind"] for case in GOLDEN_AI_CASES)
-    assert counts["quickadd"] == 15
+    assert counts["quickadd"] == 17
     assert counts["planning"] == 10
     assert counts["boundary"] == 6
     assert counts["constraint_memory"] == 7
@@ -41,7 +41,7 @@ def test_golden_case_structures_are_valid() -> None:
         assert case["description"]
         assert case["input"] is not None
         assert case["source"] in ("real_user", "fault_sample", "synthetic")
-        assert case["added_in"] in ("0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0")
+        assert case["added_in"] in ("0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0")
         assert case["rationale"]
         assert "text" not in case
         if case["kind"] in ("quickadd", "boundary"):
@@ -101,7 +101,7 @@ def test_schedule_matches_perfect() -> None:
     result = schedule_matches(dict(expected), expected)
     assert result["full"] is True
     assert result["time"] is True
-    assert result["correct"] == 7
+    assert result["correct"] == 8
 
 
 def test_schedule_matches_link_task_field() -> None:
@@ -115,19 +115,48 @@ def test_schedule_matches_link_task_field() -> None:
     }
     # 双方均无 linkTask：第 7 字段默认成立
     result = schedule_matches(dict(base), dict(base))
-    assert result["correct"] == 7
+    assert result["correct"] == 8
     assert result["full"] is True
     # 期望 linkTask 而实际一致
     with_link = {**base, "linkTask": "AI schedule"}
     assert schedule_matches(dict(with_link), with_link)["full"] is True
     # 实际缺失 linkTask：第 7 字段失分但不影响 time
     result = schedule_matches(dict(base), with_link)
-    assert result["correct"] == 6
+    assert result["correct"] == 7
     assert result["full"] is False
     assert result["time"] is True
     # 实际多出 linkTask 而期望没有：同样失分
     result = schedule_matches(dict(with_link), base)
-    assert result["correct"] == 6
+    assert result["correct"] == 7
+
+
+def test_schedule_matches_done_field() -> None:
+    base = {
+        "name": "跑步",
+        "date": "2026-08-19",
+        "start": 900,
+        "end": 960,
+        "category": "fitness",
+        "location": None,
+    }
+    # 双方均无 done（普通输入）：第 8 字段默认成立
+    result = schedule_matches(dict(base), dict(base))
+    assert result["correct"] == 8
+    assert result["full"] is True
+    # 实际 done=false 与期望缺省等价（模型显式输出 false 不失分）
+    assert schedule_matches({**base, "done": False}, dict(base))["full"] is True
+    # 期望完成而实际一致
+    with_done = {**base, "done": True}
+    assert schedule_matches(dict(with_done), with_done)["full"] is True
+    # 实际未完成而期望完成：第 8 字段失分但不影响 time
+    result = schedule_matches(dict(base), with_done)
+    assert result["correct"] == 7
+    assert result["full"] is False
+    assert result["time"] is True
+    # 实际乱标完成而期望没有：同样失分（防普通输入被标已完成）
+    result = schedule_matches(dict(with_done), base)
+    assert result["correct"] == 7
+    assert result["full"] is False
     assert result["full"] is False
 
 
@@ -358,7 +387,7 @@ def test_compute_metrics_passes_with_perfect_results() -> None:
     }
     metrics = compute_metrics(results, GOLDEN_AI_CASES, thresholds)
     assert metrics["passed"] is True
-    assert metrics["total_cases"] == 38
+    assert metrics["total_cases"] == 40
     assert metrics["case_full_rate"] == 1.0
 
 

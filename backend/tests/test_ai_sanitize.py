@@ -169,3 +169,102 @@ def test_merge_same_slot_schedules_keeps_first_link_task() -> None:
     )
     assert len(merged) == 1
     assert merged[0].linkTask == "AI schedule"
+
+
+def test_sanitize_schedule_accepts_done_true() -> None:
+    schedule = sanitize_schedule(
+        {
+            "name": "跑步",
+            "date": "2026-08-19",
+            "start": 900,
+            "end": 960,
+            "category": "fitness",
+            "done": True,
+        }
+    )
+    assert schedule is not None
+    assert schedule.done is True
+
+
+def test_sanitize_schedule_accepts_done_string_true() -> None:
+    schedule = sanitize_schedule(
+        {
+            "name": "跑步",
+            "date": "2026-08-19",
+            "start": 900,
+            "end": 960,
+            "category": "fitness",
+            "done": "true",
+        }
+    )
+    assert schedule is not None
+    assert schedule.done is True
+
+
+def test_sanitize_schedule_defaults_done_false() -> None:
+    """仅 JSON true 与大小写不敏感的 "true" 字符串算完成，其余一律 False。"""
+    for raw_done in (None, False, "false", "yes", 1):
+        schedule = sanitize_schedule(
+            {
+                "name": "跑步",
+                "date": "2026-08-19",
+                "start": 900,
+                "end": 960,
+                "category": "fitness",
+                "done": raw_done,
+            }
+        )
+        assert schedule is not None
+        assert schedule.done is False, raw_done
+
+
+def test_sanitize_schedule_accepts_done_string_case_insensitive() -> None:
+    for raw_done in ("TRUE", "True"):
+        schedule = sanitize_schedule(
+            {
+                "name": "跑步",
+                "date": "2026-08-19",
+                "start": 900,
+                "end": 960,
+                "category": "fitness",
+                "done": raw_done,
+            }
+        )
+        assert schedule is not None
+        assert schedule.done is True, raw_done
+
+
+def test_sanitize_schedule_done_missing_defaults_false() -> None:
+    schedule = sanitize_schedule(
+        {
+            "name": "跑步",
+            "date": "2026-08-19",
+            "start": 900,
+            "end": 960,
+            "category": "fitness",
+        }
+    )
+    assert schedule is not None
+    assert schedule.done is False
+
+
+def test_merge_same_slot_done_takes_logical_and() -> None:
+    """合并块代表全部子项：任一未完成则整体不算完成。"""
+
+    def make(name: str, done: bool) -> ParsedSchedule:
+        return ParsedSchedule(
+            name=name, date="2026-08-19", start=900, end=960, category="fitness", done=done
+        )
+
+    merged = merge_same_slot_schedules([make("跑步", True), make("健身", True)])
+    assert len(merged) == 1
+    assert merged[0].name == "跑步 + 健身"
+    assert merged[0].done is True
+
+    merged = merge_same_slot_schedules([make("跑步", True), make("健身", False)])
+    assert len(merged) == 1
+    assert merged[0].done is False
+
+    merged = merge_same_slot_schedules([make("跑步", False), make("健身", False)])
+    assert len(merged) == 1
+    assert merged[0].done is False
