@@ -66,7 +66,7 @@ scan_reminders → PushPlus / 企业微信 / Server酱
 ```
 
 - Vercel Cron（Hobby 免费版每天最多 1 次）：`backend/vercel.json` 已配置每日 0 点 UTC 调用 `/api/v1/reminders/cron`，部署后可在 Vercel 项目 Cron Jobs 页面查看；请求会自动带 `Authorization: Bearer <CRON_SECRET>`；Hobby 版无法满足 5 分钟级提醒，适合日级兜底。
-- GitHub Actions（推荐，支持 5 分钟级）：仓库提供示例 `deploy/github-actions/reminder-cron.yml`，复制到 `.github/workflows/` 后每 5 分钟调用该端点；在 GitHub 仓库 Settings → Secrets 配置 `BACKEND_URL=https://<backend>.vercel.app` 与 `CRON_SECRET`（与后端环境变量相同），未配置时工作流自动跳过。
+- GitHub Actions（推荐，5 分钟级）：仓库提供示例 `deploy/github-actions/reminder-cron.yml`（与 `.github/workflows/reminder-cron.yml` 同源），复制到 `.github/workflows/` 后使用。注意：GitHub 对 `schedule` 触发实测降频（低活跃免费仓库 3~5 小时才跑一次，2026-09-13 运行记录），不能依赖 `*/5` 定时本身；当前方案为**每日 4 次拉起（UTC 0/6/12/18）常驻循环任务**——单次任务内每 5 分钟调用一次该端点、连续约 5 小时 48 分（GitHub job 硬上限 6 小时），与下一次拉起衔接、换班缝隙约 13 分钟。在 GitHub 仓库 Settings → Secrets 配置 `BACKEND_URL=https://<backend>.vercel.app` 与 `CRON_SECRET`（与后端环境变量相同），未配置时工作流自动跳过；单次请求失败不中断循环（瞬时故障下轮补扫），重复扫描由后端提醒去重兜底。
 
 ### 2.4 自托管形态（备选，保留版本）
 

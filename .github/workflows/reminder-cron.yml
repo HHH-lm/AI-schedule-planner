@@ -1,15 +1,23 @@
 name: reminder-cron
 
+# GitHub 对 schedule 触发实测降频（低活跃免费仓库 3~5 小时才跑一次，
+# 2026-09-13 运行记录），无法承载 5 分钟级提醒扫描。
+# 方案：每日 4 次拉起（UTC 0/6/12/18）常驻循环任务，单次任务内
+# 每 5 分钟扫描一次、连续约 5 小时 48 分（GitHub job 硬上限 6 小时），
+# 与下一次拉起衔接，换班缝隙约 13 分钟（缝隙内已超 10 分钟的提醒不补发）。
+# 重复扫描无副作用：后端提醒去重（同一时间块只推一次）兜底。
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0 0,6,12,18 * * *"
   workflow_dispatch: {}
 
 jobs:
   run-reminders:
     runs-on: ubuntu-latest
+    # 循环设计时长约 348 分钟；355 分钟超时兜底，低于 GitHub 360 分钟硬上限
+    timeout-minutes: 355
     steps:
-      - name: Trigger reminder scan
+      - name: Trigger reminder scans in a loop
         env:
           BACKEND_URL: ${{ secrets.BACKEND_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -18,4 +26,17 @@ jobs:
             echo "Backend cron secrets not configured; skipping."
             exit 0
           fi
-          curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$BACKEND_URL/api/v1/reminders/cron"
+          # 70 轮、轮间 sleep 300 秒；单次失败只记日志不中断（瞬时故障下轮补扫），
+          # 持续失败由 Axiom「扫描心跳缺失」监控邮件兜底。
+          for i in $(seq 1 70); do
+            echo "[reminder-cron] scan $i/70 at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            if ! curl -fsS --max-time 60 \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$BACKEND_URL/api/v1/reminders/cron"; then
+              echo "[reminder-cron] scan $i request failed (transient, continuing)"
+            fi
+            if [ "$i" -lt 70 ]; then
+              sleep 300
+            fi
+          done
+          echo "[reminder-cron] loop complete"
