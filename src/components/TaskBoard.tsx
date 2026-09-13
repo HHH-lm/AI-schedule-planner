@@ -741,13 +741,13 @@ export default function TaskBoard({
         <div
           className={`${
             feedback.tone === "warn" ? "status-note-amber" : "status-note-ok"
-          } mb-3 inline-flex w-fit items-center gap-1.5 !py-1.5 text-xs`}
+          } status-note-floating inline-flex items-center gap-2`}
           role="status"
         >
           {feedback.tone === "warn" ? (
-            <AlertTriangle size={13} />
+            <AlertTriangle size={15} className="shrink-0" />
           ) : (
-            <CheckCircle2 size={13} />
+            <CheckCircle2 size={15} className="shrink-0" />
           )}
           {feedback.message}
         </div>

@@ -912,6 +912,30 @@ textarea.input-rect {
   line-height: 1.45;
 }
 
+/* 视口居中浮动提醒（看板拖拽拦截提示等自动消失的通知，非弹窗：无遮罩不锁滚动） */
+.status-note-floating {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 45;
+  pointer-events: none;
+  max-width: min(420px, calc(100vw - 32px));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  animation: note-pop-in 0.18s ease-out;
+}
+
+@keyframes note-pop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
 /* ---------- Modal ---------- */
 
 .modal-backdrop {
