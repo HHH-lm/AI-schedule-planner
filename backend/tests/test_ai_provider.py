@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx
+
 from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
 from app.main import app
 from app.schemas import ParsedSchedule
-from app.services.ai import call_chat_completions, resolve_ai_provider
+from app.services.ai import call_chat_completions, parse_with_ai, resolve_ai_provider
 
 
 def override_settings() -> Settings:
@@ -162,6 +164,7 @@ def _install_fake_client(monkeypatch, captured: dict) -> None:
 
         async def post(self, url, headers=None, json=None):
             captured["auth"] = headers.get("Authorization")
+            captured["body"] = json
             return _FakeResponse()
 
     monkeypatch.setattr("app.services.ai.httpx.AsyncClient", _FakeClient)
@@ -185,3 +188,121 @@ def test_call_chat_completions_env_key_fallback_for_eval(monkeypatch) -> None:
     settings = Settings(openai_api_key="", deepseek_api_key="eval-secret")
     asyncio.run(call_chat_completions("system", "user", "deepseek", settings))
     assert captured["auth"] == "Bearer eval-secret"
+
+
+# ── parse_with_ai：连接失败与超时提示拆分 ─────────────────────
+
+
+def test_parse_with_ai_connect_error_reports_connection_message(monkeypatch) -> None:
+    async def fake_chat(*args, **kwargs):
+        raise httpx.ConnectError("proxy down")
+
+    monkeypatch.setattr("app.services.ai.call_chat_completions", fake_chat)
+    source, schedules, rejected, message = asyncio.run(
+        parse_with_ai(
+            "9月13日晚上8点半开会",
+            "deepseek",
+            "2026-09-13",
+            Settings(deepseek_api_key="test-key"),
+        )
+    )
+    assert source == "none"
+    assert schedules == []
+    assert rejected is None
+    assert message == "无法连接 AI 服务，请检查网络/代理"
+
+
+def test_parse_with_ai_timeout_keeps_timeout_message(monkeypatch) -> None:
+    async def fake_chat(*args, **kwargs):
+        raise httpx.ReadTimeout("slow")
+
+    monkeypatch.setattr("app.services.ai.call_chat_completions", fake_chat)
+    _, _, _, message = asyncio.run(
+        parse_with_ai(
+            "9月13日晚上8点半开会",
+            "deepseek",
+            "2026-09-13",
+            Settings(deepseek_api_key="test-key"),
+        )
+    )
+    assert message is not None
+    assert message.startswith("AI 解析超时")
+
+
+# ── thinking 模式截断：思考耗尽 max_tokens 时正文为空 ──────────
+
+
+def test_parse_with_ai_truncated_output_reports_truncation(monkeypatch) -> None:
+    async def fake_chat(*args, **kwargs):
+        return {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {"content": "", "reasoning_content": "很长的思考"},
+                }
+            ]
+        }
+
+    monkeypatch.setattr("app.services.ai.call_chat_completions", fake_chat)
+    _, _, _, message = asyncio.run(
+        parse_with_ai(
+            "晚上8:30~9:10任务测试",
+            "deepseek",
+            "2026-09-14",
+            Settings(deepseek_api_key="test-key"),
+        )
+    )
+    assert message == "AI 解析失败：AI 输出被截断（思考耗尽输出预算），请重试"
+
+
+def test_parse_with_ai_empty_choices_keeps_empty_result_message(monkeypatch) -> None:
+    async def fake_chat(*args, **kwargs):
+        return {"choices": []}
+
+    monkeypatch.setattr("app.services.ai.call_chat_completions", fake_chat)
+    _, _, _, message = asyncio.run(
+        parse_with_ai(
+            "晚上8:30~9:10任务测试",
+            "deepseek",
+            "2026-09-14",
+            Settings(deepseek_api_key="test-key"),
+        )
+    )
+    assert message == "AI 解析失败：AI 服务返回空结果"
+
+
+# ── DeepSeek thinking 开关：请求体注入与 provider 隔离 ────────
+
+
+def test_deepseek_request_disables_thinking_by_default(monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_client(monkeypatch, captured)
+    asyncio.run(
+        call_chat_completions("sys", "user", "deepseek", Settings(deepseek_api_key="k"))
+    )
+    assert captured["body"]["thinking"] == {"type": "disabled"}
+
+
+def test_deepseek_thinking_enabled_passthrough(monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_client(monkeypatch, captured)
+    settings = Settings(deepseek_api_key="k", deepseek_thinking="enabled")
+    asyncio.run(call_chat_completions("sys", "user", "deepseek", settings))
+    assert captured["body"]["thinking"] == {"type": "enabled"}
+
+
+def test_deepseek_thinking_invalid_value_omits_param(monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_client(monkeypatch, captured)
+    settings = Settings(deepseek_api_key="k", deepseek_thinking="whatever")
+    asyncio.run(call_chat_completions("sys", "user", "deepseek", settings))
+    assert "thinking" not in captured["body"]
+
+
+def test_openai_request_has_no_thinking_param(monkeypatch) -> None:
+    captured: dict = {}
+    _install_fake_client(monkeypatch, captured)
+    asyncio.run(
+        call_chat_completions("sys", "user", "openai", Settings(openai_api_key="k"))
+    )
+    assert "thinking" not in captured["body"]

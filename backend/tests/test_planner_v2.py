@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 
+import httpx
 import pytest
 
 from app.config import Settings
@@ -267,3 +269,45 @@ def test_fallback_plan_v2_accepts_custom_weights() -> None:
     )
     assert len(response.unassigned) == 0
     assert len(response.blocks) == 1
+
+
+def _patch_plan_v2_ai_error(monkeypatch, error: Exception) -> None:
+    async def fake_chat(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr("app.services.planner_v2.call_chat_completions", fake_chat)
+    monkeypatch.setattr(
+        "app.services.planner_v2.resolve_ai_provider",
+        lambda *args, **kwargs: ("deepseek", None),
+    )
+
+
+def _plan_v2_request() -> PlanV2Request:
+    return PlanV2Request(
+        tasks=[PlanV2Task(title="写报告", duration=60)],
+        memories=[],
+        constraints=[],
+        planning_range={"start": "2026-08-17", "end": "2026-08-18"},
+    )
+
+
+def test_plan_v2_schedule_connect_error_falls_back_with_connection_message(
+    monkeypatch,
+) -> None:
+    """AI 连接失败也应回退本地引擎，并给出可区分的提示文案。"""
+    _patch_plan_v2_ai_error(monkeypatch, httpx.ConnectError("proxy down"))
+    response = asyncio.run(plan_v2_schedule(_plan_v2_request(), Settings()))
+    assert response.source == "local"
+    assert response.message is not None
+    assert response.message.startswith("无法连接 AI 服务")
+    assert "本地调度引擎" in response.message
+
+
+def test_plan_v2_schedule_timeout_falls_back_with_timeout_message(
+    monkeypatch,
+) -> None:
+    _patch_plan_v2_ai_error(monkeypatch, httpx.ReadTimeout("slow"))
+    response = asyncio.run(plan_v2_schedule(_plan_v2_request(), Settings()))
+    assert response.source == "local"
+    assert response.message is not None
+    assert response.message.startswith("AI 理解超时")

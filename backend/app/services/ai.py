@@ -13,7 +13,7 @@ import httpx
 
 from app.config import Settings
 from app.logging_setup import get_logger, log_event
-from app.schemas import ParsedSchedule, RejectReason
+from app.schemas import MatchTaskItem, ParsedSchedule, RejectReason
 
 
 logger = get_logger("app.ai")
@@ -188,10 +188,15 @@ def build_system_prompt(today: str) -> str:
                 "  (b) **地点信息**：检测“在/去”等地点介词，将介词后紧跟的地点短语提取至location字段，并从name中删去。",
                 "  (c) **事项名称**：提取核心动作或名词短语作为name（如“健身”、“读书”、“开会”）；"
                 "若整个输入没有除时间外的名称，则本项判为缺失，进入流程第5步。",
-                "  (d) **关联指令**：检测「关联X」「关联到X」「关联任务X」「关联项目X」「挂到X下」等子句——"
+                "  (d) **关联指令**：检测「关联X」「关联到X」「关联任务X」「关联项目X」「关联：X」「关联: X」"
+                "「关联任务：X」「挂到X下」等子句（「关联」后允许紧跟全角/半角冒号再接目标X）——"
                 "其中X是关联目标（任务或项目名称）而非独立事项：将该子句整体剔除出name与分句，"
-                "并把目标名称X原样写入该schedule的linkTask字段（省略「关联」「任务」等指令词）；"
-                "严禁把「关联…」子句当作事项名、独立schedule或参与同时段合并；无关联指令时省略linkTask字段。",
+                "并把目标名称X原样写入该schedule的linkTask字段（省略「关联」「任务」等指令词与冒号）；"
+                "严禁把「关联…」子句当作事项名、独立schedule或参与同时段合并，"
+                "且子句中的词语除linkTask外不得写入location等其他字段；无关联指令时省略linkTask字段。"
+                "例：「晚上8点到9点面试准备，关联：面试准备实惠环球」→ 输出 name=\"面试准备\"、"
+                "linkTask=\"面试准备实惠环球\"、location 省略——目标名中的地名式后缀也属于 linkTask 整体，"
+                "严禁把它拆入 location 或拼进 name。",
                 "  (e) **完成指令**：检测「标记为已完成」「标记已完成」「标记为完成」以及独立分句或句尾的「已完成」"
                 "等表示该事项已经做完的子句——将该子句整体剔除出name与分句，并对对应schedule输出\"done\":true"
                 "（省略「标记」等指令词，不参与name拼接）；指令独立成句时应用到相邻的schedule；"
@@ -392,6 +397,9 @@ async def call_chat_completions(
             {"role": "user", "content": user_text},
         ],
     }
+    # thinking 仅 DeepSeek 支持；非法值不传参，走平台默认（enabled/effort=high）
+    if provider == "deepseek" and settings.deepseek_thinking in ("enabled", "disabled"):
+        body["thinking"] = {"type": settings.deepseek_thinking}
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(
@@ -435,6 +443,10 @@ async def call_chat_completions(
         raise RuntimeError(f"AI 服务返回 {response.status_code}{suffix}")
 
     data = response.json()
+    choices = data.get("choices") if isinstance(data.get("choices"), list) else []
+    first_choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    completion_details = usage.get("completion_tokens_details")
     log_event(
         logger,
         logging.INFO,
@@ -446,6 +458,13 @@ async def call_chat_completions(
         status=response.status_code,
         input_chars=len(user_text),
         output_bytes=len(response.content),
+        finish_reason=first_choice.get("finish_reason"),
+        completion_tokens=usage.get("completion_tokens"),
+        reasoning_tokens=(
+            completion_details.get("reasoning_tokens")
+            if isinstance(completion_details, dict)
+            else None
+        ),
     )
     return data
 
@@ -454,9 +473,13 @@ def _extract_content(data: dict[str, Any]) -> str:
     choices = data.get("choices")
     if not isinstance(choices, list) or not choices:
         raise RuntimeError("AI 服务返回空结果")
-    message = choices[0].get("message") if isinstance(choices[0], dict) else None
+    first = choices[0] if isinstance(choices[0], dict) else {}
+    message = first.get("message")
     content = message.get("content") if isinstance(message, dict) else None
     if not isinstance(content, str) or not content.strip():
+        # thinking 模式下思考与正文共享 max_tokens：正文为空且 finish_reason=length 即思考耗尽预算
+        if first.get("finish_reason") == "length":
+            raise RuntimeError("AI 输出被截断（思考耗尽输出预算），请重试")
         raise RuntimeError("AI 服务返回空结果")
     return content
 
@@ -476,7 +499,14 @@ async def parse_with_ai(
         content = _extract_content(data)
         schedules, rejected = sanitize_model_result(parse_model_json(content))
         return provider, schedules, rejected, None
-    except (httpx.TimeoutException, httpx.ConnectError) as error:
+    except httpx.ConnectError:
+        return (
+            "none",
+            [],
+            None,
+            "无法连接 AI 服务，请检查网络/代理",
+        )
+    except httpx.TimeoutException:
         timeout_seconds = round(settings.ai_timeout_ms / 1000)
         return (
             "none",
@@ -486,3 +516,48 @@ async def parse_with_ai(
         )
     except Exception as error:
         return "none", [], None, f"AI 解析失败：{error}"
+
+
+async def match_task_with_ai(
+    name: str,
+    tasks: list[MatchTaskItem],
+    provider: str,
+    settings: Settings,
+    api_key: str | None = None,
+) -> str | None:
+    """AI 语义匹配：时间块名/关联目标 → 任务 ID。
+
+    无匹配返回 None；网络/服务异常向上抛出（调用方决定兜底与埋点）。
+    """
+    if not tasks:
+        return None
+    task_lines = "\n".join(f"- ID: {task.id}, 名称: {task.name}" for task in tasks)
+    system_prompt = (
+        "你是任务匹配助手。\n\n"
+        "判断时间块活动属于哪个任务。考虑活动的主题、领域和目的，"
+        "而不只是看关键词是否完全一样。\n"
+        "如果活动与某个任务属于同一主题领域，就返回该任务ID。\n"
+        "如果不属于任何任务，返回null。\n\n"
+        "注意：taskId 必须是任务列表中的ID字段，不是任务名称。\n\n"
+        '只输出JSON，格式：{"taskId": "ID"} 或 {"taskId": null}'
+    )
+    user_text = (
+        f"时间块名称：{name}\n\n"
+        f"现有任务列表：\n{task_lines}\n\n"
+        "请输出匹配的任务ID，没有匹配则输出null。"
+    )
+    data = await call_chat_completions(
+        system_prompt, user_text, provider, settings,
+        temperature=0.5, operation="match_task", credential=api_key,
+    )
+    content = data["choices"][0]["message"]["content"]
+    payload_json = parse_model_json(content)
+    task_id = payload_json.get("taskId") if isinstance(payload_json, dict) else None
+    if task_id and isinstance(task_id, str):
+        matched = next(
+            (task for task in tasks if task.id == task_id),
+            next((task for task in tasks if task.name == task_id), None),
+        )
+        if matched:
+            return matched.id
+    return None

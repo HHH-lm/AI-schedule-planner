@@ -3,7 +3,7 @@
  *
  * 后端解析层（AI 提示词 + 本地 NLP）会把「关联 X」子句提取到 linkTask 字段并从
  * 事项名剔除；本模块是前端消费侧的第二道防线：
- * 1. 显式 linkTask 字段的本地解析（精确/包含），失败时回退 /match-task 语义匹配；
+ * 1. 显式 linkTask 字段的本地解析（精确/包含/模糊），失败时回退 /match-task 语义匹配；
  * 2. 名字守卫：LLM 偶发不服从提示词、把「关联 X」拼进块名时，按分段提取并剔除。
  *    守卫只做本地解析且解析不到任务就保持原名，避免误伤「关联分析」类真实事项名。
  */
@@ -66,10 +66,36 @@ function normalizeTaskName(text: string): string {
   return text.replace(/[\s\-_.,/]+/g, "").toLowerCase();
 }
 
+// 模糊兜底阈值：字符 bigram Dice 相似度。0.7 可容许 8 字名错 1-2 字（时/实类
+// 语音输入变体），又不会把无关联的短名误连
+const FUZZY_MATCH_THRESHOLD = 0.7;
+
+function bigramDice(a: string, b: string): number {
+  if (a === b) return 1;
+  if (a.length < 2 || b.length < 2) return 0;
+  const counts = new Map<string, number>();
+  for (let i = 0; i < b.length - 1; i += 1) {
+    const gram = b.slice(i, i + 2);
+    counts.set(gram, (counts.get(gram) ?? 0) + 1);
+  }
+  let overlap = 0;
+  for (let i = 0; i < a.length - 1; i += 1) {
+    const gram = a.slice(i, i + 2);
+    const n = counts.get(gram) ?? 0;
+    if (n > 0) {
+      overlap += 1;
+      counts.set(gram, n - 1);
+    }
+  }
+  return (2 * overlap) / (a.length + b.length - 2);
+}
+
 /**
- * 本地解析关联目标 → 任务 ID：先归一化精确相等，再"目标包含完整任务名"
- * （目标带「项目/任务」等修饰词时）。不含反向包含，短目标（如误提取的
- * "分析"）不因任务名的子串关系误绑定；解析不到返回 null。
+ * 本地解析关联目标 → 任务 ID：归一化精确相等 → 「目标包含完整任务名」（目标带
+ * 「项目/任务」等修饰词时）→ bigram 模糊兜底（错别字/语音输入变体如「时惠环球」
+ * vs「实惠环球」，唯一最佳候选且双方归一化后 ≥4 字才命中，省一次 /match-task AI
+ * 往返）。不含反向包含，短目标（如误提取的"分析"）不因任务名的子串关系误绑定；
+ * 解析不到返回 null。
  */
 export function resolveLinkTargetLocal(
   target: string,
@@ -85,5 +111,21 @@ export function resolveLinkTargetLocal(
     const normalized = normalizeTaskName(task.name);
     return normalized.length > 0 && normalizedTarget.includes(normalized);
   });
-  return decorated ? decorated.id : null;
+  if (decorated) return decorated.id;
+  if (normalizedTarget.length < 4) return null;
+  let best: { id: string; score: number } | null = null;
+  let tied = false;
+  for (const task of tasks) {
+    const normalized = normalizeTaskName(task.name);
+    if (normalized.length < 4) continue;
+    const score = bigramDice(normalizedTarget, normalized);
+    if (score < FUZZY_MATCH_THRESHOLD) continue;
+    if (!best || score > best.score) {
+      best = { id: task.id, score };
+      tied = false;
+    } else if (score === best.score) {
+      tied = true;
+    }
+  }
+  return best && !tied ? best.id : null;
 }

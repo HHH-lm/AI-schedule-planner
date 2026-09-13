@@ -118,6 +118,8 @@ export interface ParsedSchedule {
   category: Category;
   location?: string;
   linkTask?: string | null;
+  /** 服务端折叠编排（/parse 内联匹配）回填的任务 ID；省略时前端自行匹配 */
+  taskId?: string | null;
   /** 完成指令（「标记为已完成」等）：解析产出即已完成的块；后端省略时视为 false */
   done?: boolean;
 }

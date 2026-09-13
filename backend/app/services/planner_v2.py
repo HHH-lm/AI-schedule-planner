@@ -532,9 +532,9 @@ async def plan_v2_schedule(
         )
 
     except (httpx.TimeoutException, httpx.ConnectError) as error:
-        _ = error
         timeout_seconds = round(settings.ai_timeout_ms / 1000)
-        # 超时时回退到 SchedulingEngine
+        connect_failed = isinstance(error, httpx.ConnectError)
+        # 连接失败或超时时回退到 SchedulingEngine
         constraint_filters = parse_constraint_filters(_fallback_constraint_sources(request))
         work_style = parse_work_style(request.memories)
         _log_memory_application(
@@ -559,13 +559,17 @@ async def plan_v2_schedule(
         _log_plan_v2_result(
             started, source="local", blocks=len(blocks),
             unassigned=len(unassigned), level=logging.WARNING,
-            error=f"ai_timeout:{timeout_seconds}s",
+            error="ai_connect_error" if connect_failed else f"ai_timeout:{timeout_seconds}s",
         )
         return PlanV2Response(
             source="local",
             blocks=blocks,
             unassigned=unassigned,
-            message=f"AI 理解超时（{timeout_seconds} 秒），已使用本地调度引擎",
+            message=(
+                "无法连接 AI 服务，请检查网络/代理；已使用本地调度引擎"
+                if connect_failed
+                else f"AI 理解超时（{timeout_seconds} 秒），已使用本地调度引擎"
+            ),
         )
     except Exception as error:
         # 其他异常时回退到 SchedulingEngine

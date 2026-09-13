@@ -491,7 +491,7 @@ def test_match_task_error_logged(caplog, monkeypatch) -> None:
     async def boom(*args, **kwargs):
         raise RuntimeError("provider exploded")
 
-    monkeypatch.setattr("app.routers.match_task.call_chat_completions", boom)
+    monkeypatch.setattr("app.services.ai.call_chat_completions", boom)
 
     with caplog.at_level(logging.INFO, logger="app"):
         response = client.post(

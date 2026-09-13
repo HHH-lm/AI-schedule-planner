@@ -1,5 +1,11 @@
 export const API_TIMEOUT_MS = 15_000;
 
+// 本地开发默认直连后端，绕过 Next rewrite 的逐请求开销（后端 CORS 已放行 localhost:3000）；
+// NEXT_PUBLIC_BACKEND_URL 可覆盖（自定义 BACKEND_PORT / 部署形态）；生产留空走相对路径由 rewrite 代理。
+const API_BASE =
+  process.env.NEXT_PUBLIC_BACKEND_URL ??
+  (process.env.NODE_ENV === "development" ? "http://127.0.0.1:8000" : "");
+
 export async function apiPost<T>(
   path: string,
   body: unknown,
@@ -7,7 +13,7 @@ export async function apiPost<T>(
 ): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`/api/v1${path}`, {
+    response = await fetch(`${API_BASE}/api/v1${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: AbortSignal.timeout(timeoutMs),

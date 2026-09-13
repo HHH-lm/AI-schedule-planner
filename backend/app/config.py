@@ -36,10 +36,14 @@ class Settings(BaseSettings):
     deepseek_api_key: str | None = None
     deepseek_model: str = "deepseek-flash"
     deepseek_base_url: str = "https://api.deepseek.com"
+    # DeepSeek thinking 开关（disabled/enabled）。解析类任务关思考换速度：
+    # thinking 模式下 effort 默认 high 且思考与正文共享输出预算，实测 97% 输出 token 花在思考
+    deepseek_thinking: str = "disabled"
 
     max_parse_input_length: int = 2000
     max_schedules: int = 20
-    max_output_tokens: int = 1000
+    # thinking 模式下思考与正文共享该输出预算：过小会让思考耗尽预算、正文为空（finish_reason=length）
+    max_output_tokens: int = 8000
 
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None

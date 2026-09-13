@@ -22,13 +22,13 @@ from app.golden_ai_cases_heldout import HELDOUT_AI_CASES, HELDOUT_GOLDEN_SET_VER
 from app.services.ai import build_system_prompt
 
 
-def test_golden_set_has_40_cases_with_expected_distribution() -> None:
-    assert len(GOLDEN_AI_CASES) == 40
-    assert GOLDEN_SET_VERSION == "0.6.0"
+def test_golden_set_has_42_cases_with_expected_distribution() -> None:
+    assert len(GOLDEN_AI_CASES) == 42
+    assert GOLDEN_SET_VERSION == "0.6.1"
     ids = [case["id"] for case in GOLDEN_AI_CASES]
-    assert len(set(ids)) == 40
+    assert len(set(ids)) == 42
     counts = Counter(case["kind"] for case in GOLDEN_AI_CASES)
-    assert counts["quickadd"] == 17
+    assert counts["quickadd"] == 19
     assert counts["planning"] == 10
     assert counts["boundary"] == 6
     assert counts["constraint_memory"] == 7
@@ -41,7 +41,7 @@ def test_golden_case_structures_are_valid() -> None:
         assert case["description"]
         assert case["input"] is not None
         assert case["source"] in ("real_user", "fault_sample", "synthetic")
-        assert case["added_in"] in ("0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0")
+        assert case["added_in"] in ("0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1")
         assert case["rationale"]
         assert "text" not in case
         if case["kind"] in ("quickadd", "boundary"):
@@ -387,7 +387,7 @@ def test_compute_metrics_passes_with_perfect_results() -> None:
     }
     metrics = compute_metrics(results, GOLDEN_AI_CASES, thresholds)
     assert metrics["passed"] is True
-    assert metrics["total_cases"] == 40
+    assert metrics["total_cases"] == 42
     assert metrics["case_full_rate"] == 1.0
 
 

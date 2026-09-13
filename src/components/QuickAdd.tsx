@@ -20,10 +20,19 @@ export interface AddParsedResult {
 interface Props {
   onAddParsed: (
     parsed: ParsedSchedule[],
-    deadline?: string
+    deadline?: string,
+    preflight?: { accepted?: ParsedSchedule[]; blocked?: ParsedSchedule[] }
   ) => Promise<AddParsedResult>;
   /** AI 请求字段（provider + 用户自备 Key），由 page.tsx 用 aiRequestFields 组装 */
   aiRequest?: { provider: AiProviderSetting; api_key?: string };
+  /** /parse 折叠编排上下文：任务候选与已有块，page.tsx 随数据实时传入 */
+  taskCandidates?: { id: string; name: string }[];
+  existingBlocks?: {
+    date: string;
+    start: number;
+    end: number;
+    status: "scheduled" | "pending";
+  }[];
 }
 
 interface ParseApiResponse {
@@ -31,9 +40,17 @@ interface ParseApiResponse {
   schedules: ParsedSchedule[];
   rejected?: { code: string; message: string } | null;
   message?: string;
+  /** 折叠编排结果：请求带 tasks/existing_blocks 时由后端返回 */
+  accepted?: ParsedSchedule[];
+  blocked?: ParsedSchedule[];
 }
 
-export default function QuickAdd({ onAddParsed, aiRequest }: Props) {
+export default function QuickAdd({
+  onAddParsed,
+  aiRequest,
+  taskCandidates,
+  existingBlocks,
+}: Props) {
   const [text, setText] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<"ok" | "warn">("ok");
@@ -53,13 +70,17 @@ export default function QuickAdd({ onAddParsed, aiRequest }: Props) {
     const input = text.trim();
     if (!input || busy) return;
     setBusy(true);
+    const startedAt = performance.now();
 
     try {
       const result = await apiPost<ParseApiResponse>("/parse", {
         text: input,
         ...(aiRequest ?? { provider: "local" }),
         today: todayKey(),
+        ...(taskCandidates?.length ? { tasks: taskCandidates } : {}),
+        ...(existingBlocks?.length ? { existing_blocks: existingBlocks } : {}),
       });
+      const parseMs = Math.round(performance.now() - startedAt);
       if (result.source === "none") {
         logWarn("ai_parse_failed", {
           message: result.message,
@@ -81,22 +102,29 @@ export default function QuickAdd({ onAddParsed, aiRequest }: Props) {
         return;
       }
       const deadline = extractDeadline(input) ?? undefined;
-      const applyResult = await onAddParsed(result.schedules, deadline);
+      const applyResult = await onAddParsed(result.schedules, deadline, {
+        accepted: result.accepted,
+        blocked: result.blocked,
+      });
       const added = applyResult.added;
       const skipped = result.schedules.length - added;
+      const totalMs = Math.round(performance.now() - startedAt);
       logInfo("nlp_generated", {
         count: added,
         skipped,
         source: result.source,
         deadlineExtracted: deadline ?? undefined,
         deadlineStatus: applyResult.deadlineStatus,
+        parseMs,
+        totalMs,
       });
+      const elapsedText = `${(totalMs / 1000).toFixed(1)}s`;
       const summary =
         added > 0
           ? skipped > 0
-            ? `已生成 ${added} 个时间块，跳过 ${skipped} 个冲突`
-            : `已生成 ${added} 个时间块`
-          : "所有时间块都与现有安排冲突，已跳过";
+            ? `已生成 ${added} 个时间块，跳过 ${skipped} 个冲突 · ${elapsedText}`
+            : `已生成 ${added} 个时间块 · ${elapsedText}`
+          : `所有时间块都与现有安排冲突，已跳过 · ${elapsedText}`;
       if (added === 0) {
         showFeedback(summary, "warn");
         return;

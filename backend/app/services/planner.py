@@ -150,8 +150,15 @@ async def breakdown_tasks(
             started, source=resolved_provider, tasks=len(tasks)
         )
         return BreakdownResponse(source=resolved_provider, tasks=tasks)
-    except (httpx.TimeoutException, httpx.ConnectError) as error:
-        _ = error
+    except httpx.ConnectError:
+        _log_breakdown_result(
+            started, source="none", tasks=0, level=logging.ERROR,
+            error="ai_connect_error",
+        )
+        return BreakdownResponse(
+            source="none", tasks=[], message="无法连接 AI 服务，请检查网络/代理"
+        )
+    except httpx.TimeoutException:
         timeout_seconds = round(settings.ai_timeout_ms / 1000)
         _log_breakdown_result(
             started, source="none", tasks=0, level=logging.ERROR,
@@ -342,8 +349,11 @@ async def plan_schedule(
                 )
             raise ValueError("AI 生成的时间块全部与已有安排冲突")
         return PlanResponse(source=resolved_provider, blocks=blocks, blocked=blocked)
-    except (httpx.TimeoutException, httpx.ConnectError) as error:
-        _ = error
+    except httpx.ConnectError:
+        return PlanResponse(
+            source="none", blocks=[], blocked=[], message="无法连接 AI 服务，请检查网络/代理"
+        )
+    except httpx.TimeoutException:
         timeout_seconds = round(settings.ai_timeout_ms / 1000)
         return PlanResponse(
             source="none", blocks=[], blocked=[], message=f"AI 规划超时（{timeout_seconds} 秒），请稍后重试"

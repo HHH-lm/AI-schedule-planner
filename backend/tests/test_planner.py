@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from datetime import date
 
+import httpx
+
 from app.config import Settings
 from app.schemas import ExistingBlock, PlanRequest, PlanTaskInput
 from app.services.planner import (
@@ -108,6 +110,51 @@ def test_plan_schedule_returns_valid_blocks(monkeypatch) -> None:
     assert len(response.blocks) == 1
     assert (response.blocks[0].start, response.blocks[0].end) == (600, 660)
     assert response.message is None
+
+
+def _patch_deepseek_error(monkeypatch, error: Exception) -> None:
+    async def fake_chat(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr("app.services.planner.call_chat_completions", fake_chat)
+    monkeypatch.setattr(
+        "app.services.planner.resolve_ai_provider",
+        lambda *args, **kwargs: ("deepseek", None),
+    )
+
+
+def test_breakdown_connect_error_reports_connection_message(monkeypatch) -> None:
+    _patch_deepseek_error(monkeypatch, httpx.ConnectError("proxy down"))
+    response = run(
+        breakdown_tasks("帮我把这个项目拆成任务", "deepseek", "2026-09-13", Settings())
+    )
+    assert response.source == "none"
+    assert response.tasks == []
+    assert response.message == "无法连接 AI 服务，请检查网络/代理"
+
+
+def test_breakdown_timeout_keeps_timeout_message(monkeypatch) -> None:
+    _patch_deepseek_error(monkeypatch, httpx.ReadTimeout("slow"))
+    response = run(
+        breakdown_tasks("帮我把这个项目拆成任务", "deepseek", "2026-09-13", Settings())
+    )
+    assert response.message is not None
+    assert response.message.startswith("AI 拆解超时")
+
+
+def test_plan_schedule_connect_error_reports_connection_message(monkeypatch) -> None:
+    _patch_deepseek_error(monkeypatch, httpx.ConnectError("proxy down"))
+    response = run(plan_schedule(_plan_request(), Settings()))
+    assert response.source == "none"
+    assert response.blocks == []
+    assert response.message == "无法连接 AI 服务，请检查网络/代理"
+
+
+def test_plan_schedule_timeout_keeps_timeout_message(monkeypatch) -> None:
+    _patch_deepseek_error(monkeypatch, httpx.ReadTimeout("slow"))
+    response = run(plan_schedule(_plan_request(), Settings()))
+    assert response.message is not None
+    assert response.message.startswith("AI 规划超时")
 
 
 def test_breakdown_ai_rejected_returns_failure_message(monkeypatch) -> None:

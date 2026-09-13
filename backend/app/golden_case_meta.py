@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 
-GOLDEN_SET_VERSION = "0.6.0"
+GOLDEN_SET_VERSION = "0.6.1"
 
 
 GOLDEN_CASE_META: dict[str, dict[str, str]] = {
@@ -141,6 +141,24 @@ GOLDEN_CASE_META: dict[str, dict[str, str]] = {
         "added_in": "0.6.0",
         "rationale": "覆盖无「标记」动词的完成体表述（已经完成），与 qa16 组成完成指令多措辞回归；"
         "其余 schedule 期望未声明 done，默认锁定无指令输入不得乱标完成。",
+    },
+    "qa18": {
+        "name": "冒号形式关联指令",
+        "description": "「关联：面试准备」冒号形式是关联指令：生成 name=面试准备、linkTask=面试准备、"
+        "done=true 的单个 work 块，location 必须为空。",
+        "source": "fault_sample",
+        "added_in": "0.6.1",
+        "rationale": "用户真实缺陷回归：「关联：X」冒号形式未被识别为关联指令，目标名被误标为 location；"
+        "锁定冒号变体识别与「关联子句内容不得残留到 location」契约。",
+    },
+    "qa19": {
+        "name": "冒号关联目标含地名式后缀",
+        "description": "「关联：面试准备实惠环球」目标含地名式后缀：必须整体写入 linkTask=面试准备实惠环球，"
+        "location 必须为空，不得把「实惠环球」拆入 location。",
+        "source": "fault_sample",
+        "added_in": "0.6.1",
+        "rationale": "用户真实缺陷回归：冒号形式识别后模型仍把目标中的地名式后缀剥入 location、linkTask 只留前半，"
+        "与「子句内容除 linkTask 外不得写入其他字段」规则冲突；锁定目标整串契约。",
     },
     "b01": {
         "name": "空输入拒答",

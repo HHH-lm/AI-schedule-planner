@@ -21,6 +21,8 @@ class ParsedSchedule(BaseModel):
     linkTask: str | None = None
     # 完成指令（「标记为已完成」等）：解析产出即已完成的块；无指令时省略或 False
     done: bool = False
+    # 折叠编排（/parse 内联匹配）回填的任务 ID；AI 白名单不产出该字段，仅服务端回填
+    taskId: str | None = None
 
 
 class RejectReason(BaseModel):
@@ -33,6 +35,9 @@ class ParseRequest(BaseModel):
     provider: Provider | None = None
     today: str | None = None
     api_key: str | None = Field(default=None, max_length=200)
+    # 折叠编排（可选）：随解析一并完成任务匹配与冲突过滤，省去前端两次串行往返
+    tasks: list[MatchTaskItem] = Field(default_factory=list, max_length=100)
+    existing_blocks: list[ExistingBlock] = Field(default_factory=list, max_length=500)
 
 
 class ParseResponse(BaseModel):
@@ -40,6 +45,9 @@ class ParseResponse(BaseModel):
     schedules: list[ParsedSchedule]
     rejected: RejectReason | None = None
     message: str | None = None
+    # 折叠编排结果：仅请求携带 tasks/existing_blocks 时返回；schedules 始终为完整解析列表
+    accepted: list[ParsedSchedule] | None = None
+    blocked: list[ParsedSchedule] | None = None
 
 
 class ExistingBlock(BaseModel):

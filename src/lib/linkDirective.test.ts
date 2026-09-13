@@ -125,4 +125,33 @@ describe("resolveLinkTargetLocal", () => {
     expect(resolveLinkTargetLocal("不存在的任务", tasks)).toBeNull();
     expect(resolveLinkTargetLocal("。。.", tasks)).toBeNull();
   });
+
+  it("一字之差按模糊兜底命中，省一次 AI 匹配往返", () => {
+    expect(
+      resolveLinkTargetLocal("面试准备时惠环球", [
+        { id: "t1", name: "面试准备实惠环球" },
+      ])
+    ).toBe("t1");
+  });
+
+  it("多个并列高相似候选视为歧义，不绑定", () => {
+    expect(
+      resolveLinkTargetLocal("面试准备时惠环球", [
+        { id: "t1", name: "面试准备实惠环球" },
+        { id: "t2", name: "面试准被时惠环球" },
+      ])
+    ).toBeNull();
+  });
+
+  it("无近似候选不命中", () => {
+    expect(
+      resolveLinkTargetLocal("面试准备时惠环球", [
+        { id: "t3", name: "健身计划" },
+      ])
+    ).toBeNull();
+  });
+
+  it("短目标不参与模糊兜底", () => {
+    expect(resolveLinkTargetLocal("面试", [{ id: "t1", name: "面视" }])).toBeNull();
+  });
 });

@@ -563,30 +563,39 @@ export default function Home() {
   const addParsedBlocks = useCallback(
     async (
       parsed: ParsedSchedule[],
-      deadline?: string
+      deadline?: string,
+      preflight?: { accepted?: ParsedSchedule[]; blocked?: ParsedSchedule[] }
     ): Promise<AddParsedResult> => {
     const current = dataRef.current;
     if (!current) return { added: 0, deadlineStatus: "none" };
     let accepted = parsed;
     let blocked: ParsedSchedule[] = [];
-    try {
-      const result = await apiPost<{
-        accepted: ParsedSchedule[];
-        blocked: ParsedSchedule[];
-      }>("/conflicts/check", {
-        schedules: parsed,
-        existing_blocks: current.timeBlocks.map((block) => ({
-          date: block.date,
-          start: block.start,
-          end: block.end,
-          status: block.status,
-        })),
-      });
-      accepted = result.accepted;
-      blocked = result.blocked;
-    } catch (error) {
-      throw error instanceof Error ? error : new Error("冲突检测失败");
+    const stageStartedAt = performance.now();
+    if (preflight?.accepted) {
+      // 服务端已在 /parse 内完成冲突过滤与关联匹配（折叠编排），跳过两次串行往返
+      accepted = preflight.accepted;
+      blocked = preflight.blocked ?? [];
+    } else {
+      try {
+        const result = await apiPost<{
+          accepted: ParsedSchedule[];
+          blocked: ParsedSchedule[];
+        }>("/conflicts/check", {
+          schedules: parsed,
+          existing_blocks: current.timeBlocks.map((block) => ({
+            date: block.date,
+            start: block.start,
+            end: block.end,
+            status: block.status,
+          })),
+        });
+        accepted = result.accepted;
+        blocked = result.blocked;
+      } catch (error) {
+        throw error instanceof Error ? error : new Error("冲突检测失败");
+      }
     }
+    const conflictMs = Math.round(performance.now() - stageStartedAt);
     const currentTasks = current.tasks ?? [];
     let deadlineStatus: DeadlineApplyStatus = "none";
     const linkedTaskNames: string[] = [];
@@ -651,15 +660,26 @@ export default function Home() {
         );
       }
       const matchedTaskIds = new Map<string, string | undefined>();
+      const matchStartedAt = performance.now();
+      let matchCalls = 0;
       for (const [index, block] of accepted.entries()) {
-        const boundTaskId = directiveBound.get(index);
+        const serverTaskId = preflight?.accepted
+          ? block.taskId ?? undefined
+          : undefined;
+        const boundTaskId = directiveBound.get(index) ?? serverTaskId;
         if (boundTaskId) {
           matchedTaskIds.set(block.name, boundTaskId);
           const boundName = currentTasks.find((t) => t.id === boundTaskId)?.name;
           if (boundName) linkedTaskNames.push(boundName);
           continue;
         }
+        if (preflight?.accepted && block.linkTask) {
+          // 折叠编排下服务端已对显式 linkTask 尝试过本地 + AI 匹配仍未命中，不重复调用
+          matchedTaskIds.set(block.name, undefined);
+          continue;
+        }
         try {
+          matchCalls += 1;
           const result = await apiPost<{
             source: string;
             taskId: string | null;
@@ -673,6 +693,14 @@ export default function Home() {
           matchedTaskIds.set(block.name, undefined);
         }
       }
+      const matchMs = Math.round(performance.now() - matchStartedAt);
+      logInfo("nlp_match_timing", {
+        conflictMs,
+        matchMs,
+        matchCalls,
+        accepted: accepted.length,
+        blocked: blocked.length,
+      });
       // 截止日期填入目标：匹配到任务的第一个块，截止写到它的同名子任务上（不覆盖已有截止）
       const matchedBlockIndex = deadline
         ? accepted.findIndex((item) => Boolean(matchedTaskIds.get(item.name)))
@@ -1776,6 +1804,16 @@ export default function Home() {
             <QuickAdd
               onAddParsed={addParsedBlocks}
               aiRequest={aiRequestFields(data.settings)}
+              taskCandidates={data.tasks.map((task) => ({
+                id: task.id,
+                name: task.name,
+              }))}
+              existingBlocks={data.timeBlocks.map((block) => ({
+                date: block.date,
+                start: block.start,
+                end: block.end,
+                status: block.status,
+              }))}
             />
 
             <WeekTimeline
