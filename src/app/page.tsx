@@ -2021,6 +2021,7 @@ export default function Home() {
           title="退出登录"
           description="确定要退出当前账号吗？退出后将停止云端同步，本地数据仍会保留。"
           confirmLabel="确认退出"
+          submittingLabel="退出中..."
           onConfirm={signOutUser}
           onClose={() => setSignOutConfirmOpen(false)}
         />

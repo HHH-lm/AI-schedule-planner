@@ -7,6 +7,8 @@ interface Props {
   title: string;
   description: string;
   confirmLabel: string;
+  /** 提交中按钮文案；缺省沿用 confirmLabel */
+  submittingLabel?: string;
   onConfirm: () => void | Promise<void>;
   onClose: () => void;
 }
@@ -15,6 +17,7 @@ export default function ConfirmDialog({
   title,
   description,
   confirmLabel,
+  submittingLabel,
   onConfirm,
   onClose,
 }: Props) {
@@ -70,7 +73,7 @@ export default function ConfirmDialog({
             className="btn-primary-pill"
             disabled={submitting}
           >
-            {submitting ? "退出中..." : confirmLabel}
+            {submitting ? (submittingLabel ?? confirmLabel) : confirmLabel}
           </button>
         </div>
       </div>

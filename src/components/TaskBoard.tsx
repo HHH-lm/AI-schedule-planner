@@ -184,6 +184,10 @@ export default function TaskBoard({
   const [hideConfirmWeek, setHideConfirmWeek] = useState<BoardWeek | null>(
     null
   );
+  // 大任务标记完成前先确认；取消完成低风险可逆，不弹确认
+  const [completeConfirmTaskId, setCompleteConfirmTaskId] = useState<
+    string | null
+  >(null);
   const [restoreModalOpen, setRestoreModalOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const longPressRef = useRef<{
@@ -908,7 +912,13 @@ export default function TaskBoard({
                     </button>
                     <button
                       type="button"
-                      onClick={() => onToggleTaskStatus(task.id)}
+                      onClick={() => {
+                        if (task.status === "done") {
+                          onToggleTaskStatus(task.id);
+                        } else {
+                          setCompleteConfirmTaskId(task.id);
+                        }
+                      }}
                       title={task.status === "done" ? "标记未完成" : "标记完成"}
                       aria-label={
                         task.status === "done" ? "标记未完成" : "标记完成"
@@ -1092,6 +1102,19 @@ export default function TaskBoard({
           confirmLabel="确认隐藏"
           onConfirm={() => onToggleHiddenWeek(hideConfirmWeek.key)}
           onClose={() => setHideConfirmWeek(null)}
+        />
+      )}
+
+      {completeConfirmTaskId && (
+        <ConfirmDialog
+          title="标记为已完成"
+          description={`确定要将「${
+            data.tasks.find((task) => task.id === completeConfirmTaskId)
+              ?.name ?? ""
+          }」标记为已完成吗？`}
+          confirmLabel="确认完成"
+          onConfirm={() => onToggleTaskStatus(completeConfirmTaskId)}
+          onClose={() => setCompleteConfirmTaskId(null)}
         />
       )}
 
