@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Clock, BookMarked, Bot, Brain, SlidersHorizontal, X } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import { parseObsidianUrl } from "@/lib/obsidian";
 import { aiSettingError } from "@/lib/settings";
 import type {
@@ -98,24 +99,8 @@ export default function SettingsModal({
   // 校验失败时滚动定位回 Key 输入区，确保用户能看到红色提示
   const keyInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    const previousHtmlOverflow = document.documentElement.style.overflow;
-    const previousBodyOverflow = document.body.style.overflow;
-    document.documentElement.style.overflow = "hidden";
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.documentElement.style.overflow = previousHtmlOverflow;
-      document.body.style.overflow = previousBodyOverflow;
-    };
-  }, []);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  // 滚动锁与 Esc 由弹窗栈统一管理（F-036）：入栈即锁背景滚动，Esc 仅栈顶响应
+  const { zIndex } = useModalLayer({ onEscape: onClose });
 
   const handleSave = () => {
     setSaveAttempted(true);
@@ -235,7 +220,7 @@ export default function SettingsModal({
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop" style={{ zIndex }} onMouseDown={onClose}>
       <div
         className="modal-card modal-card-scroll max-w-md"
         onMouseDown={(event) => event.stopPropagation()}

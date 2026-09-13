@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertCircle, X } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import type { ParsedSchedule } from "@/lib/types";
 import { parseDateKey, weekdayName } from "@/lib/date";
 import { formatBlockRange } from "@/lib/blockTime";
@@ -16,8 +17,9 @@ function conflictLabel(item: ParsedSchedule): string {
 }
 
 export default function ConflictModal({ conflicts, onClose }: Props) {
+  const { zIndex } = useModalLayer({ onEscape: onClose });
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop" style={{ zIndex }} onMouseDown={onClose}>
       <div
         className="modal-card max-w-md"
         onMouseDown={(event) => event.stopPropagation()}

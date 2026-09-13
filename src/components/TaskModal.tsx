@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CheckCircle2, Circle, Plus, Trash2, X } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import type { Subtask, Task, TaskQuadrant } from "@/lib/types";
 import {
   DEFAULT_TASK_PRIORITY,
@@ -57,6 +58,7 @@ export default function TaskModal({
   const [priority, setPriority] = useState<TaskQuadrant>(
     task ? normalizeQuadrant(task.priority) : DEFAULT_TASK_PRIORITY
   );
+  const { zIndex } = useModalLayer({ onEscape: onClose });
 
   const addSubtask = () => {
     const value = subtaskName.trim();
@@ -89,6 +91,7 @@ export default function TaskModal({
   return (
     <div
       className="modal-backdrop"
+      style={{ zIndex }}
       onMouseDown={onClose}
     >
       <div

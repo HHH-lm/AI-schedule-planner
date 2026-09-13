@@ -40,6 +40,7 @@ import type {
   TimePreference,
   ViewMode,
 } from "@/lib/types";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import {
   DEFAULT_PLANNING_WEIGHTS,
   normalizePlanningWeights,
@@ -185,6 +186,11 @@ export default function Home() {
   const [memoryModalOpen, setMemoryModalOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  // 提示弹窗入弹窗栈（F-036）：打开期间锁背景滚动，Esc 关闭且层级最高
+  const { zIndex: toastZIndex } = useModalLayer({
+    active: Boolean(toastMessage),
+    onEscape: () => setToastMessage(null),
+  });
   // 任务看板 AI 规划（标题栏入口）：执行状态与结果提示
   const [planBusy, setPlanBusy] = useState(false);
   const [planFeedback, setPlanFeedback] = useState<string | null>(null);
@@ -2066,7 +2072,11 @@ export default function Home() {
         />
       )}
       {toastMessage && (
-        <div className="modal-backdrop" onMouseDown={() => setToastMessage(null)}>
+        <div
+          className="modal-backdrop"
+          style={{ zIndex: toastZIndex }}
+          onMouseDown={() => setToastMessage(null)}
+        >
           <div
             className="modal-card max-w-sm"
             onMouseDown={(e) => e.stopPropagation()}

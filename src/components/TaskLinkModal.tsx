@@ -1,6 +1,7 @@
 "use client";
 
 import { Link2, Plus, X } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import type { Task } from "@/lib/types";
 import { formatDeadlineLabel, isDeadlineOverdue } from "@/lib/deadline";
 
@@ -25,8 +26,9 @@ export default function TaskLinkModal({
   onCreate,
   onClose,
 }: Props) {
+  const { zIndex } = useModalLayer({ onEscape: onClose });
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop" style={{ zIndex }} onMouseDown={onClose}>
       <div
         className="modal-card modal-card-scroll max-w-md thin-scroll"
         onMouseDown={(event) => event.stopPropagation()}

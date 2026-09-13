@@ -10,6 +10,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import type { TimeBlock } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
 import { CATEGORIES } from "@/lib/categories";
@@ -126,6 +127,11 @@ export default function WeekTimeline({
     start: string;
     end: string;
   } | null>(null);
+  // 折叠时间区间弹窗入弹窗栈（F-036）：打开期间锁背景滚动，Esc 关闭
+  const { zIndex: collapseZIndex } = useModalLayer({
+    active: Boolean(collapseDialog),
+    onEscape: () => setCollapseDialog(null),
+  });
   const [selectedBlocks, setSelectedBlocks] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -1099,6 +1105,7 @@ export default function WeekTimeline({
       {collapseDialog && (
         <div
           className="modal-backdrop"
+          style={{ zIndex: collapseZIndex }}
           onClick={() => setCollapseDialog(null)}
         >
           <div

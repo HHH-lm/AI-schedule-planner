@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { BookMarked, Clock, MapPin, Plus, Tag, Trash2, X } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import type { Category, TimeBlock } from "@/lib/types";
 import { CATEGORIES, CATEGORY_ORDER } from "@/lib/categories";
 import {
@@ -191,23 +192,21 @@ export default function BlockModal({
     "input-rect";
   const labelClass = "field-label";
 
-  // Close on Escape key; while creating a task, first leave create mode
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+  // Esc 由弹窗栈管理（F-036）：仅栈顶响应；创建任务态先退创建态，再按才关弹窗
+  const { zIndex } = useModalLayer({
+    onEscape: () => {
       if (creatingTask) {
         cancelCreateTask();
       } else {
         onClose();
       }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, creatingTask]);
+    },
+  });
 
   return (
     <div
       className="modal-backdrop"
+      style={{ zIndex }}
       onMouseDown={onClose}
     >
       <div

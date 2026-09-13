@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { KeyRound, LogIn, Mail, UserPlus, X } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import {
   isValidEmail,
   signInWithPassword,
@@ -22,6 +23,7 @@ export default function AuthModal({ onClose }: Props) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const { zIndex } = useModalLayer({ onEscape: onClose });
 
   const switchMode = (next: AuthMode) => {
     setMode(next);
@@ -63,6 +65,7 @@ export default function AuthModal({ onClose }: Props) {
   return (
     <div
       className="modal-backdrop"
+      style={{ zIndex }}
       onMouseDown={onClose}
     >
       <div

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 
 interface Props {
   title: string;
@@ -22,6 +23,7 @@ export default function ConfirmDialog({
   onClose,
 }: Props) {
   const [submitting, setSubmitting] = useState(false);
+  const { zIndex } = useModalLayer({ onEscape: onClose });
 
   const handleConfirm = async () => {
     setSubmitting(true);
@@ -34,7 +36,7 @@ export default function ConfirmDialog({
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop" style={{ zIndex }} onMouseDown={onClose}>
       <div
         className="modal-card max-w-sm"
         onMouseDown={(event) => event.stopPropagation()}

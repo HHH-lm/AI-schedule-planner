@@ -1,6 +1,7 @@
 "use client";
 
 import { Eye, X } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import { addDays, parseDateKey } from "@/lib/date";
 
 interface Props {
@@ -14,8 +15,9 @@ export default function RestoreWeeksModal({
   onRestore,
   onClose,
 }: Props) {
+  const { zIndex } = useModalLayer({ onEscape: onClose });
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop" style={{ zIndex }} onMouseDown={onClose}>
       <div
         className="modal-card max-w-md"
         onMouseDown={(event) => event.stopPropagation()}

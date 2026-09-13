@@ -1,6 +1,7 @@
 "use client";
 
 import { LogOut, User, X } from "lucide-react";
+import { useModalLayer } from "@/hooks/useModalLayer";
 
 interface Props {
   email: string;
@@ -9,8 +10,9 @@ interface Props {
 }
 
 export default function AccountModal({ email, onLogout, onClose }: Props) {
+  const { zIndex } = useModalLayer({ onEscape: onClose });
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop" style={{ zIndex }} onMouseDown={onClose}>
       <div
         className="modal-card max-w-sm"
         onMouseDown={(event) => event.stopPropagation()}

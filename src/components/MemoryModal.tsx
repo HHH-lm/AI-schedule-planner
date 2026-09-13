@@ -22,6 +22,7 @@ import type {
   MemoryCategory,
 } from "@/lib/types";
 import { uid } from "@/lib/storage";
+import { useModalLayer } from "@/hooks/useModalLayer";
 import ConfirmDialog from "@/components/ConfirmDialog";
 
 const CATEGORY_ORDER: MemoryCategory[] = [
@@ -72,6 +73,7 @@ export default function MemoryModal({
   const [editContent, setEditContent] = useState("");
   const [showArchived, setShowArchived] = useState(true);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const { zIndex } = useModalLayer({ onEscape: onClose });
 
   const activeCount = memories.filter((m) => m.status !== "archived").length;
   const archivedCount = memories.length - activeCount;
@@ -235,7 +237,7 @@ export default function MemoryModal({
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div className="modal-backdrop" style={{ zIndex }} onMouseDown={onClose}>
       <div
         className="modal-card modal-card-scroll max-w-2xl"
         onMouseDown={(event) => event.stopPropagation()}
