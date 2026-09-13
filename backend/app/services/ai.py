@@ -36,7 +36,7 @@ PROVIDER_CONFIG: dict[str, dict[str, str]] = {
         "base_url_attr": "deepseek_base_url",
         "default_base_url": "https://api.deepseek.com",
         "model_attr": "deepseek_model",
-        "default_model": "deepseek-chat",
+        "default_model": "deepseek-flash",
     },
 }
 

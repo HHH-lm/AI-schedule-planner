@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
 
     deepseek_api_key: str | None = None
-    deepseek_model: str = "deepseek-chat"
+    deepseek_model: str = "deepseek-flash"
     deepseek_base_url: str = "https://api.deepseek.com"
 
     max_parse_input_length: int = 2000

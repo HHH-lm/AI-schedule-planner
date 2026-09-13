@@ -349,7 +349,7 @@ def test_prompt_fingerprint_and_snapshot_persist(tmp_path) -> None:
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["split"] == "open"
     assert data["provider"] == "deepseek"
-    assert data["model"] == "deepseek-chat"
+    assert data["model"] == "deepseek-flash"
     assert data["golden_set_version"] == GOLDEN_SET_VERSION
     assert data["prompt_version"].startswith("sha256:")
     assert data["results"] == [{"id": "qa01", "full_exact": True}]

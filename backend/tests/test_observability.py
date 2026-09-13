@@ -219,7 +219,7 @@ class _FakeAsyncClient:
 def test_ai_request_and_response_events(caplog, monkeypatch) -> None:
     settings = Settings(
         deepseek_api_key="test-key",
-        deepseek_model="deepseek-chat",
+        deepseek_model="deepseek-flash",
         ai_timeout_ms=5000,
     )
     response = httpx.Response(
@@ -252,7 +252,7 @@ def test_ai_request_and_response_events(caplog, monkeypatch) -> None:
 def test_ai_timeout_event(caplog, monkeypatch) -> None:
     settings = Settings(
         deepseek_api_key="test-key",
-        deepseek_model="deepseek-chat",
+        deepseek_model="deepseek-flash",
         ai_timeout_ms=5000,
     )
     monkeypatch.setattr(

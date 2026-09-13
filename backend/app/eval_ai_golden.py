@@ -218,7 +218,7 @@ def _day_segments(blocks: list[dict[str, Any]]) -> list[tuple[str, int, int]]:
 def _provider_model(provider: str, settings: Any) -> str:
     if provider == "openai":
         return settings.openai_model or "gpt-4o-mini"
-    return settings.deepseek_model or "deepseek-chat"
+    return settings.deepseek_model or "deepseek-flash"
 
 
 def _prompt_fingerprint() -> str:
