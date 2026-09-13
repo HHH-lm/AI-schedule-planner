@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { BookMarked, Clock, MapPin, Tag, Trash2, X } from "lucide-react";
+import { BookMarked, Clock, MapPin, Plus, Tag, Trash2, X } from "lucide-react";
 import type { Category, TimeBlock } from "@/lib/types";
 import { CATEGORIES, CATEGORY_ORDER } from "@/lib/categories";
 import {
@@ -35,6 +35,8 @@ interface Props {
     id?: string
   ) => void;
   onDelete: (id: string) => void;
+  /** 立即创建一个任务并返回它（名称已由调用方 trim），失败返回 null */
+  onCreateTask: (name: string) => { id: string } | null;
   onClose: () => void;
 }
 
@@ -60,6 +62,7 @@ export default function BlockModal({
   tasks,
   onSave,
   onDelete,
+  onCreateTask,
   onClose,
 }: Props) {
   const initialStartMinutes = block?.start ?? defaultStart ?? 9 * 60;
@@ -86,6 +89,8 @@ export default function BlockModal({
   const [location, setLocation] = useState(block?.location ?? "");
   const [taskId, setTaskId] = useState(block?.taskId ?? "");
   const [taskIdTouched, setTaskIdTouched] = useState(false);
+  const [creatingTask, setCreatingTask] = useState(false);
+  const [newTaskName, setNewTaskName] = useState("");
   const [done, setDone] = useState(block?.done ?? false);
   const [obsidianVault, setObsidianVault] = useState(initialObsidianVault);
   const [obsidianNote, setObsidianNote] = useState(initialObsidianNote);
@@ -119,6 +124,28 @@ export default function BlockModal({
     const parsed = parseObsidianUrl(value);
     if (parsed.vault) setObsidianVault(parsed.vault);
     if (parsed.file) setObsidianNote(parsed.file);
+  };
+
+  const startCreateTask = () => {
+    setNewTaskName("");
+    setCreatingTask(true);
+  };
+
+  const cancelCreateTask = () => {
+    setCreatingTask(false);
+    setNewTaskName("");
+  };
+
+  const confirmCreateTask = () => {
+    const name = newTaskName.trim();
+    if (!name) return;
+    const created = onCreateTask(name);
+    if (!created) return;
+    // 与手动改选任务同语义：旧 subtaskId 失效，保存时不再透传
+    setTaskId(created.id);
+    setTaskIdTouched(true);
+    setCreatingTask(false);
+    setNewTaskName("");
   };
 
   const handleSave = () => {
@@ -164,14 +191,19 @@ export default function BlockModal({
     "input-rect";
   const labelClass = "field-label";
 
-  // Close on Escape key
+  // Close on Escape key; while creating a task, first leave create mode
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      if (creatingTask) {
+        cancelCreateTask();
+      } else {
+        onClose();
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [onClose, creatingTask]);
 
   return (
     <div
@@ -306,42 +338,91 @@ export default function BlockModal({
 
           <div>
             <label className={labelClass}>关联任务</label>
-            <select
-              className={inputClass}
-              value={taskId}
-              onChange={(event) => {
-                setTaskId(event.target.value);
-                setTaskIdTouched(true);
-              }}
-            >
-              <option value="">不关联</option>
-              {tasks.map((task) => (
-                <option key={task.id} value={task.id}>
-                  {task.name}
-                </option>
-              ))}
-            </select>
-            {(() => {
-              // 截止按子任务粒度展示：当前块已关联子任务且带截止时提示
-              const linkedSub = tasks
-                .find((task) => task.id === taskId)
-                ?.subtasks.find(
-                  (sub) => sub.id === (block?.subtaskId ?? undefined)
-                );
-              if (!linkedSub?.deadline) return null;
-              const overdue = isDeadlineOverdue(linkedSub.deadline);
-              return (
-                <p
-                  className={`mt-1 text-[11px] leading-snug ${
-                    overdue ? "text-[#b3261e]" : "text-ink-muted-48"
-                  }`}
-                >
-                  {overdue ? "⚠ " : ""}子任务「{linkedSub.name}」截止：
-                  {formatDeadlineLabel(linkedSub.deadline)}
-                  {overdue ? "（已逾期）" : ""}
+            {creatingTask ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <input
+                    className={inputClass}
+                    value={newTaskName}
+                    onChange={(event) => setNewTaskName(event.target.value)}
+                    onKeyDown={(event) => {
+                      // 拦下回车，避免触发整个时间块表单的保存
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        confirmCreateTask();
+                      }
+                    }}
+                    placeholder="新任务名称"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="btn-primary-pill shrink-0"
+                    onClick={confirmCreateTask}
+                    disabled={!newTaskName.trim()}
+                  >
+                    创建
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost shrink-0"
+                    onClick={cancelCreateTask}
+                  >
+                    取消
+                  </button>
+                </div>
+                <p className="mt-1 text-[11px] text-ink-muted-48">
+                  创建后将自动选为关联任务，并同步到任务看板
                 </p>
-              );
-            })()}
+              </>
+            ) : (
+              <>
+                <select
+                  className={inputClass}
+                  value={taskId}
+                  onChange={(event) => {
+                    setTaskId(event.target.value);
+                    setTaskIdTouched(true);
+                  }}
+                >
+                  <option value="">不关联</option>
+                  {tasks.map((task) => (
+                    <option key={task.id} value={task.id}>
+                      {task.name}
+                    </option>
+                  ))}
+                </select>
+                {(() => {
+                  // 截止按子任务粒度展示：当前块已关联子任务且带截止时提示
+                  const linkedSub = tasks
+                    .find((task) => task.id === taskId)
+                    ?.subtasks.find(
+                      (sub) => sub.id === (block?.subtaskId ?? undefined)
+                    );
+                  if (!linkedSub?.deadline) return null;
+                  const overdue = isDeadlineOverdue(linkedSub.deadline);
+                  return (
+                    <p
+                      className={`mt-1 text-[11px] leading-snug ${
+                        overdue ? "text-[#b3261e]" : "text-ink-muted-48"
+                      }`}
+                    >
+                      {overdue ? "⚠ " : ""}子任务「{linkedSub.name}」截止：
+                      {formatDeadlineLabel(linkedSub.deadline)}
+                      {overdue ? "（已逾期）" : ""}
+                    </p>
+                  );
+                })()}
+                <button
+                  type="button"
+                  onClick={startCreateTask}
+                  className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <Plus size={12} />
+                  新建任务
+                </button>
+              </>
+            )}
           </div>
 
           <div>

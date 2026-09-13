@@ -84,6 +84,7 @@ import {
   reviveTask,
   type TaskDoneSnapshot,
 } from "@/lib/taskOrder";
+import { buildTasksFromSeeds, type TaskSeed } from "@/lib/taskCreate";
 // import { buildWeekICS } from "@/lib/ics"; // 苹果日历导出暂未启用
 import WeekTimeline from "@/components/WeekTimeline";
 import TodayView from "@/components/TodayView";
@@ -1046,57 +1047,13 @@ export default function Home() {
     setBlockModalOpen(true);
   }, []);
 
-  const addTasks = useCallback(
-    (
-      seeds: Array<
-        {
-          name: string;
-          subtasks?: string[];
-          priority?: TaskQuadrant;
-          /** 统一应用到该任务全部子任务的截止日期 */
-          subtaskDeadline?: string;
-        } | string
-      >
-    ) => {
-      commitData((prev) =>
-        prev
-          ? {
-              ...prev,
-              tasks: [
-                ...prev.tasks,
-                ...seeds.map<Task>((seed) => {
-                  const name = typeof seed === "string" ? seed : seed.name;
-                  const subtaskNames =
-                    typeof seed === "string" ? [] : (seed.subtasks ?? []);
-                  const priority =
-                    typeof seed === "string"
-                      ? DEFAULT_TASK_PRIORITY
-                      : normalizeQuadrant(seed.priority);
-                  const subtaskDeadline =
-                    typeof seed === "string" ? undefined : seed.subtaskDeadline;
-                  const subtasks: Subtask[] = subtaskNames.map((subtask) => ({
-                    id: uid(),
-                    name: subtask,
-                    done: false,
-                    deadline: subtaskDeadline,
-                  }));
-                  return {
-                    id: uid(),
-                    name,
-                    date: null,
-                    status: "todo" as const,
-                    subtasks,
-                    priority,
-                    pinned: false,
-                  };
-                }),
-              ],
-            }
-          : prev
-      );
-    },
-    [commitData]
-  );
+  const addTasks = useCallback((seeds: TaskSeed[]): Task[] => {
+    const created = buildTasksFromSeeds(seeds);
+    commitData((prev) =>
+      prev ? { ...prev, tasks: [...prev.tasks, ...created] } : prev
+    );
+    return created;
+  }, [commitData]);
 
   const saveTask = useCallback((draft: Partial<Task>, id?: string) => {
     commitData((prev) => {
@@ -2010,6 +1967,7 @@ export default function Home() {
           }))}
           onSave={saveBlock}
           onDelete={deleteBlock}
+          onCreateTask={(name) => addTasks([name])[0] ?? null}
           onClose={() => {
             setBlockModalOpen(false);
             setNewBlockTime(null);
