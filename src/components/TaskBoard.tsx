@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import {
+  AlertTriangle,
   BookMarked,
   CheckCircle2,
   ChevronDown,
@@ -153,7 +154,13 @@ export default function TaskBoard({
     position: "before" | "after";
   } | null>(null);
   const [macroText, setMacroText] = useState("");
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{
+    message: string;
+    tone: "ok" | "warn";
+  } | null>(null);
+  const feedbackTimerRef = useRef<number | null>(null);
+  // 本次任务行拖拽是否曾被跨象限拦截（dragOver 高频触发，只记标志、松手时统一提示）
+  const taskDragBlockedRef = useRef(false);
   const [breakdownBusy, setBreakdownBusy] = useState(false);
   // 追加周数持久化到 localStorage：刷新后保留用户扩展的窗口长度
   const [weekCount, setWeekCount] = useState(() => {
@@ -373,11 +380,11 @@ export default function TaskBoard({
         today: toDateKey(new Date()),
       });
       if (result.source === "none") {
-        setFeedback(result.message ?? "AI 拆解失败，请稍后重试");
+        showFeedback(result.message ?? "AI 拆解失败，请稍后重试");
         return;
       }
       if (result.tasks.length === 0) {
-        setFeedback("没有拆解出任务，请检查输入");
+        showFeedback("没有拆解出任务，请检查输入");
         return;
       }
       const deadline = extractDeadline(plan);
@@ -389,18 +396,17 @@ export default function TaskBoard({
         }))
       );
       setMacroText("");
-      setFeedback(
+      showFeedback(
         deadline
           ? `已拆解出 ${result.tasks.length} 个任务，截止日期 ${formatDeadlineShort(deadline)} 已填入子任务`
           : `已拆解出 ${result.tasks.length} 个任务`
       );
     } catch (error) {
-      setFeedback(
+      showFeedback(
         error instanceof Error ? error.message : "AI 拆解失败，请稍后重试"
       );
     } finally {
       setBreakdownBusy(false);
-      window.setTimeout(() => setFeedback(null), 4000);
     }
   };
 
@@ -431,6 +437,17 @@ export default function TaskBoard({
     setReorderTarget(null);
   };
 
+  const showFeedback = (message: string, tone: "ok" | "warn" = "ok") => {
+    if (feedbackTimerRef.current !== null) {
+      window.clearTimeout(feedbackTimerRef.current);
+    }
+    setFeedback({ message, tone });
+    feedbackTimerRef.current = window.setTimeout(() => {
+      setFeedback(null);
+      feedbackTimerRef.current = null;
+    }, 4000);
+  };
+
   const handleTaskRowDragOver = (
     event: React.DragEvent,
     targetTask: Task
@@ -439,6 +456,16 @@ export default function TaskBoard({
     const fromTask = data.tasks.find((task) => task.id === reorderTaskId);
     if (!fromTask) return;
     if (Boolean(fromTask.pinned) !== Boolean(targetTask.pinned)) return;
+    if (
+      !fromTask.pinned &&
+      !targetTask.pinned &&
+      normalizeQuadrant(fromTask.priority) !==
+        normalizeQuadrant(targetTask.priority)
+    ) {
+      // 未置顶区按象限排序渲染，跨象限拖放会被弹回；松手后在 dragEnd 提示
+      taskDragBlockedRef.current = true;
+      return;
+    }
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     const rect = event.currentTarget.getBoundingClientRect();
@@ -464,8 +491,18 @@ export default function TaskBoard({
       clearReorder();
       return;
     }
+    if (
+      !fromTask.pinned &&
+      !targetTask.pinned &&
+      normalizeQuadrant(fromTask.priority) !==
+        normalizeQuadrant(targetTask.priority)
+    ) {
+      clearReorder();
+      return;
+    }
     const rect = event.currentTarget.getBoundingClientRect();
     const before = event.clientY < rect.top + rect.height / 2;
+    taskDragBlockedRef.current = false;
     onReorderTask(fromTask.id, targetTask.id, before);
     clearReorder();
     setDragTaskId(null);
@@ -701,9 +738,18 @@ export default function TaskBoard({
       </div>
 
       {feedback && (
-        <div className="status-note-ok mb-3 inline-flex w-fit items-center gap-1.5 !py-1.5 text-xs">
-          <CheckCircle2 size={13} />
-          {feedback}
+        <div
+          className={`${
+            feedback.tone === "warn" ? "status-note-amber" : "status-note-ok"
+          } mb-3 inline-flex w-fit items-center gap-1.5 !py-1.5 text-xs`}
+          role="status"
+        >
+          {feedback.tone === "warn" ? (
+            <AlertTriangle size={13} />
+          ) : (
+            <CheckCircle2 size={13} />
+          )}
+          {feedback.message}
         </div>
       )}
 
@@ -870,6 +916,13 @@ export default function TaskBoard({
                       onDragEnd={() => {
                         setDragTaskId(null);
                         clearReorder();
+                        if (taskDragBlockedRef.current) {
+                          taskDragBlockedRef.current = false;
+                          showFeedback(
+                            "未置顶任务按象限自动排序，跨象限拖动不生效；要调整象限，请在任务详情中修改",
+                            "warn"
+                          );
+                        }
                       }}
                       className="cursor-grab text-ink-muted-48 hover:text-ink-muted-80"
                       title="左右拖拽排期，上下拖动排序"

@@ -1,16 +1,44 @@
-import type { Task } from "./types";
+import type { Task, TaskQuadrant } from "./types";
+import { normalizeQuadrant } from "./priorities";
+
+/**
+ * 看板未置顶任务的象限排列顺序：
+ * 紧急重要 > 紧急不重要 > 不紧急重要 > 既不紧急也不重要。
+ * 与 TodayView 布局用的 QUADRANT_ORDER（重要在前）刻意不同，互不影响。
+ */
+const BOARD_QUADRANT_RANK: Record<TaskQuadrant, number> = {
+  "urgent-important": 0,
+  urgent: 1,
+  important: 2,
+  neither: 3,
+};
 
 /**
  * 任务看板左侧列表的排序规则：
  * 1. 已完成（status === "done"）的任务始终沉到全列表最底部（不论是否置顶）；
  * 2. 未完成任务内置顶优先；
- * 3. 其余保持数组原序（sort 稳定，同组内相对顺序不变）。
+ * 3. 双方都未置顶的未完成任务按象限顺序排列（缺失/非法 priority 归入最后一档）；
+ * 4. 其余保持数组原序（sort 稳定，同组内相对顺序不变）。
  */
 export function orderTasks(tasks: Task[]): Task[] {
   return [...tasks].sort(
     (a, b) =>
       Number(a.status === "done") - Number(b.status === "done") ||
-      Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)),
+      Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) ||
+      quadrantDiff(a, b),
+  );
+}
+
+/**
+ * 象限键只作用于双方都未置顶且未完成的任务对：
+ * 置顶组内保持手动顺序，已完成组内保持原序。
+ */
+function quadrantDiff(a: Task, b: Task): number {
+  if (a.pinned || b.pinned) return 0;
+  if (a.status === "done" || b.status === "done") return 0;
+  return (
+    BOARD_QUADRANT_RANK[normalizeQuadrant(a.priority)] -
+    BOARD_QUADRANT_RANK[normalizeQuadrant(b.priority)]
   );
 }
 

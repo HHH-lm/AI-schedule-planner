@@ -4,7 +4,7 @@ import type { Task } from "./types";
 
 function makeTask(
   id: string,
-  overrides: Partial<Pick<Task, "status" | "pinned">> = {},
+  overrides: Partial<Pick<Task, "status" | "pinned" | "priority">> = {},
 ): Task {
   return {
     id,
@@ -59,6 +59,63 @@ describe("任务看板排序", () => {
       makeTask("a", { status: "done" }),
     ];
     expect(orderTasks(tasks).map((task) => task.id)).toEqual(["b", "a"]);
+  });
+
+  it("未置顶未完成任务按四象限顺序排列（紧急重要>紧急>重要>其他）", () => {
+    const tasks = [
+      makeTask("d", { priority: "neither" }),
+      makeTask("b", { priority: "urgent" }),
+      makeTask("a", { priority: "urgent-important" }),
+      makeTask("c", { priority: "important" }),
+    ];
+    expect(orderTasks(tasks).map((task) => task.id)).toEqual([
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
+  });
+
+  it("同象限内保持原有相对顺序", () => {
+    const tasks = [
+      makeTask("c", { priority: "urgent" }),
+      makeTask("a", { priority: "urgent-important" }),
+      makeTask("b", { priority: "urgent" }),
+    ];
+    expect(orderTasks(tasks).map((task) => task.id)).toEqual(["a", "c", "b"]);
+  });
+
+  it("置顶组内不按象限排列（保持手动顺序）", () => {
+    const tasks = [
+      makeTask("a", { pinned: true, priority: "neither" }),
+      makeTask("b", { pinned: true, priority: "urgent-important" }),
+    ];
+    expect(orderTasks(tasks).map((task) => task.id)).toEqual(["a", "b"]);
+  });
+
+  it("置顶任务整体排在象限区之前（置顶优先于象限）", () => {
+    const tasks = [
+      makeTask("a", { priority: "urgent-important" }),
+      makeTask("b", { pinned: true, priority: "neither" }),
+    ];
+    expect(orderTasks(tasks).map((task) => task.id)).toEqual(["b", "a"]);
+  });
+
+  it("已完成任务之间不受象限影响（保持原序）", () => {
+    const tasks = [
+      makeTask("b", { status: "done", priority: "neither" }),
+      makeTask("a", { status: "done", priority: "urgent-important" }),
+    ];
+    expect(orderTasks(tasks).map((task) => task.id)).toEqual(["b", "a"]);
+  });
+
+  it("缺失或非法 priority 归入最后一档（既不紧急也不重要）", () => {
+    const tasks = [
+      makeTask("a"),
+      makeTask("b", { priority: "urgent" }),
+      makeTask("c", { priority: "invalid" as unknown as Task["priority"] }),
+    ];
+    expect(orderTasks(tasks).map((task) => task.id)).toEqual(["b", "a", "c"]);
   });
 
   it("不修改原数组", () => {
