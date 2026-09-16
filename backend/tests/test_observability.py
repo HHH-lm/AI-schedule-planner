@@ -85,6 +85,34 @@ def test_json_formatter_includes_request_id_from_context() -> None:
         reset_request_id(token)
 
 
+def test_json_formatter_injects_static_env_field() -> None:
+    """static_fields 写入每条日志（Axiom 监控按 env 区分生产与本地噪音）。"""
+    formatter = JsonFormatter(static_fields={"env": "prod"})
+    record = logging.LogRecord(
+        name="app.http", level=logging.INFO, pathname=__file__,
+        lineno=1, msg="http.request", args=(), exc_info=None,
+    )
+    record.event = "http.request"
+    payload = json.loads(formatter.format(record))
+    assert payload["env"] == "prod"
+    # 默认无 static_fields 时不产生该字段（保持既有日志形状）
+    assert "env" not in json.loads(JsonFormatter().format(record))
+
+
+def test_json_formatter_static_field_cannot_be_overridden() -> None:
+    """事件附加字段不得覆盖 env（防止业务字段把环境标记冲掉）。"""
+    formatter = JsonFormatter(static_fields={"env": "prod"})
+    record = logging.LogRecord(
+        name="app.ai", level=logging.INFO, pathname=__file__,
+        lineno=1, msg="ai.response", args=(), exc_info=None,
+    )
+    record.event = "ai.response"
+    record.fields = {"env": "dev", "provider": "deepseek"}
+    payload = json.loads(formatter.format(record))
+    assert payload["env"] == "prod"
+    assert payload["provider"] == "deepseek"
+
+
 def test_log_event_attaches_event_and_fields(caplog) -> None:
     logger = get_logger("app.test")
     with caplog.at_level(logging.INFO, logger="app.test"):

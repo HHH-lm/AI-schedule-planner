@@ -292,3 +292,33 @@ def test_conflicts_check_preserves_done_field() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["accepted"][0]["done"] is True
+
+
+# ── 日志环境标记（Axiom 监控按 env 过滤生产日志）────────────────
+
+
+def test_log_env_prefers_explicit_app_env() -> None:
+    assert Settings(app_env="prod").log_env == "prod"
+    assert Settings(app_env="dev", vercel_env="production").log_env == "dev"
+
+
+def test_log_env_normalizes_aliases() -> None:
+    """APP_ENV=production 必须归一化为 prod，否则监控按 prod 过滤会匹配不上。"""
+    assert Settings(app_env="production").log_env == "prod"
+    assert Settings(app_env="PRODUCTION").log_env == "prod"
+    assert Settings(app_env=" prod ").log_env == "prod"
+    assert Settings(app_env="development").log_env == "dev"
+    # 未识别的值按原值输出（保留 staging 等多环境扩展余地）
+    assert Settings(app_env="staging").log_env == "staging"
+
+
+def test_log_env_infers_from_vercel_env() -> None:
+    assert Settings(vercel_env="production").log_env == "prod"
+    assert Settings(vercel_env="preview").log_env == "preview"
+    assert Settings(vercel_env="development").log_env == "dev"
+    assert Settings(vercel_env="PRODUCTION").log_env == "prod"
+
+
+def test_log_env_defaults_to_dev() -> None:
+    # 未配置任何环境变量时必须是 dev：若误判为 prod，本地噪音会被当成生产告警
+    assert Settings(vercel_env=None).log_env == "dev"

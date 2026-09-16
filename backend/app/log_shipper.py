@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Mapping
+from typing import Any
 
 import httpx
 
@@ -32,9 +34,13 @@ _handler: ShipperHandler | None = None
 class ShipperHandler(logging.Handler):
     """缓冲已格式化的 JSON 行（含 emit 时的 request_id 上下文），flush 时取走。"""
 
-    def __init__(self, max_lines: int = MAX_BUFFER_LINES) -> None:
+    def __init__(
+        self,
+        max_lines: int = MAX_BUFFER_LINES,
+        static_fields: Mapping[str, Any] | None = None,
+    ) -> None:
         super().__init__(level=logging.INFO)
-        self.setFormatter(JsonFormatter())
+        self.setFormatter(JsonFormatter(static_fields=static_fields))
         self._max_lines = max_lines
         self._lines: list[str] = []
 
@@ -83,7 +89,7 @@ def install_shipper(settings: Settings) -> ShipperHandler | None:
         return None
     if _handler is not None:
         return _handler
-    handler = ShipperHandler()
+    handler = ShipperHandler(static_fields={"env": settings.log_env})
     logging.getLogger().addHandler(handler)
     _handler = handler
     return handler

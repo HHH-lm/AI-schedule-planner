@@ -158,6 +158,7 @@ FastAPI 后端默认输出 **JSON Lines 结构化日志**（每行一个 JSON �
 |---|---|---|
 | `LOG_LEVEL` | `INFO` | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL |
 | `LOG_FORMAT` | `json` | `json`（JSON Lines，推荐）或 `text`（人类可读） |
+| `APP_ENV` | `dev` | 运行环境标记，写入每条日志的 `env` 字段（生产设 `prod`，填 `production` 也归一化为 `prod`）；未设时由 Vercel 自动注入的 `VERCEL_ENV` 推断，兜底 `dev`。监控与 SLO 查询按 `env == "prod"` 过滤，详见 4.4 |
 | `AXIOM_API_URL` | `https://us-east-1.aws.edge.axiom.co` | Axiom **ingest 专用边缘域名**（`api.axiom.co` 只承担管理接口，用于 ingest 会 404）；组织所在区在 Axiom Settings → General → Edge deployment 查看，欧区改为 `https://eu-central-1.aws.edge.axiom.co` |
 | `AXIOM_API_TOKEN` | 空 | Axiom ingest 权限 API Token，与 `AXIOM_DATASET` 都配置后启用日志直发（见 4.4） |
 | `AXIOM_DATASET` | 空 | Axiom 数据集名（建议 `ai-schedule-backend`） |
@@ -172,6 +173,7 @@ FastAPI 后端默认输出 **JSON Lines 结构化日志**（每行一个 JSON �
 - `level`：INFO / WARNING / ERROR
 - `logger`：模块名（`app.ai`、`app.push`、`app.reminders`、`app.http` 等）
 - `event`：事件名
+- `env`：运行环境标记（`prod` / `dev` / `preview`，来自 `APP_ENV` 或 Vercel 的 `VERCEL_ENV`）。本地 `.env.local` 同样配了 Axiom 凭据，故本地 dev/pytest 日志会与生产写入同一 dataset，靠该字段区分；**监控与 SLO 查询必须加 `env == "prod"`**
 - `request_id`：请求级关联 ID（HTTP 请求 12 位 hex；提醒扫描为 `scan-<时间戳>`），用于把一次请求的多个事件串起来；同时随响应头 `X-Request-ID` 返回，报障时可直接提供该头对号入座
 - `exc`：未捕获异常的堆栈文本（仅 5xx 路径）
 - 其余字段为事件附加字段（provider / model / duration_ms / status / 数量等）
@@ -204,22 +206,23 @@ Hobby 版 Vercel 无 Log Drain（Pro 专属功能），生产日志留存短且�
 1. 注册 Axiom 免费账号（可 GitHub 登录）
 2. 创建 dataset，建议命名 `ai-schedule-backend`
 3. Settings → API Tokens → 新建 token，权限只勾该 dataset 的 **Ingest**（ingest 端点只认 API token，不认个人 PAT）
-4. 配置后端环境变量（Vercel 项目 `ai-schedule-backend` 与本地 `.env.local`）：`AXIOM_API_TOKEN` 与 `AXIOM_DATASET=ai-schedule-backend`（两者齐备自动启用；`LOG_SHIP_ENABLED=false` 紧急停发）
-5. 部署后访问任一 API（如 `/api/v1/health`），Axiom dataset 的 Stream 应出现 `http.request` 事件；响应头 `X-Request-ID` 可与日志对号验证
+4. 配置后端环境变量（Vercel 项目 `ai-schedule-backend` 与本地 `.env.local`）：`AXIOM_API_TOKEN` 与 `AXIOM_DATASET=ai-schedule-backend`（两者齐备自动启用；`LOG_SHIP_ENABLED=false` 紧急停发）。**Vercel 侧同时设 `APP_ENV=production`**（否则日志会被标记为 `dev`，监控过滤 `env == "prod"` 后将看不到任何生产数据）
+5. 部署后访问任一 API（如 `/api/v1/health`），Axiom dataset 的 Stream 应出现 `http.request` 事件；响应头 `X-Request-ID` 可与日志对号验证；确认该行带 `env: "prod"`
+6. 三条 Monitors 的查询均含 `env == "prod"` 过滤（免费版上限 3 条，不可新增 Monitor 绕过）
 
 工作机制与边界（`backend/app/log_shipper.py`）：
 
 - 每个请求/扫描周期缓冲 JSON 行，在响应结束前同步 POST（NDJSON）到 Axiom ingest，规避 Serverless 冻结；请求尾延迟约增加几十毫秒
 - 任何发送失败（网络异常/非 2xx）静默丢弃并计数，绝不影响业务请求；缓冲上限 500 行，超限丢最旧
-- 本地未配置凭据时 handler 不挂载，零开销
+- 本地未配置凭据时 handler 不挂载，零开销；**但本地 `.env.local` 确实配了凭据**，故 dev/pytest 日志会与生产写入同一 dataset（本地跑一次 pytest，测试里故意制造的失败事件如 `reminder.scan.error` 就会被当成生产告警）——这正是 `env` 字段与监控过滤存在的原因。`backend/tests/conftest.py` 另行将 `LOG_SHIP_ENABLED` 置为 `false`，确保 pytest 不产生任何直发
 
 告警（Axiom Monitors，通知默认 email，亦支持 webhook；**免费 Personal 版上限 3 条 Monitors**，故合并为 3 条，覆盖面与细分方案等价）：
 
 | 告警 | 查询条件 | 阈值 | 含义 |
 |---|---|---|---|
-| 关键错误 | `event in ("reminder.scan.error","push.failure","reminder.push.failed") or (event == "http.request" and status >= 500)` | 出现即告警 | 提醒扫描失败 / 微信推送失败 / 未捕获异常（合并条，邮件不区分具体类，收到后到 Stream 按事件名细查） |
-| AI 服务异常 | `event in ("ai.error","ai.timeout")` | 15 分钟内 ≥ 3 次 | AI 服务商故障或 Key 问题（单独设频次阈值，避免偶发超时误报） |
-| 扫描心跳缺失 | `event == "reminder.scan.done"` | 超过 1 小时无数据（below 1 + Alert on no data） | GitHub Actions 定时器停摆（配合 UptimeRobot 探活双保险） |
+| 关键错误 | `env == "prod" and (event in ("reminder.scan.error","push.failure","reminder.push.failed") or (event == "http.request" and status >= 500))` | 出现即告警 | 提醒扫描失败 / 微信推送失败 / 未捕获异常（合并条，邮件不区分具体类，收到后到 Stream 按事件名细查） |
+| AI 服务异常 | `env == "prod" and event in ("ai.error","ai.timeout")` | 15 分钟内 ≥ 3 次 | AI 服务商故障或 Key 问题（单独设频次阈值，避免偶发超时误报） |
+| 扫描心跳缺失 | `env == "prod" and event == "reminder.scan.done"` | 超过 1 小时无数据（below 1 + Alert on no data） | 定时器停摆（配合 UptimeRobot 探活双保险） |
 
 ### 4.5 排查示例
 
@@ -239,20 +242,20 @@ grep '"event": "ai.response"' <日志> | python3 -c \
    [print(r['duration_ms'], r.get('operation'), r.get('provider')) for r in sorted(rows, key=lambda x:-x['duration_ms'])[:20]]"
 ```
 
-Axiom（APL，生产首选）：
+Axiom（APL，生产首选；以下查询均限生产 `env == 'prod'`，否则会混入本地 dev/pytest 噪音）：
 
 ```sql
 -- 某次请求的完整链路（request_id 取自响应头 X-Request-ID）
-['ai-schedule-backend'] | where request_id == 'abc123def456'
+['ai-schedule-backend'] | where env == 'prod' and request_id == 'abc123def456'
 
 -- 最近 24h AI 超时/失败按小时分布
 ['ai-schedule-backend']
-| where event in ('ai.error', 'ai.timeout')
+| where env == 'prod' and event in ('ai.error', 'ai.timeout')
 | summarize count() by bin(_time, 1h)
 
 -- AI 成功率与耗时（SLO 口径）
 ['ai-schedule-backend']
-| where event in ('ai.response', 'ai.timeout', 'ai.error')
+| where env == 'prod' and event in ('ai.response', 'ai.timeout', 'ai.error')
 | summarize total = count(), ok = countif(event == 'ai.response'), p95 = percentile(duration_ms, 95)
 ```
 
@@ -291,6 +294,7 @@ Axiom（APL，生产首选）：
 | 语音识别报「请求过于频繁」 | `status=429`；免费模型限流为 RPM 1000 / TPM 50000 且各级别相同，触发 `Details:` 会标明具体指标；本项目另有 10/min 端点限流 |
 | 语音识别报「无法识别该音频」 | `status=400`；前端已统一转 16kHz 单声道 WAV，若仍失败查看 `asr.error` 的 `error` 字段与 `bytes`，确认音频非静音且格式为 WAV |
 | 麦克风按钮无反应 / 无权限弹窗 | 页面须为 HTTPS 或 localhost（`getUserMedia` 要求安全上下文）；浏览器已拒绝过授权时需在地址栏权限设置里重新放行 |
+| Axiom 告警邮件但生产其实正常 | 先看该事件的 `env` 字段：`dev` 表示来自本地 dev/pytest（本机 `.env.local` 也配了 Axiom 凭据，测试用例会制造失败事件），属噪音；监控查询须含 `env == "prod"`。本地 pytest 已被 `backend/tests/conftest.py` 关停直发，dev server 的日志仍会带 `env=dev` 上报 |
 
 ## 8. 已知限制
 

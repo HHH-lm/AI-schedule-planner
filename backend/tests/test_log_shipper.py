@@ -18,6 +18,9 @@ def _ship_settings(**overrides) -> Settings:
     defaults = {
         "axiom_api_token": "xat-test-token",
         "axiom_dataset": "test-dataset",
+        # conftest.py 把 LOG_SHIP_ENABLED 环境变量设为 false 以隔离本机直发，
+        # 本文件要验证直发逻辑，需显式开启（环境变量不覆盖显式传入的字段值）
+        "log_ship_enabled": True,
     }
     defaults.update(overrides)
     return Settings(**defaults)

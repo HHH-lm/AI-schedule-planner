@@ -23,6 +23,11 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
     log_format: str = "json"
+    # 日志环境标记（写入每条日志的 env 字段，供 Axiom 监控按 env == 'prod' 过滤）：
+    # 显式 APP_ENV 优先；未设时由 Vercel 自动注入的 VERCEL_ENV 推断；兜底 dev。
+    # 注意本地 .env.local 同样配了 Axiom 凭据，若不区分则 pytest/dev 噪音会混入生产数据集。
+    app_env: str | None = None
+    vercel_env: str | None = None
 
     # 用户自备 Key 模式：请求未带 provider 时才回退此值（限 openai/deepseek/local）；
     # 服务端 OPENAI/DEEPSEEK_API_KEY 仅供 golden 评测链路使用，不服务用户请求
@@ -84,6 +89,26 @@ class Settings(BaseSettings):
     axiom_dataset: str | None = None
     log_ship_enabled: bool = True
     log_ship_timeout_seconds: float = 2.0
+
+    @property
+    def log_env(self) -> str:
+        """日志 env 字段取值：显式 APP_ENV 优先，其次 VERCEL_ENV，兜底 dev。
+
+        归一化常见写法（prod/production → prod，dev/development → dev），
+        避免生产填 `production` 而监控按 `prod` 过滤导致匹配不上、监控静默失明。
+        显式 APP_ENV 取无法识别的值（如 staging）时按原值输出，保留多环境扩展余地。
+        """
+        aliases = {
+            "prod": "prod",
+            "production": "prod",
+            "preview": "preview",
+            "dev": "dev",
+            "development": "dev",
+        }
+        if self.app_env:
+            key = self.app_env.strip().lower()
+            return aliases.get(key, key)
+        return aliases.get((self.vercel_env or "").strip().lower(), "dev")
 
 
 @lru_cache

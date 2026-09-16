@@ -18,6 +18,7 @@ import contextvars
 import json
 import logging
 import sys
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
@@ -40,7 +41,15 @@ def get_request_id() -> str | None:
 
 
 class JsonFormatter(logging.Formatter):
-    """一行一个 JSON 对象，包含 time/level/logger/event 与事件字段。"""
+    """一行一个 JSON 对象，包含 time/level/logger/event 与事件字段。
+
+    static_fields 为每条日志都带的固定字段（如 env=prod），用于区分部署环境；
+    事件附加字段无法覆盖它（沿用下面的 `key not in payload` 守卫）。
+    """
+
+    def __init__(self, static_fields: Mapping[str, Any] | None = None) -> None:
+        super().__init__()
+        self._static_fields: dict[str, Any] = dict(static_fields or {})
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
@@ -52,6 +61,9 @@ class JsonFormatter(logging.Formatter):
         request_id = get_request_id()
         if request_id:
             payload["request_id"] = request_id
+        for key, value in self._static_fields.items():
+            if key not in payload:
+                payload[key] = value
         fields = getattr(record, "fields", None)
         if isinstance(fields, dict):
             for key, value in fields.items():
@@ -75,11 +87,16 @@ def _parse_level(value: str) -> int:
     return _LEVELS.get(str(value).upper(), logging.INFO)
 
 
-def setup_logging(level: str = "INFO", fmt: str = "json") -> None:
+def setup_logging(
+    level: str = "INFO",
+    fmt: str = "json",
+    static_fields: Mapping[str, Any] | None = None,
+) -> None:
     """配置根 logger（幂等）：默认 JSON Lines 输出到 stdout，fmt 支持 json/text。
 
     输出到 stdout 是 Serverless 平台的标准约定（Vercel 日志采集默认转发 stdout）；
     httpx 压到 WARNING 过滤每次请求的 INFO 噪音行。
+    static_fields 透传给 JsonFormatter（如 {"env": "prod"}）。
     """
     root = logging.getLogger()
     root.setLevel(_parse_level(level))
@@ -89,7 +106,7 @@ def setup_logging(level: str = "INFO", fmt: str = "json") -> None:
             "%(asctime)s %(levelname)s %(name)s %(message)s"
         )
     else:
-        formatter = JsonFormatter()
+        formatter = JsonFormatter(static_fields=static_fields)
     for handler in root.handlers:
         if getattr(handler, "_ai_schedule_structured", False):
             handler.setFormatter(formatter)

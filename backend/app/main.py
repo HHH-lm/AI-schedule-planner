@@ -39,7 +39,9 @@ from app.services.reminders import scan_reminders
 
 
 settings = get_settings()
-setup_logging(settings.log_level, settings.log_format)
+setup_logging(
+    settings.log_level, settings.log_format, {"env": settings.log_env}
+)
 # 配置了 Axiom 凭据时挂载日志直发 handler（未配置则零开销）
 install_shipper(settings)
 
