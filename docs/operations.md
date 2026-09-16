@@ -66,7 +66,8 @@ scan_reminders → PushPlus / 企业微信 / Server酱
 ```
 
 - Vercel Cron（Hobby 免费版每天最多 1 次）：`backend/vercel.json` 已配置每日 0 点 UTC 调用 `/api/v1/reminders/cron`，部署后可在 Vercel 项目 Cron Jobs 页面查看；请求会自动带 `Authorization: Bearer <CRON_SECRET>`；Hobby 版无法满足 5 分钟级提醒，适合日级兜底。
-- GitHub Actions（推荐，5 分钟级）：仓库提供示例 `deploy/github-actions/reminder-cron.yml`（与 `.github/workflows/reminder-cron.yml` 同源），复制到 `.github/workflows/` 后使用。注意：GitHub 对 `schedule` 触发实测降频（低活跃免费仓库 3~5 小时才跑一次，2026-09-13 运行记录），不能依赖 `*/5` 定时本身；当前方案为**每日 4 次拉起（UTC 0/6/12/18）常驻循环任务**——单次任务内每 5 分钟调用一次该端点、连续约 5 小时 48 分（GitHub job 硬上限 6 小时），与下一次拉起衔接、换班缝隙约 13 分钟。在 GitHub 仓库 Settings → Secrets 配置 `BACKEND_URL=https://<backend>.vercel.app` 与 `CRON_SECRET`（与后端环境变量相同），未配置时工作流自动跳过；单次请求失败不中断循环（瞬时故障下轮补扫），重复扫描由后端提醒去重兜底。
+- 外部定时器（推荐，5 分钟级准点，当前主用）：**cron-job.org**（免费）每 5 分钟请求该端点，不受 GitHub 调度降频影响。配置：注册后新建 Cronjob → URL 填 `https://<backend>.vercel.app/api/v1/reminders/cron` → 方法 GET → 添加 Header `Authorization: Bearer <CRON_SECRET>`（与后端环境变量相同）→ 间隔 `*/5 * * * *`。免费额度远超 288 次/天；创建后可在其 Execution history 查看每轮 HTTP 结果（200=扫描执行，401=密钥不一致，403=后端未配 `CRON_SECRET`）。
+- GitHub Actions（每日 1 次兜底）：仓库提供示例 `deploy/github-actions/reminder-cron.yml`（与 `.github/workflows/reminder-cron.yml` 同源）。**不要依赖 GitHub `schedule` 做 5 分钟级调度**——实测每次迟到 1.7~5.6 小时（2026-09-14/15，平均 3.6 小时），即便写 `0 0,6,12,18` 也会因迟到裂出数小时空档（9/14 全天 7.6 小时无扫描）。当前它每天 UTC 0 点拉起一次、内部循环 70 轮×5 分钟≈5 小时 48 分，作为外部定时器失效时的安全网。在 GitHub 仓库 Settings → Secrets 配置 `BACKEND_URL=https://<backend>.vercel.app` 与 `CRON_SECRET`，未配置时工作流自动跳过；单次请求失败不中断循环，重复扫描由后端提醒去重兜底。
 
 ### 2.4 自托管形态（备选，保留版本）
 
