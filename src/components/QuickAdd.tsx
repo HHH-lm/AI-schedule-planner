@@ -7,6 +7,7 @@ import { todayKey } from "@/lib/date";
 import { extractDeadline } from "@/lib/deadline";
 import { apiPost, API_TIMEOUT_MS } from "@/lib/api";
 import { logInfo, logWarn } from "@/lib/logger";
+import MicButton from "@/components/MicButton";
 
 export type DeadlineApplyStatus = "applied" | "pending-task" | "none";
 
@@ -181,6 +182,12 @@ export default function QuickAdd({
           />
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <MicButton
+            value={text}
+            onChange={setText}
+            onError={(message) => showFeedback(message, "warn")}
+            disabled={busy}
+          />
           <button
             type="button"
             onClick={handleGenerate}

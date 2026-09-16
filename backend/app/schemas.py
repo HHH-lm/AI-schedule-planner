@@ -124,6 +124,14 @@ class HealthResponse(BaseModel):
     timestamp: str
 
 
+class TranscribeResponse(BaseModel):
+    """语音转文字结果。上游失败时 source="none" 并用 message 说明原因（不抛异常）。"""
+
+    source: Literal["siliconflow", "none"]
+    text: str = ""
+    message: str | None = None
+
+
 class MatchTaskItem(BaseModel):
     id: str
     name: str

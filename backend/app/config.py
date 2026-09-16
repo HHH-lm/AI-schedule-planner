@@ -40,6 +40,21 @@ class Settings(BaseSettings):
     # thinking 模式下 effort 默认 high 且思考与正文共享输出预算，实测 97% 输出 token 花在思考
     deepseek_thinking: str = "disabled"
 
+    # 语音转文字（语音输入）：服务端统一 Key，前端录音后上传，后端转发到 SiliconFlow。
+    # 模型 ID 不硬编码进业务逻辑，便于按上游表现切换。
+    # 默认 TeleSpeechASR 而非 SenseVoiceSmall：2026-09-16 实测同音频交替对照，
+    # SenseVoiceSmall 延迟 0.6~31 秒剧烈波动（多次触顶 30 秒超时），
+    # TeleSpeechASR 稳定在 0.2~1.6 秒且中文识别结果相当（含「3点」→「三点」口语化还原）。
+    # 两者均免费；如需换回 SenseVoice 只改本环境变量。响应体只有 text，无时长/分段。
+    siliconflow_api_key: str | None = None
+    siliconflow_base_url: str = "https://api.siliconflow.cn/v1"
+    siliconflow_asr_model: str = "TeleAI/TeleSpeechASR"
+    # 上传音频 + 识别的总预算：比解析类端点宽松（前端默认 15s 不含上传体积）
+    asr_timeout_ms: int = 30000
+    # 录音上限：前端按 16kHz 单声道 WAV 上传，60s 约 1.9MB，同时守住 Vercel 请求体上限
+    max_audio_seconds: int = 60
+    max_audio_bytes: int = 8 * 1024 * 1024
+
     max_parse_input_length: int = 2000
     max_schedules: int = 20
     # thinking 模式下思考与正文共享该输出预算：过小会让思考耗尽预算、正文为空（finish_reason=length）

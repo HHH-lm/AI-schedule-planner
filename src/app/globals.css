@@ -656,6 +656,58 @@ body {
   transform: scale(0.95);
 }
 
+/* 录音中：红色麦克风 + 呼吸光环，按钮下方显示计时（F-042 语音输入） */
+.mic-btn-recording {
+  position: relative;
+  color: #b3261e;
+}
+
+.mic-btn-recording:hover {
+  background: rgba(190, 40, 60, 0.08);
+  color: #b3261e;
+}
+
+.mic-btn-recording::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  animation: mic-pulse 1.4s ease-out infinite;
+  pointer-events: none;
+}
+
+@keyframes mic-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(190, 40, 60, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(190, 40, 60, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(190, 40, 60, 0);
+  }
+}
+
+/* 计时绝对定位在按钮下方，不挤压输入框布局 */
+.mic-elapsed {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: #b3261e;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mic-btn-recording::after {
+    animation: none;
+  }
+}
+
 .chip-btn {
   display: inline-flex;
   align-items: center;

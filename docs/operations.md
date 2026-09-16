@@ -93,6 +93,36 @@ curl -s -H "Authorization: Bearer <CRON_SECRET>" https://<backend>.vercel.app/ap
 - 创建带微信提醒的时间块，用 `curl` 触发 cron 端点或等待定时器，确认推送成功
 - Serverless 冷启动首请求可能较慢，属正常现象
 
+### 2.6 语音识别（SiliconFlow）环境变量
+
+语音功能调用的语音服务由**后端**发起，因此变量只配在**后端项目** `ai-schedule-backend`（配到前端项目 `ai-schedule-web` 不会生效）。
+
+| 变量 | 必填 | 说明 |
+|---|---|---|
+| `SILICONFLOW_API_KEY` | 是 | 硅基流动 API Key（免费注册 https://cloud.siliconflow.cn）。未配置时 `/api/v1/transcribe` 返回 503 并提示该变量名 |
+| `SILICONFLOW_ASR_MODEL` | 否 | 默认 `TeleAI/TeleSpeechASR`；实测该模型比 `FunAudioLLM/SenseVoiceSmall` 稳定得多（后者延迟 0.6~31 秒波动常超时） |
+| `SILICONFLOW_BASE_URL` | 否 | 默认 `https://api.siliconflow.cn/v1` |
+| `ASR_TIMEOUT_MS` | 否 | 后端等待上游识别上限，默认 30000。若调大需同步调大前端 `src/lib/api.ts` 的 `UPLOAD_TIMEOUT_MS`（默认 45 秒） |
+
+配置方式（CLI，需先 `vercel login` 且项目已链接）：
+
+```bash
+cd backend
+
+# 不加 --value 会交互式提示输入值：不回显、不写入 shell 历史
+vercel env add SILICONFLOW_API_KEY production --sensitive
+# （提示时粘贴 Key 后回车）
+
+printf 'TeleAI/TeleSpeechASR' | vercel env add SILICONFLOW_ASR_MODEL production
+
+vercel env ls          # 确认已添加
+```
+
+- **不要把 Key 直接写在命令行里**（`--value sk-...` 会留在 shell 历史中）；交互式输入或管道读取都更安全
+- **改环境变量后必须重新部署才生效**（Vercel 只在部署时注入变量，不会热更新运行中的实例）
+- 也可在 Vercel 控制台 Settings → Environment Variables 配置，效果相同
+- 验收：`curl -s -X POST https://ai-schedule-backend.vercel.app/api/v1/transcribe` 应返回 422（缺 file，说明路由已部署）而非 404；带音频文件请求应返回识别文本
+
 ## 3. 健康检查与监控
 
 健康检查端点：
@@ -157,6 +187,8 @@ FastAPI 后端默认输出 **JSON Lines 结构化日志**（每行一个 JSON �
 | `plan_v2.start` / `plan_v2.result` | INFO（异常 WARNING/ERROR） | tasks, blocks, unassigned, source | `/api/v1/plan-v2` 开始 / 结果 |
 | `breakdown.start` / `breakdown.result` | INFO（异常 ERROR） | plan_chars, tasks, source | `/api/v1/breakdown` 结果 |
 | `match_task.start` / `match_task.result` / `match_task.error` | INFO / ERROR | tasks, matched, source | `/api/v1/match-task` |
+| `asr.request` / `asr.response` | INFO | model, bytes, content_type, duration_ms, text_chars | `/api/v1/transcribe` 转发请求 / 成功（只记长度不记识别文本与音频） |
+| `asr.error` | ERROR | model, duration_ms, status, error | 语音识别上游失败（含 401 裸字符串错误体、429 限流、连接失败） |
 | `push.request` / `push.success` / `push.failure` | INFO / ERROR | channel, status, reason, code | 微信推送（含 PushPlus 业务错误码） |
 | `reminder.scan.start` / `reminder.scan.due` / `reminder.scan.done` | INFO | checked, due, pushed, skipped, errors | 每次提醒扫描 |
 | `reminder.push.failed` / `reminder.push.skipped` | ERROR / INFO | block_id, error | 单条提醒推送失败 / 去重跳过 |
@@ -252,6 +284,12 @@ Axiom（APL，生产首选）：
 | 多人数据串用 | 检查是否每位用户独立登录；RLS 按 `auth.uid()` 隔离，禁止共享账号 |
 | AI 解析失败或慢 | 先查日志中 `ai.timeout` / `ai.error` / `ai.response`（含 `duration_ms`）；再检查服务商 Key、余额与网络；接口超时（默认 15 秒）或失败时前端显示明确错误，未配置 Key 时才回退后端本地规则 |
 | 微信提醒未收到 | 确认定时器已触发 `GET /api/v1/reminders/cron`（Serverless）或后端常驻运行（自托管）、`/api/v1/reminders/status` 返回 `enabled: true`；查日志 `push.failure` / `reminder.push.failed` 看原因与状态码；检查微信通道 webhook/token 是否有效、手机端通知权限；推送失败会自动重试 |
+| 语音按钮提示「语音输入暂不可用」 | 后端未配 `SILICONFLOW_API_KEY`。本地：写入 `.env.local` 后**必须重启后端**（配置有 `@lru_cache`，`--reload` 不监听 env 文件）。Vercel：在**后端项目** `ai-schedule-backend` 加变量后**必须重新部署**才生效（环境变量只注入新部署） |
+| 语音识别报「API Key 无效」 | 日志 `asr.error` 的 `status=401`；Key 复制有误或已失效，重新生成；注意 401 响应体是裸字符串 `"Invalid token"` 而非 JSON，已在 `extract_error_detail` 兼容 |
+| 语音识别报「拒绝访问（可能需实名认证）」 | `status=403`；SiliconFlow 免费模型可能要求账号完成实名认证（个人认证走支付宝人脸识别，无需绑卡） |
+| 语音识别报「请求过于频繁」 | `status=429`；免费模型限流为 RPM 1000 / TPM 50000 且各级别相同，触发 `Details:` 会标明具体指标；本项目另有 10/min 端点限流 |
+| 语音识别报「无法识别该音频」 | `status=400`；前端已统一转 16kHz 单声道 WAV，若仍失败查看 `asr.error` 的 `error` 字段与 `bytes`，确认音频非静音且格式为 WAV |
+| 麦克风按钮无反应 / 无权限弹窗 | 页面须为 HTTPS 或 localhost（`getUserMedia` 要求安全上下文）；浏览器已拒绝过授权时需在地址栏权限设置里重新放行 |
 
 ## 8. 已知限制
 
@@ -260,6 +298,9 @@ Axiom（APL，生产首选）：
 - 本地模式（未启动 FastAPI 后端）没有后端日志，故障排查依赖浏览器控制台与 `.backend.log`；后端运行时的结构化日志见第 4 节
 - AI 解析会把用户输入文本发送到 OpenAI / DeepSeek 服务端，涉及隐私的内容请谨慎输入；Key 仅保存在 FastAPI 后端环境变量
 - AI 解析请求默认 15 秒超时，可通过 `AI_TIMEOUT_MS` 调整；复杂长句可能需要更长响应时间，超时后请重试或简化输入
+- 语音输入会把录音上传到后端并转发给 SiliconFlow 识别（服务端统一 Key，用户无需配置）；默认模型 `TeleAI/TeleSpeechASR`（实测比 SenseVoiceSmall 稳定得多，后者延迟 0.6~31 秒波动），可用 `SILICONFLOW_ASR_MODEL` 切换；`/api/v1/transcribe` 与其他端点一致**无入站鉴权**，靠 10/min 限流 + 60 秒/8MB 上限兜住免费额度滥用；SenseVoice 为免费模型，被滥用损失的是配额而非费用
+- 后端等待上游识别默认 30 秒（`ASR_TIMEOUT_MS`），前端上传超时为 45 秒（`src/lib/api.ts` 的 `UPLOAD_TIMEOUT_MS`）——前端刻意留余量，使后端的「服务繁忙/录音过大」等具体提示能先返回而不是被笼统超时盖掉；调整后端超时需同步调整前端值
+- 语音识别单次上限 60 秒；前端统一在浏览器端转 16kHz 单声道 WAV 再上传（30 秒约 0.92MB），因此不依赖后端转码，也不受浏览器录音格式差异影响
 - 定时提醒只扫描已登录并同步到 Supabase 的时间块；未登录或本地模式下的时间块不会触发微信提醒
 - 微信通道需要用户自行申请：企业微信机器人、PushPlus 或 Server酱任一即可，手机端需开启对应应用通知
 - Serverless 模式不常驻 APScheduler：`ENABLE_SCHEDULER=false`，提醒由外部定时器触发；Hobby 版 Vercel Cron 每天最多 1 次，需要 5 分钟级提醒请使用 GitHub Actions
@@ -282,10 +323,11 @@ Axiom（APL，生产首选）：
 | GET /api/v1/reminders/status | 30/min |
 | POST /api/v1/reminders/run | 10/min |
 | GET /api/v1/reminders/cron | 10/min |
+| POST /api/v1/transcribe | 10/min |
 
 - `/api/v1/health` 等未装饰路由仅受全局共享桶兜底（`main.py` 中间件实例，60/min、每路径全站共享）；已装饰路由同时消耗 per-IP 桶与全局桶。
 - `get_remote_address` 不解析 X-Forwarded-For：经代理/CDN 转发时可能按代理或边缘节点 IP 计数，多用户共享同一 per-IP 桶；如需按真实客户端 IP 计数需更换 key 函数。
-- 回归测试：`backend/tests/test_rate_limit.py`（parse / memories/analyze / memories/context / breakdown 四条参数化用例，第 N+1 次请求断言 429）。
+- 回归测试：`backend/tests/test_rate_limit.py`（parse / memories/analyze / memories/context / breakdown 四条参数化用例，第 N+1 次请求断言 429）、`backend/tests/test_transcribe.py`（transcribe 同款断言）。
 
 ## 9. 自托管形态（备选，保留版本）
 

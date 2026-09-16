@@ -23,7 +23,17 @@ from app.logging_setup import (
     set_request_id,
     setup_logging,
 )
-from app.routers import breakdown, conflicts, health, match_task, memories, parse, plan_v2, reminders
+from app.routers import (
+    breakdown,
+    conflicts,
+    health,
+    match_task,
+    memories,
+    parse,
+    plan_v2,
+    reminders,
+    transcribe,
+)
 from app.services.push import push_channel_ready
 from app.services.reminders import scan_reminders
 
@@ -146,5 +156,6 @@ for router in (
     conflicts.router,
     reminders.router,
     match_task.router,
+    transcribe.router,
 ):
     app.include_router(router, prefix="/api/v1")

@@ -54,6 +54,7 @@ import {
 import { normalizeQuadrant, QUADRANT_META } from "@/lib/priorities";
 import { orderTasks } from "@/lib/taskOrder";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import MicButton from "@/components/MicButton";
 import RestoreWeeksModal from "@/components/RestoreWeeksModal";
 
 const EXTEND_THRESHOLD = 480;
@@ -712,6 +713,12 @@ export default function TaskBoard({
             />
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <MicButton
+              value={macroText}
+              onChange={setMacroText}
+              onError={(message) => showFeedback(message, "warn")}
+              disabled={breakdownBusy}
+            />
             <button
               type="button"
               onClick={handleMacro}
