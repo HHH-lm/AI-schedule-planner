@@ -786,7 +786,8 @@ def schedule_tasks(
     max_daily_workload: int = 480,
     now_minutes: int | None = None,
     time_preference: str = "balanced",
-) -> tuple[list[PlanV2Block], list[str], list[Any]]:
+    deadline_window_days: int | None = None,
+) -> tuple[list[PlanV2Block], list[str], list[str], list[Any]]:
     """调度引擎主入口 — 将任务分配到最佳空闲时段。
 
     流程：
@@ -810,14 +811,23 @@ def schedule_tasks(
         max_daily_workload: 每日最大工作量（分钟，默认 480=8h）
         now_minutes: 当前本地时间（当天 0 点起分钟），规划范围首日不得早于该时刻
         time_preference: 时段偏好评分预设（balanced/early_bird/night_owl）
+        deadline_window_days: DDL 窗口（天）。可解析的截止日晚于规划范围首日+N 天的
+            任务暂缓排期（进 deferred，不生成块）；无截止日期与已逾期任务不受影响；
+            None=不限制，保持既有行为
 
     Returns:
-        (blocks, unassigned, validation_issues)
+        (blocks, unassigned, deferred, validation_issues)
     """
     range_start, range_end = planning_range
     memories = memories or []
     understandings = understandings or {}
     constraint_filters = constraint_filters or []
+    # DDL 窗口上界：规划范围首日 + N 天；截止当天仍可排（与既有截止硬约束同语义）
+    deadline_window_limit = (
+        range_start + timedelta(days=deadline_window_days)
+        if deadline_window_days is not None
+        else None
+    )
 
     # 1. 解析优先级，按高→低排序
     resolved_tasks: list[tuple[PlanV2Task, str]] = []
@@ -844,11 +854,18 @@ def schedule_tasks(
     # 3. 逐任务分配
     blocks: list[PlanV2Block] = []
     unassigned: list[str] = []
+    deferred: list[str] = []
     occupied = [b.model_copy() for b in existing_schedule]
 
     scorer = SlotScorer(existing_schedule, blocks, weights, time_preference)
 
     for task, priority in resolved_tasks:
+        # DDL 窗口：可解析截止日超出窗口上界的任务暂缓，不参与分块/评分；
+        # 无截止日期与已逾期任务不受影响（逾期走下方截止硬约束）
+        task_deadline = parse_local_date(task.deadline) if task.deadline else None
+        if deadline_window_limit is not None and task_deadline is not None and task_deadline > deadline_window_limit:
+            deferred.append(task.title)
+            continue
         # 工作方式分块：时长超过块长时拆成多块 + 块间休息
         if (
             work_style
@@ -866,7 +883,7 @@ def schedule_tasks(
 
         # 截止日期硬约束：块开始日期不得晚于截止日（截止当天可排）；
         # 无合规时段时任务进入 unassigned，宁可缺排也不违规
-        deadline_limit = parse_local_date(task.deadline) if task.deadline else None
+        deadline_limit = task_deadline
         if deadline_limit is not None:
             available = [
                 slot
@@ -938,4 +955,4 @@ def schedule_tasks(
     # 4. 校验
     result = validate_plan_v2(blocks, tasks, existing_schedule, max_daily_workload)
 
-    return blocks, unassigned, result.issues
+    return blocks, unassigned, deferred, result.issues

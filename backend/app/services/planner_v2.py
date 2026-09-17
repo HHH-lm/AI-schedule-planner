@@ -328,6 +328,7 @@ def _fallback_plan_v2(
     now_minutes: int | None = None,
     weights: PlanningWeights | None = None,
     time_preference: str = "balanced",
+    deadline_window_days: int | None = None,
 ) -> PlanV2Response:
     """本地 fallback 规划器 — 直接使用 SchedulingEngine。"""
     constraint_filters = parse_constraint_filters((constraints or []) + _exclusion_memories(memories))
@@ -340,18 +341,20 @@ def _fallback_plan_v2(
         work_style=work_style,
         work_style_source="fallback",
     )
-    blocks, unassigned, _issues = schedule_tasks(
+    blocks, unassigned, deferred, _issues = schedule_tasks(
         tasks, existing, (range_start, range_end), memories,
         constraint_filters=constraint_filters,
         work_style=work_style,
         now_minutes=now_minutes,
         weights=weights,
         time_preference=time_preference,
+        deadline_window_days=deadline_window_days,
     )
     return PlanV2Response(
         source="local",
         blocks=blocks,
         unassigned=unassigned,
+        deferred=deferred,
     )
 
 
@@ -404,6 +407,7 @@ async def plan_v2_schedule(
             now_minutes=request.now_minutes,
             weights=request.weights,
             time_preference=request.time_preference,
+            deadline_window_days=request.deadline_window_days,
         )
         result.message = resolved_message
         _log_plan_v2_result(
@@ -489,7 +493,7 @@ async def plan_v2_schedule(
             work_style_source=work_style_source,
         )
         understandings_dict = {u["title"]: u for u in understandings}
-        blocks, unassigned, _issues = schedule_tasks(
+        blocks, unassigned, deferred, _issues = schedule_tasks(
             request.tasks,
             request.existing_schedule,
             (range_start, range_end),
@@ -500,6 +504,7 @@ async def plan_v2_schedule(
             now_minutes=request.now_minutes,
             weights=request.weights,
             time_preference=request.time_preference,
+            deadline_window_days=request.deadline_window_days,
         )
 
         # ── 步骤 3: LLM 解释层（可选） ──
@@ -528,6 +533,7 @@ async def plan_v2_schedule(
             source=resolved_provider,
             blocks=blocks,
             unassigned=unassigned,
+            deferred=deferred,
             message=explanation,
         )
 
@@ -545,7 +551,7 @@ async def plan_v2_schedule(
             work_style=work_style,
             work_style_source="fallback",
         )
-        blocks, unassigned, _issues = schedule_tasks(
+        blocks, unassigned, deferred, _issues = schedule_tasks(
             request.tasks,
             request.existing_schedule,
             (range_start, range_end),
@@ -555,6 +561,7 @@ async def plan_v2_schedule(
             now_minutes=request.now_minutes,
             weights=request.weights,
             time_preference=request.time_preference,
+            deadline_window_days=request.deadline_window_days,
         )
         _log_plan_v2_result(
             started, source="local", blocks=len(blocks),
@@ -565,6 +572,7 @@ async def plan_v2_schedule(
             source="local",
             blocks=blocks,
             unassigned=unassigned,
+            deferred=deferred,
             message=(
                 "无法连接 AI 服务，请检查网络/代理；已使用本地调度引擎"
                 if connect_failed
@@ -584,7 +592,7 @@ async def plan_v2_schedule(
                 work_style=work_style,
                 work_style_source="fallback",
             )
-            blocks, unassigned, _issues = schedule_tasks(
+            blocks, unassigned, deferred, _issues = schedule_tasks(
                 request.tasks,
                 request.existing_schedule,
                 (range_start, range_end),
@@ -594,6 +602,7 @@ async def plan_v2_schedule(
                 now_minutes=request.now_minutes,
                 weights=request.weights,
                 time_preference=request.time_preference,
+                deadline_window_days=request.deadline_window_days,
             )
             _log_plan_v2_result(
                 started, source="local", blocks=len(blocks),
@@ -604,6 +613,7 @@ async def plan_v2_schedule(
                 source="local",
                 blocks=blocks,
                 unassigned=unassigned,
+                deferred=deferred,
                 message=f"AI 规划失败：{error}，已使用本地调度引擎",
             )
         except Exception as fallback_error:

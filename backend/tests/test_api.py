@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app.config import Settings, get_settings
@@ -150,6 +152,75 @@ def test_plan_v2_rejects_weights_out_of_range() -> None:
             "planning_range": {"start": "2026-08-03", "end": "2026-08-03"},
             "provider": "local",
             "weights": {"memory": 1.5},
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_plan_v2_accepts_deadline_window_and_defers_far_tasks() -> None:
+    """API 层应接受 DDL 窗口并在响应中返回 deferred 列表。"""
+    response = client.post(
+        "/api/v1/plan-v2",
+        json={
+            "tasks": [
+                {"title": "远期任务", "duration": 60, "deadline": "2026-09-10"},
+                {"title": "近期任务", "duration": 60, "deadline": "2026-08-03"},
+            ],
+            "planning_range": {"start": "2026-08-03", "end": "2026-08-03"},
+            "provider": "local",
+            "deadline_window_days": 3,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"] == "local"
+    assert body["deferred"] == ["远期任务"]
+    assert [block["title"] for block in body["blocks"]] == ["近期任务"]
+
+
+def test_plan_v2_rejects_deadline_window_out_of_range() -> None:
+    """DDL 窗口超出 1-365 范围应返回 422。"""
+    response = client.post(
+        "/api/v1/plan-v2",
+        json={
+            "tasks": [{"title": "写代码", "duration": 60}],
+            "planning_range": {"start": "2026-08-03", "end": "2026-08-03"},
+            "provider": "local",
+            "deadline_window_days": 366,
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("window_days", [1, 365, None, 1.0, "3"])
+def test_plan_v2_accepts_valid_deadline_window_values(window_days) -> None:
+    """可空非严格整数：接受边界、null，以及可转换的整数值。"""
+    payload = {
+        "tasks": [{"title": "写代码", "duration": 60}],
+        "planning_range": {"start": "2026-08-03", "end": "2026-08-03"},
+        "provider": "local",
+        "deadline_window_days": window_days,
+    }
+    response = client.post("/api/v1/plan-v2", json=payload)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["deferred"] == []
+    assert body["unassigned"] == []
+    assert [block["title"] for block in body["blocks"]] == ["写代码"]
+
+
+@pytest.mark.parametrize(
+    "window_days", [0, 366, -1, 1.5, "three"]
+)
+def test_plan_v2_rejects_invalid_deadline_window_values(window_days) -> None:
+    """非法窗口值：0/366/负数/小数/非数字均应返回 422。"""
+    response = client.post(
+        "/api/v1/plan-v2",
+        json={
+            "tasks": [{"title": "写代码", "duration": 60}],
+            "planning_range": {"start": "2026-08-03", "end": "2026-08-03"},
+            "provider": "local",
+            "deadline_window_days": window_days,
         },
     )
     assert response.status_code == 422

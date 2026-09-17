@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Clock, BookMarked, Bot, Brain, SlidersHorizontal, X } from "lucide-react";
+import { Clock, BookMarked, Bot, Brain, CalendarClock, SlidersHorizontal, X } from "lucide-react";
 import { useModalLayer } from "@/hooks/useModalLayer";
 import { parseObsidianUrl } from "@/lib/obsidian";
 import { aiSettingError } from "@/lib/settings";
@@ -28,6 +28,10 @@ import {
   TIME_PREFERENCE_PRESETS,
   normalizeTimePreference,
 } from "@/lib/timePreference";
+import {
+  DEADLINE_WINDOW_PRESETS,
+  normalizeDeadlineWindowDays,
+} from "@/lib/settings";
 
 interface Props {
   obsidianVault: string;
@@ -38,6 +42,7 @@ interface Props {
   planningStyle?: PlanningStyleId;
   planningFocus?: PlanningDimensionKey[];
   timePreference?: TimePreference;
+  deadlineWindowDays?: number;
   onSave: (settings: {
     obsidianVault: string;
     aiProvider: AiProviderSetting;
@@ -47,6 +52,7 @@ interface Props {
     planningStyle?: PlanningStyleId;
     planningFocus?: PlanningDimensionKey[];
     timePreference: TimePreference;
+    deadlineWindowDays?: number;
   }) => void;
   onClose: () => void;
   onOpenMemory?: () => void;
@@ -61,6 +67,7 @@ export default function SettingsModal({
   planningStyle: initialStyle,
   planningFocus: initialFocus,
   timePreference: initialTimePreference,
+  deadlineWindowDays: initialDeadlineWindowDays,
   onSave,
   onClose,
   onOpenMemory,
@@ -91,6 +98,9 @@ export default function SettingsModal({
   const [timePreference, setTimePreference] = useState<TimePreference>(() =>
     normalizeTimePreference(initialTimePreference ?? DEFAULT_TIME_PREFERENCE)
   );
+  const [deadlineWindowDays, setDeadlineWindowDays] = useState<number | undefined>(() =>
+    normalizeDeadlineWindowDays(initialDeadlineWindowDays)
+  );
   // 红色提示只在「未填 Key 且点击保存」后出现；改选服务商或编辑 Key 即消失，再次保存时重新校验
   const [saveAttempted, setSaveAttempted] = useState(false);
   const keyError = saveAttempted
@@ -120,6 +130,7 @@ export default function SettingsModal({
       planningStyle: styleId,
       planningFocus: focus.length > 0 ? focus : undefined,
       timePreference,
+      deadlineWindowDays,
     });
     onClose();
   };
@@ -507,6 +518,62 @@ export default function SettingsModal({
                     <span className="mt-1 block text-xs leading-4 text-ink-muted-48">
                       {preset.description}
                     </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <hr className="border-t border-[var(--border-subtle)]" />
+
+          <div>
+            <div className="field-hint">
+              <CalendarClock size={13} />
+              <span>截止日期策略</span>
+            </div>
+            <p className="text-xs text-ink-muted-48 mb-3">
+              适合习惯在 DDL 前集中完成的人：截止日期超过今天起 N 天的子任务暂缓；没有截止日期的照常排期。1 天包含今天和明天。临近截止日期后需再次点击 AI 规划，已有日程不变。
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setDeadlineWindowDays(undefined)}
+                aria-pressed={deadlineWindowDays === undefined}
+                className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                  deadlineWindowDays === undefined ? "shadow-sm" : ""
+                }`}
+                style={{
+                  borderColor:
+                    deadlineWindowDays === undefined
+                      ? "var(--primary)"
+                      : "var(--hairline)",
+                  backgroundColor:
+                    deadlineWindowDays === undefined
+                      ? "color-mix(in srgb, var(--primary) 6%, transparent)"
+                      : "transparent",
+                }}
+              >
+                不限制
+              </button>
+              {DEADLINE_WINDOW_PRESETS.map((days) => {
+                const selected = deadlineWindowDays === days;
+                return (
+                  <button
+                    key={days}
+                    type="button"
+                    onClick={() => setDeadlineWindowDays(days)}
+                    aria-pressed={selected}
+                    className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                      selected ? "shadow-sm" : ""
+                    }`}
+                    style={{
+                      borderColor: selected ? "var(--primary)" : "var(--hairline)",
+                      backgroundColor: selected
+                        ? "color-mix(in srgb, var(--primary) 6%, transparent)"
+                        : "transparent",
+                    }}
+                  >
+                    只排 {days} 天内
                   </button>
                 );
               })}

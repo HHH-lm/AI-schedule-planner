@@ -322,6 +322,10 @@ class PlanV2Request(BaseModel):
         default="balanced",
         description="时段偏好评分预设：balanced=均衡（默认节奏），early_bird=早起型，night_owl=夜猫型",
     )
+    deadline_window_days: int | None = Field(
+        default=None, ge=1, le=365,
+        description="DDL 窗口（天）：截止日晚于规划范围首日+N 天的子任务暂缓排期；None=不限制",
+    )
     provider: Provider | None = None
     api_key: str | None = Field(
         default=None, max_length=200,
@@ -352,4 +356,5 @@ class PlanV2Response(BaseModel):
     source: Literal["openai", "deepseek", "none", "local"]
     blocks: list[PlanV2Block]
     unassigned: list[str] = Field(default_factory=list)
+    deferred: list[str] = Field(default_factory=list, description="截止日期超出 DDL 窗口而暂缓排期的任务标题")
     message: str | None = None

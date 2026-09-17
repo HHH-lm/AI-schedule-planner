@@ -320,13 +320,13 @@ def test_schedule_tasks_custom_weights_change_placement() -> None:
         "notes": "",
     }
 
-    blocks_default, _, _ = schedule_tasks(
+    blocks_default, _, _deferred, _ = schedule_tasks(
         tasks,
         existing,
         (date(2026, 8, 3), date(2026, 8, 3)),
         understandings={"写代码": understanding},
     )
-    blocks_conflict, _, _ = schedule_tasks(
+    blocks_conflict, _, _deferred, _ = schedule_tasks(
         tasks,
         existing,
         (date(2026, 8, 3), date(2026, 8, 3)),
@@ -355,7 +355,7 @@ def test_schedule_tasks_custom_weights_change_placement() -> None:
 def test_schedule_tasks_simple() -> None:
     """一个任务一个空闲时段。"""
     tasks = [PlanV2Task(title="写代码", duration=60)]
-    blocks, unassigned, _issues = schedule_tasks(
+    blocks, unassigned, _deferred, _issues = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3))
     )
     assert len(blocks) == 1
@@ -370,7 +370,7 @@ def test_schedule_tasks_multi_day() -> None:
         PlanV2Task(title="学习", duration=60),
         PlanV2Task(title="健身", duration=60),
     ]
-    blocks, unassigned, _issues = schedule_tasks(
+    blocks, unassigned, _deferred, _issues = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 5))
     )
     assert len(blocks) == 3
@@ -383,7 +383,7 @@ def test_schedule_tasks_full_day() -> None:
     existing = [
         ExistingBlock(date="2026-08-03", start=0, end=24 * 60, status="scheduled"),
     ]
-    blocks, unassigned, _issues = schedule_tasks(
+    blocks, unassigned, _deferred, _issues = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3))
     )
     assert len(blocks) == 0
@@ -396,7 +396,7 @@ def test_schedule_tasks_night_slot_available() -> None:
     existing = [
         ExistingBlock(date="2026-08-03", start=0, end=23 * 60, status="scheduled"),
     ]
-    blocks, unassigned, _issues = schedule_tasks(
+    blocks, unassigned, _deferred, _issues = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3))
     )
     assert len(blocks) == 1
@@ -410,7 +410,7 @@ def test_schedule_tasks_avoids_existing() -> None:
     existing = [
         ExistingBlock(date="2026-08-03", start=9 * 60, end=10 * 60, status="scheduled"),
     ]
-    blocks, unassigned, _issues = schedule_tasks(
+    blocks, unassigned, _deferred, _issues = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3))
     )
     assert len(blocks) == 1
@@ -425,7 +425,7 @@ def test_schedule_tasks_memory_influences_placement() -> None:
     existing = [
         ExistingBlock(date="2026-08-03", start=14 * 60, end=15 * 60, status="scheduled"),
     ]
-    blocks, unassigned, _issues = schedule_tasks(
+    blocks, unassigned, _deferred, _issues = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         memories=["上午更适合深度工作"],
     )
@@ -440,7 +440,7 @@ def test_schedule_tasks_memory_afternoon() -> None:
     existing = [
         ExistingBlock(date="2026-08-03", start=9 * 60, end=10 * 60, status="scheduled"),
     ]
-    blocks, unassigned, _issues = schedule_tasks(
+    blocks, unassigned, _deferred, _issues = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         understandings={"写报告": {"title": "写报告", "preferred_time": "下午", "focus_level": "flexible", "notes": ""}},
     )
@@ -455,7 +455,7 @@ def test_schedule_tasks_respects_priority_order() -> None:
         PlanV2Task(title="低优先级任务", duration=120, priority="low"),
         PlanV2Task(title="高优先级任务", duration=60, priority="high"),
     ]
-    blocks, unassigned, _issues = schedule_tasks(
+    blocks, unassigned, _deferred, _issues = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3))
     )
     assert len(blocks) == 2
@@ -472,11 +472,11 @@ def test_schedule_tasks_memory_morning_vs_none() -> None:
     ]
 
     # 无记忆 → 任务可能排在任何空闲时段
-    blocks_no_mem, _, _ = schedule_tasks(
+    blocks_no_mem, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
     )
     # 有上午偏好记忆 → 应优先安排在上午空闲时段
-    blocks_mem, _, _ = schedule_tasks(
+    blocks_mem, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         memories=["上午更适合深度工作，请将重要任务安排在上午"],
     )
@@ -495,12 +495,12 @@ def test_schedule_tasks_memory_changes_placement() -> None:
     ]
 
     # 记忆 A：上午偏好 → 应排在没有冲突的上午时段 (10:00-12:00)
-    blocks_am, _, _ = schedule_tasks(
+    blocks_am, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         memories=["上午头脑最清醒，适合写文章，请安排在上午"],
     )
     # 记忆 B：下午偏好 → 应排在没有冲突的下午时段
-    blocks_pm, _, _ = schedule_tasks(
+    blocks_pm, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         memories=["下午思路开阔，适合写文章，请安排在下午"],
         constraint_filters=parse_constraint_filters(["避开上午"]),
@@ -524,7 +524,7 @@ def test_schedule_tasks_memory_evening_with_full_morning() -> None:
         ExistingBlock(date="2026-08-03", start=14 * 60, end=15 * 60, status="scheduled"),
     ]
 
-    blocks, _, _ = schedule_tasks(
+    blocks, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         memories=["晚上比较安静，适合写文章，请安排在晚上"],
     )
@@ -544,7 +544,7 @@ def test_schedule_tasks_constraints_affect_placement() -> None:
 
     # 无记忆约束 → 任何空闲时段都可
     # 有"早上运动"记忆 → 应排到早上
-    blocks, _, _ = schedule_tasks(
+    blocks, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         memories=["早上运动效果最好，请安排在早上"],
     )
@@ -613,7 +613,7 @@ def test_schedule_tasks_understanding_prefers_morning() -> None:
     understandings = {
         "写报告": {"title": "写报告", "preferred_time": "上午", "focus_level": "flexible", "notes": ""},
     }
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         understandings=understandings,
     )
@@ -631,7 +631,7 @@ def test_schedule_tasks_understanding_prefers_afternoon() -> None:
     understandings = {
         "写代码": {"title": "写代码", "preferred_time": "下午", "focus_level": "flexible", "notes": ""},
     }
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         understandings=understandings,
     )
@@ -697,7 +697,7 @@ def test_schedule_tasks_memory_exclusion_blocks_before_nine() -> None:
     """记忆"9点之前不安排任何任务"解析为约束后，任务不得排到 9 点前。"""
     tasks = [PlanV2Task(title="写代码", duration=120)]
     existing: list[ExistingBlock] = []
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         memories=["早上9点之前不安排任何任务"],
         constraint_filters=parse_constraint_filters(
@@ -716,7 +716,7 @@ def test_schedule_tasks_constraint_excludes_weekday() -> None:
     tasks = [PlanV2Task(title="写代码", duration=60)]
     existing: list[ExistingBlock] = []
     # 规划范围 2026-08-03（周一）至 2026-08-07（周五）
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 7)),
         constraint_filters=parse_constraint_filters(["不要安排在周三"]),
     )
@@ -736,12 +736,12 @@ def test_schedule_tasks_understanding_changes_placement() -> None:
     ]
 
     # understanding A: preferred_time=上午
-    blocks_am, _, _ = schedule_tasks(
+    blocks_am, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         understandings={"写文章": {"title": "写文章", "preferred_time": "上午", "focus_level": "flexible", "notes": ""}},
     )
     # understanding B: preferred_time=下午（阻塞上午时段，迫使任务排到下午）
-    blocks_pm, _, _ = schedule_tasks(
+    blocks_pm, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)),
         understandings={"写文章": {"title": "写文章", "preferred_time": "下午", "focus_level": "flexible", "notes": ""}},
         constraint_filters=parse_constraint_filters(["避开上午"]),
@@ -782,7 +782,7 @@ def test_constraint_priority_over_memory() -> None:
         ExistingBlock(date="2026-08-05", start=16 * 60, end=17 * 60, status="scheduled"),
     ]
     # Memory 偏好晚上，但 Constraint 禁止周三晚上
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 5), date(2026, 8, 5)),
         memories=["晚上适合运动，晚上运动效果最好"],
         constraint_filters=parse_constraint_filters(["周三晚上不能运动"]),
@@ -820,7 +820,7 @@ def test_schedule_tasks_without_understanding_still_works() -> None:
     Understanding 是增强信息，不应成为系统单点故障。"""
     tasks = [PlanV2Task(title="写代码", duration=60)]
     # 不传 understandings
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
     )
     assert len(blocks) == 1
@@ -847,7 +847,7 @@ def test_memory_negative_preference_overrides_default_morning_boost() -> None:
     existing = [
         ExistingBlock(date="2026-08-14", start=9 * 60, end=10 * 60, status="scheduled"),
     ]
-    blocks, _, _ = schedule_tasks(
+    blocks, _, _deferred, _ = schedule_tasks(
         [task], existing, (date(2026, 8, 14), date(2026, 8, 14)),
         understandings={task.title: understanding},
     )
@@ -866,7 +866,7 @@ def test_memory_morning_preference_does_not_override_fixed_meeting() -> None:
     existing = [
         ExistingBlock(date="2026-08-18", start=9 * 60, end=11 * 60, status="scheduled"),
     ]
-    blocks, _, _ = schedule_tasks(
+    blocks, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 16), date(2026, 8, 22)),
         memories=["上午适合深度工作"],
     )
@@ -946,7 +946,7 @@ def test_schedule_tasks_time_after_on_full_day_slot() -> None:
     现在约束应在候选位置粒度校验，任务应排到 14:00 及之后。
     """
     tasks = [PlanV2Task(title="写周报", duration=60, priority="auto")]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks,
         [],
         (date(2026, 8, 16), date(2026, 8, 29)),
@@ -963,7 +963,7 @@ def test_schedule_tasks_constraint_spec_day_start_on_full_day_slot() -> None:
     """回归：LLM 结构化约束 day_start 不应导致全部任务无法排期。"""
     tasks = [PlanV2Task(title="写周报", duration=60, priority="auto")]
     spec = ConstraintSpec(day_start=14)
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks,
         [],
         (date(2026, 8, 16), date(2026, 8, 29)),
@@ -979,7 +979,7 @@ def test_schedule_tasks_constraint_spec_day_start_on_full_day_slot() -> None:
 def test_schedule_tasks_time_before_keeps_before_hour() -> None:
     """回归：'下午三点前' 应把任务排在 15:00 之前，且不能无法排期。"""
     tasks = [PlanV2Task(title="写周报", duration=60, priority="auto")]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks,
         [],
         (date(2026, 8, 16), date(2026, 8, 29)),
@@ -995,7 +995,7 @@ def test_schedule_tasks_time_before_keeps_before_hour() -> None:
 def test_schedule_tasks_exclude_evening_never_places_evening() -> None:
     """回归：'不要安排在晚上' 在整天空闲槽上也不得排到晚上（候选粒度校验）。"""
     tasks = [PlanV2Task(title="写周报", duration=60, priority="auto")]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks,
         [],
         (date(2026, 8, 16), date(2026, 8, 29)),
@@ -1046,7 +1046,7 @@ def test_schedule_tasks_chunked_with_breaks() -> None:
     """分块任务应拆成多个 25 分钟块，块间保留空白间隔（不写入休息块）。"""
     tasks = [PlanV2Task(title="写代码", duration=100)]
     style = WorkStyleSpec(chunk_minutes=25, break_minutes=5)
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
         work_style=style,
     )
@@ -1070,7 +1070,7 @@ def test_schedule_tasks_chunked_break_gap_reserved_for_other_tasks() -> None:
         PlanV2Task(title="整理文档", duration=30),
     ]
     style = WorkStyleSpec(chunk_minutes=25, break_minutes=5)
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
         work_style=style,
     )
@@ -1091,7 +1091,7 @@ def test_schedule_tasks_chunked_respects_hard_constraint() -> None:
     """分块任务的所有工作块都必须满足硬约束（9 点前不排）。"""
     tasks = [PlanV2Task(title="写代码", duration=120)]
     style = WorkStyleSpec(chunk_minutes=25, break_minutes=5)
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
         work_style=style,
         constraint_filters=parse_constraint_filters(["9点之前不安排任何任务"]),
@@ -1108,7 +1108,7 @@ def test_schedule_tasks_short_task_not_split() -> None:
     """时长不超过块长的任务保持单块，不产生休息块。"""
     tasks = [PlanV2Task(title="写代码", duration=30)]
     style = WorkStyleSpec(chunk_minutes=25, break_minutes=5)
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
         work_style=style,
     )
@@ -1124,7 +1124,7 @@ def test_schedule_tasks_short_task_not_split() -> None:
 def test_schedule_tasks_now_minutes_never_places_past_today() -> None:
     """now_minutes 之后，今天不再排入已过去的时间段。"""
     tasks = [PlanV2Task(title="写代码", duration=60)]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
         now_minutes=20 * 60 + 47,
     )
@@ -1137,7 +1137,7 @@ def test_schedule_tasks_now_minutes_never_places_past_today() -> None:
 def test_schedule_tasks_now_minutes_moves_to_later_days() -> None:
     """今天剩余时间不足时，任务应排到后续日期而非过去的今天。"""
     tasks = [PlanV2Task(title="写代码", duration=480)]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 5)),
         now_minutes=22 * 60,
     )
@@ -1149,7 +1149,7 @@ def test_schedule_tasks_now_minutes_moves_to_later_days() -> None:
 def test_schedule_tasks_without_now_minutes_keeps_full_first_day() -> None:
     """不传 now_minutes 时保持原行为：首日从 day_start 开始可排。"""
     tasks = [PlanV2Task(title="写代码", duration=60)]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
     )
     assert len(unassigned) == 0
@@ -1207,10 +1207,10 @@ def test_time_availability_presets_shift_scores() -> None:
 def test_time_preference_night_owl_places_later() -> None:
     """夜猫型应把无偏好任务排到晚间，晚于均衡档的上午落点。"""
     tasks = [PlanV2Task(title="写代码", duration=60)]
-    balanced_blocks, _, _ = schedule_tasks(
+    balanced_blocks, _, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)), time_preference="balanced"
     )
-    owl_blocks, _, _ = schedule_tasks(
+    owl_blocks, _, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)), time_preference="night_owl"
     )
     assert balanced_blocks[0].start == 7 * 60 + 30  # 中点 8:00 落入上午高分档
@@ -1222,10 +1222,10 @@ def test_time_preference_early_bird_places_earlier_when_morning_taken() -> None:
     """上午被占用时，早起型应排进清晨，早于均衡档的下午落点。"""
     tasks = [PlanV2Task(title="写代码", duration=60)]
     existing = [ExistingBlock(date="2026-08-03", start=8 * 60, end=12 * 60)]
-    balanced_blocks, _, _ = schedule_tasks(
+    balanced_blocks, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)), time_preference="balanced"
     )
-    bird_blocks, _, _ = schedule_tasks(
+    bird_blocks, _, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 3)), time_preference="early_bird"
     )
     assert balanced_blocks[0].start >= 13 * 60
@@ -1241,7 +1241,7 @@ def test_schedule_tasks_places_block_across_midnight() -> None:
         ExistingBlock(date="2026-08-04", start=6 * 60, end=15 * 60),
         ExistingBlock(date="2026-08-04", start=17 * 60, end=24 * 60),
     ]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 4))
     )
     assert len(unassigned) == 0
@@ -1266,7 +1266,7 @@ def test_time_filters_reject_cross_midnight_chunk_against_day_start() -> None:
 def test_schedule_tasks_respects_deadline_as_hard_constraint() -> None:
     """截止日期为硬约束：所有块不得排在截止日之后。"""
     tasks = [PlanV2Task(title="写报告", duration=60, deadline="2026-08-30")]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 29), date(2026, 9, 2))
     )
     assert len(unassigned) == 0
@@ -1277,7 +1277,7 @@ def test_schedule_tasks_respects_deadline_as_hard_constraint() -> None:
 def test_schedule_tasks_overdue_task_becomes_unassigned() -> None:
     """截止日早于规划范围时无法合规排期，任务应进入 unassigned。"""
     tasks = [PlanV2Task(title="逾期任务", duration=60, deadline="2026-08-20")]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 29), date(2026, 8, 30))
     )
     assert len(blocks) == 0
@@ -1288,7 +1288,7 @@ def test_deadline_day_allows_cross_midnight_start() -> None:
     """截止当天开始的块允许跨午夜延伸到次日。"""
     tasks = [PlanV2Task(title="值守", duration=120, deadline="2026-08-03")]
     existing = [ExistingBlock(date="2026-08-03", start=0, end=22 * 60)]
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, existing, (date(2026, 8, 3), date(2026, 8, 4))
     )
     assert len(unassigned) == 0
@@ -1305,7 +1305,7 @@ def test_understanding_preferred_time_overrides_time_preference() -> None:
         "focus_level": "flexible",
         "notes": "",
     }
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
         understandings={"专注工作": understanding},
         time_preference="early_bird",
@@ -1323,7 +1323,7 @@ def test_hard_constraint_and_preferred_time_apply_together() -> None:
         "focus_level": "flexible",
         "notes": "",
     }
-    blocks, unassigned, _ = schedule_tasks(
+    blocks, unassigned, _deferred, _ = schedule_tasks(
         tasks, [], (date(2026, 8, 3), date(2026, 8, 3)),
         understandings={"专注工作": understanding},
         constraint_filters=parse_constraint_filters(["9点之前不安排任务"]),
@@ -1332,3 +1332,96 @@ def test_hard_constraint_and_preferred_time_apply_together() -> None:
     assert len(unassigned) == 0
     assert blocks[0].start >= 9 * 60
     assert blocks[0].start >= 18 * 60
+
+
+# ============================================================
+# 8. DDL 窗口：截止日期较远的任务暂缓排期
+# ============================================================
+
+def test_deadline_window_defers_far_deadline_task() -> None:
+    """DDL 窗口开启时，截止日超出首日+N 天的任务暂缓，不生成块。"""
+    tasks = [
+        PlanV2Task(title="远期任务", duration=60, deadline="2026-09-15"),
+        PlanV2Task(title="近期任务", duration=60, deadline="2026-08-30"),
+    ]
+    blocks, unassigned, deferred, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 29), date(2026, 9, 2)), deadline_window_days=7
+    )
+    # 窗口 = 2026-08-29 + 7 天 = 2026-09-05：远期任务进 deferred，近期任务照常
+    assert deferred == ["远期任务"]
+    assert len(blocks) == 1
+    assert blocks[0].title == "近期任务"
+    assert "远期任务" not in unassigned
+
+
+def test_deadline_window_boundary_inclusive() -> None:
+    """截止日恰好等于窗口上界（首日+N 天）的任务仍可排期。"""
+    tasks = [PlanV2Task(title="边界任务", duration=60, deadline="2026-09-05")]
+    blocks, unassigned, deferred, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 29), date(2026, 9, 2)), deadline_window_days=7
+    )
+    assert deferred == []
+    assert len(unassigned) == 0
+    assert len(blocks) == 1
+
+
+def test_deadline_window_one_day() -> None:
+    """最紧档位 N=1：只排今天/明天截止的任务，后天截止的暂缓。"""
+    tasks = [
+        PlanV2Task(title="明天截止", duration=60, deadline="2026-08-30"),
+        PlanV2Task(title="后天截止", duration=60, deadline="2026-08-31"),
+    ]
+    blocks, unassigned, deferred, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 29), date(2026, 9, 2)), deadline_window_days=1
+    )
+    assert deferred == ["后天截止"]
+    assert len(blocks) == 1
+    assert blocks[0].title == "明天截止"
+    assert len(unassigned) == 0
+
+
+def test_deadline_window_tasks_without_deadline_still_scheduled() -> None:
+    """无截止日期的任务不受窗口影响，照常排期。"""
+    tasks = [
+        PlanV2Task(title="无截止任务", duration=60),
+        PlanV2Task(title="远期任务", duration=60, deadline="2026-09-20"),
+    ]
+    blocks, unassigned, deferred, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 29), date(2026, 9, 2)), deadline_window_days=3
+    )
+    assert deferred == ["远期任务"]
+    assert len(blocks) == 1
+    assert blocks[0].title == "无截止任务"
+
+
+def test_deadline_window_overdue_task_still_unassigned() -> None:
+    """已逾期任务不受窗口影响（截止日在窗口内），走既有硬约束进 unassigned。"""
+    tasks = [PlanV2Task(title="逾期任务", duration=60, deadline="2026-08-20")]
+    blocks, unassigned, deferred, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 29), date(2026, 8, 30)), deadline_window_days=7
+    )
+    assert deferred == []
+    assert "逾期任务" in unassigned
+    assert len(blocks) == 0
+
+
+def test_deadline_window_none_keeps_legacy_behavior() -> None:
+    """窗口关闭（None）：远期截止任务照常排期，行为与现状一致。"""
+    tasks = [PlanV2Task(title="远期任务", duration=60, deadline="2026-09-15")]
+    blocks, unassigned, deferred, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 29), date(2026, 9, 2)), deadline_window_days=None
+    )
+    assert deferred == []
+    assert len(unassigned) == 0
+    assert len(blocks) == 1
+
+
+def test_deadline_window_invalid_deadline_not_affected() -> None:
+    """DDL 无法解析（如自由文本）的任务不参与窗口判断，照常排期。"""
+    tasks = [PlanV2Task(title="怪格式任务", duration=60, deadline="8月底前")]
+    blocks, unassigned, deferred, _ = schedule_tasks(
+        tasks, [], (date(2026, 8, 29), date(2026, 9, 2)), deadline_window_days=3
+    )
+    assert deferred == []
+    assert len(blocks) == 1
+    assert len(unassigned) == 0

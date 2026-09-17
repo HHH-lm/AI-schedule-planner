@@ -271,6 +271,46 @@ def test_fallback_plan_v2_accepts_custom_weights() -> None:
     assert len(response.blocks) == 1
 
 
+def test_fallback_plan_v2_passes_deadline_window() -> None:
+    """本地 fallback 应透传 DDL 窗口：远期任务进 deferred 而非 unassigned。"""
+    response = _fallback_plan_v2(
+        [
+            PlanV2Task(title="远期任务", duration=60, deadline="2026-09-10"),
+            PlanV2Task(title="近期任务", duration=60, deadline="2026-08-04"),
+        ],
+        [],
+        date(2026, 8, 3),
+        date(2026, 8, 5),
+        memories=[],
+        constraints=[],
+        deadline_window_days=3,
+    )
+    assert response.deferred == ["远期任务"]
+    assert len(response.blocks) == 1
+    assert response.blocks[0].title == "近期任务"
+    assert response.unassigned == []
+
+
+def test_plan_v2_schedule_connect_error_passes_deadline_window(monkeypatch) -> None:
+    """AI 连接失败回退本地引擎时也应执行 DDL 窗口过滤。"""
+    _patch_plan_v2_ai_error(monkeypatch, httpx.ConnectError("proxy down"))
+    request = PlanV2Request(
+        tasks=[
+            PlanV2Task(title="远期任务", duration=60, deadline="2026-09-10"),
+            PlanV2Task(title="近期任务", duration=60, deadline="2026-08-18"),
+        ],
+        memories=[],
+        constraints=[],
+        planning_range={"start": "2026-08-17", "end": "2026-08-18"},
+        deadline_window_days=3,
+    )
+    response = asyncio.run(plan_v2_schedule(request, Settings()))
+    assert response.source == "local"
+    assert response.deferred == ["远期任务"]
+    assert len(response.blocks) == 1
+    assert response.blocks[0].title == "近期任务"
+
+
 def _patch_plan_v2_ai_error(monkeypatch, error: Exception) -> None:
     async def fake_chat(*args, **kwargs):
         raise error
@@ -311,3 +351,137 @@ def test_plan_v2_schedule_timeout_falls_back_with_timeout_message(
     assert response.source == "local"
     assert response.message is not None
     assert response.message.startswith("AI 理解超时")
+
+
+# ============================================================
+# DDL 窗口：各执行路径的 deferred 透传
+# ============================================================
+
+def _deadline_window_request() -> PlanV2Request:
+    """含远期/近期任务与 DDL 窗口的规划请求（窗口 = 首日+3 天）。"""
+    return PlanV2Request(
+        tasks=[
+            PlanV2Task(title="远期任务", duration=60, deadline="2026-09-10"),
+            PlanV2Task(title="近期任务", duration=60, deadline="2026-08-18"),
+        ],
+        memories=[],
+        constraints=[],
+        planning_range={"start": "2026-08-17", "end": "2026-08-18"},
+        deadline_window_days=3,
+    )
+
+
+def _patch_plan_v2_ai_success(monkeypatch) -> None:
+    """mock AI 理解层成功返回空理解；explanation 可控制是否走解释层。"""
+
+    async def fake_chat(*args, **kwargs):
+        if kwargs.get("operation") == "plan.explain":
+            return {
+                "choices": [
+                    {
+                        "message": {"content": "已按偏好安排任务"},
+                        "finish_reason": "stop",
+                    }
+                ]
+            }
+        return {
+            "choices": [
+                {
+                    "message": {"content": '{"understandings": []}'},
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+
+    monkeypatch.setattr("app.services.planner_v2.call_chat_completions", fake_chat)
+    monkeypatch.setattr(
+        "app.services.planner_v2.resolve_ai_provider",
+        lambda *args, **kwargs: ("deepseek", None),
+    )
+
+
+def test_plan_v2_schedule_ai_success_passes_deadline_window(monkeypatch) -> None:
+    """AI 成功路径的 PlanV2Response 也必须返回 deferred。"""
+    _patch_plan_v2_ai_success(monkeypatch)
+    request = _deadline_window_request()
+    request.goal = "整理一周计划"
+    response = asyncio.run(plan_v2_schedule(request, Settings()))
+    assert response.source == "deepseek"
+    assert response.deferred == ["远期任务"]
+    assert len(response.blocks) == 1
+    assert response.blocks[0].title == "近期任务"
+    assert response.unassigned == []
+    assert response.message == "已按偏好安排任务"
+
+
+def test_plan_v2_schedule_no_provider_passes_deadline_window() -> None:
+    """无可用 provider 直接走本地 fallback 时应透传 deferred。"""
+    settings = Settings(ai_provider="local", openai_api_key="", deepseek_api_key="")
+    response = asyncio.run(plan_v2_schedule(_deadline_window_request(), settings))
+    assert response.source == "local"
+    assert response.deferred == ["远期任务"]
+    assert len(response.blocks) == 1
+    assert response.blocks[0].title == "近期任务"
+
+
+def test_plan_v2_schedule_timeout_passes_deadline_window(monkeypatch) -> None:
+    """AI 超时回退本地引擎时应透传 deferred。"""
+    _patch_plan_v2_ai_error(monkeypatch, httpx.ReadTimeout("slow"))
+    response = asyncio.run(plan_v2_schedule(_deadline_window_request(), Settings()))
+    assert response.source == "local"
+    assert response.deferred == ["远期任务"]
+    assert len(response.blocks) == 1
+    assert response.blocks[0].title == "近期任务"
+
+
+def test_plan_v2_schedule_generic_error_passes_deadline_window(monkeypatch) -> None:
+    """AI 抛出其他异常回退本地引擎时也应透传 deferred。"""
+    _patch_plan_v2_ai_error(monkeypatch, RuntimeError("bad gateway"))
+    response = asyncio.run(plan_v2_schedule(_deadline_window_request(), Settings()))
+    assert response.source == "local"
+    assert response.deferred == ["远期任务"]
+    assert len(response.blocks) == 1
+    assert response.blocks[0].title == "近期任务"
+
+
+def test_plan_v2_schedule_without_window_keeps_empty_deferred() -> None:
+    """不传 DDL 窗口时 deferred 恒为空列表（前端兼容默认值）。"""
+    request = PlanV2Request(
+        tasks=[PlanV2Task(title="写报告", duration=60)],
+        memories=[],
+        constraints=[],
+        planning_range={"start": "2026-08-17", "end": "2026-08-18"},
+    )
+    response = asyncio.run(
+        plan_v2_schedule(request, Settings(ai_provider="local"))
+    )
+    assert response.deferred == []
+
+
+def test_plan_v2_schedule_explanation_failure_keeps_deferred(monkeypatch) -> None:
+    """解释层失败被吞掉时，AI 成功路径的 deferred 仍应保留。"""
+
+    async def fake_chat(*args, **kwargs):
+        if kwargs.get("operation") == "plan.explain":
+            raise RuntimeError("explain failed")
+        return {
+            "choices": [
+                {
+                    "message": {"content": '{"understandings": []}'},
+                    "finish_reason": "stop",
+                }
+            ]
+        }
+
+    monkeypatch.setattr("app.services.planner_v2.call_chat_completions", fake_chat)
+    monkeypatch.setattr(
+        "app.services.planner_v2.resolve_ai_provider",
+        lambda *args, **kwargs: ("deepseek", None),
+    )
+    request = _deadline_window_request()
+    request.goal = "整理一周计划"
+    response = asyncio.run(plan_v2_schedule(request, Settings()))
+    assert response.source == "deepseek"
+    assert response.deferred == ["远期任务"]
+    assert len(response.blocks) == 1
+    assert response.message is None

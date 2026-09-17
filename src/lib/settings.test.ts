@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { AppSettings } from "./types";
 import {
+  DEADLINE_WINDOW_PRESETS,
   aiApiKeyFor,
   aiRequestFields,
   aiSettingError,
   migrateSettings,
   normalizeAiProvider,
+  normalizeDeadlineWindowDays,
 } from "./settings";
 
 describe("normalizeAiProvider", () => {
@@ -106,5 +108,30 @@ describe("aiSettingError", () => {
   it("只校验当前 provider 对应的 Key", () => {
     expect(aiSettingError("deepseek", "sk-oa", undefined)).not.toBeNull();
     expect(aiSettingError("openai", undefined, "sk-ds")).not.toBeNull();
+  });
+});
+
+describe("normalizeDeadlineWindowDays", () => {
+  it("保留合法档位整数（1-365）", () => {
+    expect(normalizeDeadlineWindowDays(1)).toBe(1);
+    expect(normalizeDeadlineWindowDays(3)).toBe(3);
+    expect(normalizeDeadlineWindowDays(7)).toBe(7);
+    expect(normalizeDeadlineWindowDays(14)).toBe(14);
+    expect(normalizeDeadlineWindowDays(365)).toBe(365);
+  });
+
+  it("非法值归一为不限制（undefined）", () => {
+    expect(normalizeDeadlineWindowDays(0)).toBeUndefined();
+    expect(normalizeDeadlineWindowDays(-7)).toBeUndefined();
+    expect(normalizeDeadlineWindowDays(366)).toBeUndefined();
+    expect(normalizeDeadlineWindowDays(7.5)).toBeUndefined();
+    expect(normalizeDeadlineWindowDays(Number.NaN)).toBeUndefined();
+    expect(normalizeDeadlineWindowDays("7")).toBeUndefined();
+    expect(normalizeDeadlineWindowDays(null)).toBeUndefined();
+    expect(normalizeDeadlineWindowDays(undefined)).toBeUndefined();
+  });
+
+  it("预设档位与设置页选项一致", () => {
+    expect([...DEADLINE_WINDOW_PRESETS]).toEqual([1, 3, 7, 14]);
   });
 });

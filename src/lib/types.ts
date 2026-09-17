@@ -99,6 +99,8 @@ export interface AppSettings {
   planningStyle?: PlanningStyleId;
   timePreference?: TimePreference;
   planningFocus?: PlanningDimensionKey[];
+  /** DDL 窗口（天）：截止日晚于今天+N 天的子任务暂缓排期；undefined=不限制 */
+  deadlineWindowDays?: number;
 }
 
 export interface AppData {

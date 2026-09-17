@@ -56,3 +56,16 @@ export function aiRequestFields(
   const api_key = aiApiKeyFor(provider, settings);
   return api_key ? { provider, api_key } : { provider };
 }
+
+/** DDL 窗口合法档位（天）：与设置页「截止日期策略」选项一致 */
+export const DEADLINE_WINDOW_PRESETS = [1, 3, 7, 14] as const;
+
+/**
+ * DDL 窗口归一：仅 1-365 的整数有效，其余（0/负数/超界/非整数/undefined）
+ * 一律视为「不限制」。
+ */
+export function normalizeDeadlineWindowDays(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 365
+    ? value
+    : undefined;
+}

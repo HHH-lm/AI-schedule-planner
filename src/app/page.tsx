@@ -45,6 +45,7 @@ import {
   DEFAULT_PLANNING_WEIGHTS,
   normalizePlanningWeights,
 } from "@/lib/planningWeights";
+import { planningFeedback } from "@/lib/planningFeedback";
 import { normalizeTimePreference } from "@/lib/timePreference";
 import {
   addDays,
@@ -63,7 +64,11 @@ import {
   uid,
 } from "@/lib/storage";
 import { apiPost } from "@/lib/api";
-import { aiRequestFields, normalizeAiProvider } from "@/lib/settings";
+import {
+  aiRequestFields,
+  normalizeAiProvider,
+  normalizeDeadlineWindowDays,
+} from "@/lib/settings";
 import {
   extractLinkDirectives,
   resolveLinkTargetLocal,
@@ -997,6 +1002,7 @@ export default function Home() {
       planningStyle?: PlanningStyleId;
       planningFocus?: PlanningDimensionKey[];
       timePreference?: TimePreference;
+      deadlineWindowDays?: number;
     }) => {
       commitData((prev) =>
         prev
@@ -1013,6 +1019,9 @@ export default function Home() {
                 planningStyle: settings.planningStyle,
                 planningFocus: settings.planningFocus,
                 timePreference: settings.timePreference,
+                deadlineWindowDays: normalizeDeadlineWindowDays(
+                  settings.deadlineWindowDays
+                ),
               },
             }
           : prev
@@ -1399,10 +1408,11 @@ export default function Home() {
     ): Promise<{
       added: number;
       blockedCount: number;
+      deferredCount: number;
       message?: string | null;
     }> => {
       const current = dataRef.current;
-      if (!current) return { added: 0, blockedCount: 0 };
+      if (!current) return { added: 0, blockedCount: 0, deferredCount: 0 };
       const allMemories = current.memories ?? [];
       const memories = allMemories
         .filter((m) => m.status !== "archived")
@@ -1439,6 +1449,7 @@ export default function Home() {
         return {
           added: 0,
           blockedCount: 0,
+          deferredCount: 0,
           message: "没有需要规划的子任务（请添加未完成的子任务）",
         };
       }
@@ -1456,6 +1467,7 @@ export default function Home() {
           subtask_id?: string;
         }>;
         unassigned: string[];
+        deferred?: string[];
         message?: string | null;
       }>("/plan-v2", {
         goal: "",
@@ -1475,6 +1487,9 @@ export default function Home() {
         ),
         time_preference: normalizeTimePreference(
           current.settings?.timePreference
+        ),
+        deadline_window_days: normalizeDeadlineWindowDays(
+          current.settings?.deadlineWindowDays
         ),
         ...aiRequestFields(current.settings),
       });
@@ -1510,6 +1525,7 @@ export default function Home() {
       return {
         added: result.blocks.length,
         blockedCount: result.unassigned.length,
+        deferredCount: result.deferred?.length ?? 0,
         message: result.message,
       };
     },
@@ -1526,14 +1542,7 @@ export default function Home() {
     setPlanBusy(true);
     try {
       const result = await planTasks(data.tasks);
-      setPlanFeedback(
-        result.message ??
-          (result.added > 0
-            ? `AI 规划完成：新增 ${result.added} 个时间块${
-                result.blockedCount > 0 ? `，跳过 ${result.blockedCount} 个冲突` : ""
-              }`
-            : "AI 没有生成新的时间块，请调整任务或已有安排后重试")
-      );
+      setPlanFeedback(planningFeedback(result));
     } catch (error) {
       setPlanFeedback(
         error instanceof Error ? error.message : "AI 规划失败，请稍后重试"
@@ -2031,6 +2040,7 @@ export default function Home() {
           planningStyle={data.settings?.planningStyle}
           planningFocus={data.settings?.planningFocus}
           timePreference={data.settings?.timePreference}
+          deadlineWindowDays={data.settings?.deadlineWindowDays}
           onSave={saveSettings}
           onClose={() => setSettingsOpen(false)}
           onOpenMemory={() => {
