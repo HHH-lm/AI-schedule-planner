@@ -1,6 +1,7 @@
 import type { Activity, ActivitySource, Category, TimeBlock } from "./types";
 import { uid } from "./storage";
 import { splitBlockByDays } from "./blockTime";
+import { toDateKey } from "./date";
 
 /** 后端 /activities/digest 返回的候选（snake_case，与 PlanV2Block 同风格） */
 export interface ActivityCandidateRaw {
@@ -40,6 +41,100 @@ export interface EvidenceSummary {
   zcodeSessions: number;
   gitCommits: number;
   files: number;
+}
+
+/** 后端 /activities/collect 单日结果（F-046；evidence 仅成功时存在） */
+export interface ActivityCollectItemRaw {
+  date: string;
+  filename?: string | null;
+  summary?: { zcode_sessions?: number; git_commits?: number; files?: number } | null;
+  evidence?: Record<string, unknown> | null;
+  error?: string | null;
+}
+
+export interface ActivityCollectPayload {
+  items: ActivityCollectItemRaw[];
+}
+
+/** 后端 /activities/evidence 列表项（F-046，不含全量 evidence） */
+export interface ActivityEvidenceListItem {
+  date: string;
+  filename: string;
+  generated_at?: string | null;
+  summary?: { zcode_sessions?: number; git_commits?: number; files?: number } | null;
+}
+
+export interface ActivityEvidenceListPayload {
+  items: ActivityEvidenceListItem[];
+}
+
+/** 检索结果里的一天：可点击进导入流程，无信号的天空列表（不可导入） */
+export interface CollectDayView {
+  date: string;
+  filename?: string;
+  summary: EvidenceSummary;
+  evidence?: Record<string, unknown>;
+  error?: string;
+  /** 该日已确认的活动记录条数（>0 显示「已有 N 条」） */
+  importedCount: number;
+}
+
+function toSummary(date: string, raw: ActivityCollectItemRaw["summary"]): EvidenceSummary {
+  return {
+    date,
+    zcodeSessions: raw?.zcode_sessions ?? 0,
+    gitCommits: raw?.git_commits ?? 0,
+    files: raw?.files ?? 0,
+  };
+}
+
+export function summaryTotal(summary: EvidenceSummary): number {
+  return summary.zcodeSessions + summary.gitCommits + summary.files;
+}
+
+/**
+ * 检索结果 + 已导入记录 → 逐日列表视图（按日期倒序）。
+ * importedCount 用于提示「这天已导入过 N 条」，仍可再检索（当天可能有新增痕迹）。
+ */
+export function buildCollectDayList(
+  items: ActivityCollectItemRaw[],
+  activities: Activity[]
+): CollectDayView[] {
+  const importedByDate = new Map<string, number>();
+  for (const activity of activities) {
+    importedByDate.set(activity.date, (importedByDate.get(activity.date) ?? 0) + 1);
+  }
+  return items
+    .filter((item) => item && typeof item.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item.date))
+    .map((item) => ({
+      date: item.date,
+      ...(item.filename ? { filename: item.filename } : {}),
+      summary: toSummary(item.date, item.summary),
+      ...(item.evidence ? { evidence: item.evidence } : {}),
+      ...(item.error ? { error: item.error } : {}),
+      importedCount: importedByDate.get(item.date) ?? 0,
+    }))
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+
+/**
+ * 最近 windowDays 天里尚无证据文件的日期（升序），供打开统计页时静默补采。
+ * 窗口含今天：今天的证据是当日快照，重采只为补齐缺日，不做增量刷新。
+ */
+export function missingCollectDates(
+  existingDates: Iterable<string>,
+  today: Date,
+  windowDays = 3
+): string[] {
+  const have = new Set(existingDates);
+  const missing: string[] = [];
+  for (let offset = windowDays - 1; offset >= 0; offset -= 1) {
+    const day = new Date(today);
+    day.setDate(day.getDate() - offset);
+    const key = toDateKey(day);
+    if (!have.has(key)) missing.push(key);
+  }
+  return missing;
 }
 
 export type EvidenceParseResult =

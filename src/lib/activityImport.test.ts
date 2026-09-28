@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCollectDayList,
   extractCandidates,
   findPlanConflicts,
   formatCandidateTime,
+  missingCollectDates,
   parseEvidenceFile,
   selectedToActivities,
+  summaryTotal,
   type ActivityCandidateView,
+  type ActivityCollectItemRaw,
   type ActivityDigestPayload,
 } from "./activityImport";
-import type { TimeBlock } from "./types";
+import type { Activity, TimeBlock } from "./types";
 
 const validEvidence = {
   schema: "activity-evidence/1",
@@ -250,5 +254,103 @@ describe("selectedToActivities", () => {
   it("无勾选返回空数组", () => {
     const views = extractCandidates(digestPayload(), new Set());
     expect(selectedToActivities(views, new Set())).toEqual([]);
+  });
+});
+
+describe("buildCollectDayList", () => {
+  const item = (overrides: Partial<ActivityCollectItemRaw> = {}): ActivityCollectItemRaw => ({
+    date: "2026-09-27",
+    filename: "activity_evidence_2026-09-27.json",
+    summary: { zcode_sessions: 2, git_commits: 1, files: 3 },
+    evidence: { date: "2026-09-27", sources: {} },
+    error: null,
+    ...overrides,
+  });
+
+  const activity = (date: string): Activity => ({
+    id: `a-${date}`,
+    date,
+    summary: "x",
+    category: "work",
+    sources: ["zcode"],
+    confirmedAt: "2026-09-27T10:00:00Z",
+  });
+
+  it("按日期倒序并换算三源计数", () => {
+    const days = buildCollectDayList(
+      [item({ date: "2026-09-25" }), item({ date: "2026-09-27" })],
+      []
+    );
+    expect(days.map((day) => day.date)).toEqual(["2026-09-27", "2026-09-25"]);
+    expect(days[0].summary).toEqual({
+      date: "2026-09-27",
+      zcodeSessions: 2,
+      gitCommits: 1,
+      files: 3,
+    });
+    expect(summaryTotal(days[0].summary)).toBe(6);
+  });
+
+  it("标注该日已导入条数", () => {
+    const days = buildCollectDayList(
+      [item({ date: "2026-09-27" })],
+      [activity("2026-09-27"), activity("2026-09-27"), activity("2026-09-26")]
+    );
+    expect(days[0].importedCount).toBe(2);
+  });
+
+  it("失败项保留 error 且无 evidence（不可导入）", () => {
+    const days = buildCollectDayList(
+      [item({ date: "2026-09-26", evidence: null, filename: null, error: "boom" })],
+      []
+    );
+    expect(days[0].error).toBe("boom");
+    expect(days[0].evidence).toBeUndefined();
+    expect(days[0].filename).toBeUndefined();
+  });
+
+  it("丢弃日期格式非法的项", () => {
+    const days = buildCollectDayList(
+      [item({ date: "2026/09/27" }), item({ date: "2026-09-27" })],
+      []
+    );
+    expect(days).toHaveLength(1);
+    expect(days[0].date).toBe("2026-09-27");
+  });
+
+  it("缺 summary 时计数归零", () => {
+    const days = buildCollectDayList([item({ summary: null })], []);
+    expect(summaryTotal(days[0].summary)).toBe(0);
+  });
+});
+
+describe("missingCollectDates", () => {
+  const today = new Date(2026, 8, 27); // 2026-09-27
+
+  it("窗口内缺证据的日期升序返回（含今天）", () => {
+    expect(missingCollectDates(["2026-09-26"], today, 3)).toEqual([
+      "2026-09-25",
+      "2026-09-27",
+    ]);
+  });
+
+  it("全有则返回空", () => {
+    expect(missingCollectDates(["2026-09-25", "2026-09-26", "2026-09-27"], today, 3)).toEqual([]);
+  });
+
+  it("窗口外的旧证据不顶替窗口内缺失", () => {
+    expect(missingCollectDates(["2026-09-01"], today, 3)).toEqual([
+      "2026-09-25",
+      "2026-09-26",
+      "2026-09-27",
+    ]);
+  });
+
+  it("跨月边界正确回退", () => {
+    expect(missingCollectDates([], new Date(2026, 9, 1), 3)).toEqual([
+      "2026-09-29",
+      "2026-09-30",
+      "2026-10-01",
+    ]);
   });
 });

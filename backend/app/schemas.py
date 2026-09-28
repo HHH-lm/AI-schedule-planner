@@ -475,3 +475,46 @@ class ActivityDigestResponse(BaseModel):
     used_ai: bool
     candidates: list[ActivityCandidate] = Field(default_factory=list)
     message: str | None = None
+
+
+class ActivityEvidenceSummary(BaseModel):
+    """证据三源计数摘要（F-046 collect 端点与证据列表共用，轻量不回全量）。"""
+
+    zcode_sessions: int = 0
+    git_commits: int = 0
+    files: int = 0
+
+
+class ActivityCollectRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    # from 是 Python 保留字：字段名 from_date/to_date + 别名，与 CLI --from/--to 对齐
+    from_date: str | None = Field(default=None, alias="from", description="起始日期 YYYY-MM-DD")
+    to_date: str | None = Field(default=None, alias="to", description="结束日期 YYYY-MM-DD（含当日）")
+
+
+class ActivityCollectItem(BaseModel):
+    """单日采集结果：成功带 filename/summary/evidence，失败带 error（不中断整批）。"""
+
+    date: str
+    filename: str | None = None
+    summary: ActivityEvidenceSummary = Field(default_factory=ActivityEvidenceSummary)
+    evidence: ActivityEvidence | None = None
+    error: str | None = None
+
+
+class ActivityCollectResponse(BaseModel):
+    items: list[ActivityCollectItem] = Field(default_factory=list)
+
+
+class ActivityEvidenceListItem(BaseModel):
+    """已落盘证据文件的摘要（GET /activities/evidence，不含全量 evidence）。"""
+
+    date: str
+    filename: str
+    generated_at: str | None = None
+    summary: ActivityEvidenceSummary = Field(default_factory=ActivityEvidenceSummary)
+
+
+class ActivityEvidenceListResponse(BaseModel):
+    items: list[ActivityEvidenceListItem] = Field(default_factory=list)

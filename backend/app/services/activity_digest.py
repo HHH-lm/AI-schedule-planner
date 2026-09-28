@@ -59,16 +59,31 @@ ALLOWED_CATEGORIES = {"work", "study", "fitness", "life", "rest"}
 # 常出现「简历/岗位/投递」等变体（如「更新 AI 定向简历」）。
 ACTIVITY_WORK_PATTERN = re.compile(r"简历|岗位|面试|求职|投递|应聘|猎头|offer", re.I)
 
+# 项目身份 → 类目显式映射（2026-09-29 用户自我定位）：当前在做的个人项目都是
+# 「学习 AI」，这些项目里的开发/调试/文档活动归 study，不再落回默认 work；
+# 求职词优先级仍最高（改简历/查公司 = work，用户 2026-09-27 定的口径）。
+# 名单与采集器 DEFAULT_REPOS 对应，用户新增项目时同步此表；按子串匹配
+# 会话目录/仓库名/文件路径前缀。
+PROJECT_CATEGORY_RULES: tuple[tuple[str, str], ...] = (
+    ("AI 日程管理系统", "study"),
+    ("hqb-market", "study"),
+)
 
-def refine_category(base: str, *texts: str) -> str:
-    """复用解析链路的本地归类（nlp.guess_category）+ 活动求职词补充。
 
+def refine_category(base: str, *texts: str, project: str = "") -> str:
+    """复用解析链路的本地归类（nlp.guess_category）+ 求职词 + 项目身份映射。
+
+    优先级由高到低：求职词（素材文本与项目身份都查）→ 项目身份映射
+    （PROJECT_CATEGORY_RULES，用户的个人 AI 项目归 study）→ guess_category。
     默认沿用 base（活动默认 work）；素材出现明确的其他类目信号时才让位——
     life 视为「无信号」不覆盖，避免把改简历、写代码误判成日常起居。
     """
     combined = " ".join(text for text in texts if text)
-    if ACTIVITY_WORK_PATTERN.search(combined):
+    if ACTIVITY_WORK_PATTERN.search(combined) or ACTIVITY_WORK_PATTERN.search(project):
         return "work"
+    for pattern, category in PROJECT_CATEGORY_RULES:
+        if pattern in project:
+            return category
     guessed = guess_category(combined)
     return guessed if guessed != "life" else base
 
@@ -234,7 +249,9 @@ def _zcode_members(
             start=start_minutes,
             end=end_minutes,
             summary=summary,
-            category=refine_category("work", *titles, *files_edited),
+            category=refine_category(
+                "work", *titles, *files_edited, project=" ".join(projects)
+            ),
             sources=["zcode"],
             evidence=(
                 "；".join(evidence_parts)
@@ -317,7 +334,9 @@ def _git_members(
                 start=_minutes_of_day(min(burst_parsed)) if burst_parsed else None,
                 end=_minutes_of_day(max(burst_parsed)) if burst_parsed else None,
                 summary=summary,
-                category=refine_category("work", *subjects),
+                category=refine_category(
+                    "work", *subjects, project=f"{repo.path} {repo_name}"
+                ),
                 sources=["git"],
                 evidence="；".join(subjects)[:EVIDENCE_MAX_CHARS] or None,
             )
@@ -384,7 +403,9 @@ def _files_members(day: str, source: Any | None) -> list[_Member]:
                 end=_minutes_of_day(max(burst_parsed)) if burst_parsed else None,
                 summary=summary,
                 category=refine_category(
-                    "work", *(Path(change.path).name for change in burst_changes)
+                    "work",
+                    *(Path(change.path).name for change in burst_changes),
+                    project=parent,
                 ),
                 sources=["files"],
                 evidence=(
@@ -517,7 +538,13 @@ def _merged_candidate(day: str, group: list[_Member]) -> ActivityCandidate:
         start=start_minutes,
         end=end_minutes,
         summary=summary,
-        category=refine_category("work", *titles, *ai_files),
+        # 项目身份并集：zcode 会话目录 + git 仓库名（files 的完整路径已随 ai_files 进 texts）
+        category=refine_category(
+            "work",
+            *titles,
+            *ai_files,
+            project=" ".join([*projects, *(member.repo_name for member in group)]),
+        ),
         sources=[
             source
             for source in ("zcode", "git", "files")
@@ -532,7 +559,8 @@ def _merged_candidate(day: str, group: list[_Member]) -> ActivityCandidate:
 def _build_digest_prompt() -> str:
     # 分类决策优先级移植自解析链路（ai.py build_system_prompt）：
     # 活动素材里的「改简历/岗位研究/查询目标公司」等求职信号必须归 work，
-    # 不能因语境像生活琐事而误判（用户实测反馈）。
+    # 不能因语境像生活琐事而误判（用户实测反馈）；
+    # 个人项目开发归 study 是用户自我定位（2026-09-29）：做这些项目就是在学习 AI。
     return "\n".join(
         [
             "你是日程记录助手，把候选活动整理成简短的中文描述，只输出 JSON。",
@@ -543,11 +571,13 @@ def _build_digest_prompt() -> str:
             "category 按以下决策优先级判定（由高到低）：",
             "1. 涉及赚钱、职业发展、工作任务、求职面试、客户沟通 → work"
             "（投简历、改简历、岗位研究、面试准备、查询目标公司/股东背景均属求职，归 work）",
-            "2. 涉及学习、技能提升、备考、阅读知识类内容、研究 → study",
-            "3. 涉及身体锻炼、运动、健身、康复 → fitness",
-            "4. 涉及日常起居、通勤、家务、购物、社交聚会 → life",
-            "5. 涉及休息、放松、冥想、无产出活动 → rest",
-            "6. 无法明确覆盖时按上下文语义取最合理者，绝不拒识；",
+            "2. 属于用户个人项目「AI 日程管理系统」「hqb-market」的开发/调试/写文档 → study"
+            "（用户自我定位：做这些项目就是在学习 AI，不算工作任务；素材里出现这些项目名或其目录/文件时适用）",
+            "3. 涉及学习、技能提升、备考、阅读知识类内容、研究 → study",
+            "4. 涉及身体锻炼、运动、健身、康复 → fitness",
+            "5. 涉及日常起居、通勤、家务、购物、社交聚会 → life",
+            "6. 涉及休息、放松、冥想、无产出活动 → rest",
+            "7. 无法明确覆盖时按上下文语义取最合理者，绝不拒识；",
             "dedup_key 必须原样返回，不得增减条目。",
         ]
     )

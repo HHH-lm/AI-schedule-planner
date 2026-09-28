@@ -7,13 +7,16 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from app import activity_collector
+from app.routers import activities as activities_router
 from app.services import activity_digest
 from app.config import Settings, get_settings
 from app.limiter import limiter as route_limiter
@@ -564,6 +567,150 @@ class TestRuleCandidates:
         assert git.category == "work"
         assert files.category == "work"
 
+    def test_category_project_identity_maps_to_study(self) -> None:
+        """用户自我定位（2026-09-29）：个人 AI 项目里的开发活动归学习，不再默认工作。"""
+        evidence = make_evidence(
+            sources={
+                "zcode": {
+                    "available": True,
+                    "note": None,
+                    "sessions": [
+                        {
+                            "session_id": "s1",
+                            "title": "还原图片数据的原始呈现方式",
+                            "directory": "/Users/h/Documents/AI/AI 日程管理系统",
+                            "start": local_iso(9, 0),
+                            "end": local_iso(9, 50),
+                            "tool_calls": 5,
+                            "top_tools": [],
+                        }
+                    ],
+                },
+                "git": {
+                    "available": True,
+                    "note": None,
+                    "repos": [
+                        {
+                            "path": "/Users/h/Documents/AI/hqb-market",
+                            "name": "hqb-market",
+                            "commits": [
+                                {
+                                    "hash": "h1",
+                                    "time": local_iso(11, 0),
+                                    "subject": "fix: 数据源重试",
+                                }
+                            ],
+                        }
+                    ],
+                },
+                "files": {
+                    "available": True,
+                    "note": None,
+                    "truncated": False,
+                    "files": [
+                        {
+                            "path": "/Users/h/Documents/AI/AI 日程管理系统/src/app/page.tsx",
+                            "mtime": local_iso(11, 30),
+                        }
+                    ],
+                },
+            }
+        )
+        candidates = _rule_candidates(evidence)
+        zcode = [c for c in candidates if "zcode" in c.sources][0]
+        git = [c for c in candidates if "git" in c.sources][0]
+        files = [c for c in candidates if "files" in c.sources][0]
+        assert zcode.category == "study"
+        assert git.category == "study"
+        assert files.category == "study"
+
+    def test_category_job_hunting_repo_stays_work(self) -> None:
+        """求职仓库的提交：项目身份命中求职词，优先于项目映射。"""
+        evidence = make_evidence(
+            sources={
+                "git": {
+                    "available": True,
+                    "note": None,
+                    "repos": [
+                        {
+                            "path": "/Users/h/Documents/AI/求职",
+                            "name": "求职",
+                            "commits": [
+                                {
+                                    "hash": "h2",
+                                    "time": local_iso(11, 0),
+                                    "subject": "docs: 记录岗位信息",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            }
+        )
+        git = [c for c in _rule_candidates(evidence) if "git" in c.sources][0]
+        assert git.category == "work"
+
+    def test_category_job_keywords_beat_project_mapping(self) -> None:
+        """在学习项目里改简历：求职词优先级最高，仍归工作。"""
+        evidence = make_evidence(
+            sources={
+                "zcode": {
+                    "available": True,
+                    "note": None,
+                    "sessions": [
+                        {
+                            "session_id": "s1",
+                            "title": "更新简历",
+                            "directory": "/Users/h/Documents/AI/AI 日程管理系统",
+                            "start": local_iso(9, 0),
+                            "end": local_iso(9, 50),
+                            "tool_calls": 2,
+                            "top_tools": [],
+                        }
+                    ],
+                }
+            }
+        )
+        zcode = [c for c in _rule_candidates(evidence) if "zcode" in c.sources][0]
+        assert zcode.category == "work"
+
+    def test_category_merged_candidate_uses_project_identity(self) -> None:
+        """跨来源合并候选（会话+文件同段）同样按项目身份归类。"""
+        evidence = make_evidence(
+            sources={
+                "zcode": {
+                    "available": True,
+                    "note": None,
+                    "sessions": [
+                        {
+                            "session_id": "s1",
+                            "title": "修复活动导入去重",
+                            "directory": "/Users/h/Documents/AI/AI 日程管理系统",
+                            "start": local_iso(9, 0),
+                            "end": local_iso(9, 50),
+                            "tool_calls": 5,
+                            "top_tools": [],
+                        }
+                    ],
+                },
+                "files": {
+                    "available": True,
+                    "note": None,
+                    "truncated": False,
+                    "files": [
+                        {
+                            "path": "/Users/h/Documents/AI/AI 日程管理系统/src/lib/types.ts",
+                            "mtime": local_iso(9, 30),
+                        }
+                    ],
+                },
+            }
+        )
+        candidates = _rule_candidates(evidence)
+        merged = [c for c in candidates if c.dedup_key.startswith("merged:")]
+        assert len(merged) == 1
+        assert merged[0].category == "study"
+
     def test_ai_prompt_carries_classification_priority(self) -> None:
         captured: dict[str, str] = {}
 
@@ -744,3 +891,195 @@ class TestDigestEndpoint:
             assert response.status_code == 200
         limited = client.post("/api/v1/activities/digest", json={"evidence": make_evidence()})
         assert limited.status_code == 429
+
+
+def _fake_zcode_source(db_path: Path, day: date) -> dict[str, Any]:
+    start = f"{day.isoformat()}T09:00:00"
+    end = f"{day.isoformat()}T09:30:00"
+    return {
+        "available": True,
+        "note": None,
+        "sessions": [
+            {
+                "session_id": "s1",
+                "title": "会话 A",
+                "directory": "/tmp/proj",
+                "start": start,
+                "end": end,
+                "tool_calls": 3,
+                "segments": [{"start": start, "end": end}],
+                "files_edited": ["a.py"],
+                "commands": ["ls"],
+            }
+        ],
+    }
+
+
+def _fake_git_source(repos: list[Path], day: date, run: Any = None) -> dict[str, Any]:
+    return {
+        "available": True,
+        "note": None,
+        "repos": [
+            {
+                "path": str(repos[0]),
+                "name": "repo",
+                "commits": [
+                    {"hash": "abc1234", "time": f"{day.isoformat()}T10:00:00", "subject": "提交"}
+                ],
+            }
+        ],
+    }
+
+
+def _fake_files_source(scan_dirs: list[Path], day: date) -> dict[str, Any]:
+    return {
+        "available": True,
+        "note": None,
+        "truncated": False,
+        "files": [{"path": "b.py", "mtime": None}],
+    }
+
+
+class TestCollectEndpoint:
+    """F-046 /activities/collect 与 /activities/evidence：守卫/校验/落盘/列表/限流。"""
+
+    def _patch_local(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+        """数据源与输出目录全部指到 tmp：守卫通过、三源 fake、产物不污染真实目录。"""
+        db_path = tmp_path / "db.sqlite"
+        db_path.write_bytes(b"")  # 本地守卫只查存在性
+        monkeypatch.setattr(activity_collector, "ZCODE_DB_PATH", str(db_path))
+        monkeypatch.setattr(activity_collector, "ZCODE_LOG_DIR", str(tmp_path / "log"))
+        out_dir = tmp_path / "evidence"
+        monkeypatch.setattr(activities_router, "EVIDENCE_OUT_DIR", out_dir)
+        monkeypatch.setattr(activity_collector, "collect_zcode_sessions_from_db", _fake_zcode_source)
+        monkeypatch.setattr(activity_collector, "collect_git_commits", _fake_git_source)
+        monkeypatch.setattr(activity_collector, "collect_changed_files", _fake_files_source)
+        return out_dir
+
+    def test_collect_single_day_writes_and_returns_evidence(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        out_dir = self._patch_local(monkeypatch, tmp_path)
+        response = client.post("/api/v1/activities/collect", json={})
+        assert response.status_code == 200
+        (item,) = response.json()["items"]
+        today = date.today().isoformat()
+        assert item["date"] == today
+        assert item["filename"] == f"activity_evidence_{today}.json"
+        assert item["error"] is None
+        assert item["summary"] == {"zcode_sessions": 1, "git_commits": 1, "files": 1}
+        evidence = item["evidence"]
+        assert evidence is not None
+        assert evidence.get("schema", evidence.get("schema_version")) == "activity-evidence/1"
+        assert evidence["date"] == today
+        assert (out_dir / item["filename"]).is_file()
+
+    def test_collect_range_multiple_days(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        out_dir = self._patch_local(monkeypatch, tmp_path)
+        response = client.post(
+            "/api/v1/activities/collect", json={"from": "2026-09-01", "to": "2026-09-03"}
+        )
+        assert response.status_code == 200
+        items = response.json()["items"]
+        assert [item["date"] for item in items] == ["2026-09-01", "2026-09-02", "2026-09-03"]
+        assert all(item["error"] is None for item in items)
+        assert len(list(out_dir.glob("activity_evidence_*.json"))) == 3
+
+    def test_collect_from_only_sets_end(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self._patch_local(monkeypatch, tmp_path)
+        response = client.post("/api/v1/activities/collect", json={"from": "2026-09-02"})
+        assert response.status_code == 200
+        (item,) = response.json()["items"]
+        assert item["date"] == "2026-09-02"
+
+    def test_collect_validates_range(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self._patch_local(monkeypatch, tmp_path)
+        future = (date.today() + timedelta(days=10)).isoformat()
+        cases = [
+            ({"from": "2026-09-03", "to": "2026-09-01"}, "不能晚于"),
+            ({"from": future}, "未来"),
+            ({"from": "2026-08-01", "to": "2026-09-15"}, "上限"),
+            ({"from": "2026/09/01"}, "YYYY-MM-DD"),
+        ]
+        for body, keyword in cases:
+            response = client.post("/api/v1/activities/collect", json=body)
+            assert response.status_code == 400, body
+            assert keyword in response.json()["detail"], body
+
+    def test_collect_local_guard_409(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(activity_collector, "ZCODE_DB_PATH", str(tmp_path / "missing.sqlite"))
+        monkeypatch.setattr(activity_collector, "ZCODE_LOG_DIR", str(tmp_path / "missing-log"))
+        response = client.post("/api/v1/activities/collect", json={})
+        assert response.status_code == 409
+        assert "仅本地模式可用" in response.json()["detail"]
+
+    def test_evidence_list_local_guard_409(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(activity_collector, "ZCODE_DB_PATH", str(tmp_path / "missing.sqlite"))
+        monkeypatch.setattr(activity_collector, "ZCODE_LOG_DIR", str(tmp_path / "missing-log"))
+        response = client.get("/api/v1/activities/evidence")
+        assert response.status_code == 409
+        assert "仅本地模式可用" in response.json()["detail"]
+
+    def test_collect_single_day_failure_does_not_abort_batch(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        out_dir = self._patch_local(monkeypatch, tmp_path)
+        real_build = activity_collector.build_evidence
+
+        def flaky_build(day: date, **kwargs: Any) -> dict[str, Any]:
+            if day.isoformat() == "2026-09-02":
+                raise RuntimeError("boom")
+            return real_build(day, **kwargs)
+
+        monkeypatch.setattr(activity_collector, "build_evidence", flaky_build)
+        response = client.post(
+            "/api/v1/activities/collect", json={"from": "2026-09-01", "to": "2026-09-03"}
+        )
+        assert response.status_code == 200
+        by_date = {item["date"]: item for item in response.json()["items"]}
+        assert by_date["2026-09-02"]["error"] == "boom"
+        assert by_date["2026-09-01"]["evidence"] is not None
+        assert by_date["2026-09-03"]["evidence"] is not None
+        assert not (out_dir / "activity_evidence_2026-09-02.json").exists()
+        assert (out_dir / "activity_evidence_2026-09-01.json").is_file()
+
+    def test_evidence_list_returns_summaries_desc(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self._patch_local(monkeypatch, tmp_path)
+        client.post("/api/v1/activities/collect", json={"from": "2026-09-01", "to": "2026-09-02"})
+        response = client.get("/api/v1/activities/evidence")
+        assert response.status_code == 200
+        items = response.json()["items"]
+        assert [item["date"] for item in items] == ["2026-09-02", "2026-09-01"]
+        assert items[0]["summary"]["zcode_sessions"] == 1
+        assert items[0]["generated_at"] is not None
+
+    def test_evidence_list_skips_broken_files(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        out_dir = self._patch_local(monkeypatch, tmp_path)
+        out_dir.mkdir(parents=True)
+        (out_dir / "activity_evidence_2026-09-05.json").write_text("not json", encoding="utf-8")
+        (out_dir / "unrelated.json").write_text("{}", encoding="utf-8")
+        response = client.get("/api/v1/activities/evidence")
+        assert response.status_code == 200
+        assert response.json()["items"] == []
+
+    def test_collect_rate_limit_returns_429(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        self._patch_local(monkeypatch, tmp_path)
+        for _ in range(10):
+            assert client.post("/api/v1/activities/collect", json={}).status_code == 200
+        assert client.post("/api/v1/activities/collect", json={}).status_code == 429

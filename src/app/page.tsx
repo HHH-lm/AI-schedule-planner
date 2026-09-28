@@ -64,7 +64,12 @@ import {
   saveLocalData,
   uid,
 } from "@/lib/storage";
-import { apiPost } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
+import {
+  missingCollectDates,
+  type ActivityCollectItemRaw,
+  type ActivityEvidenceListPayload,
+} from "@/lib/activityImport";
 import {
   aiRequestFields,
   normalizeAiProvider,
@@ -192,6 +197,11 @@ export default function Home() {
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [memoryModalOpen, setMemoryModalOpen] = useState(false);
   const [activityImportOpen, setActivityImportOpen] = useState(false);
+  // 检索电脑活动（F-046）：入口模式、首屏预取结果、已落盘证据日期、每会话只自动补采一次
+  const [activityCollectOpen, setActivityCollectOpen] = useState(false);
+  const [activityCollectItems, setActivityCollectItems] = useState<ActivityCollectItemRaw[]>([]);
+  const [activityEvidenceDates, setActivityEvidenceDates] = useState<string[]>([]);
+  const activityAutoCollectRef = useRef(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   // 提示弹窗入弹窗栈（F-036）：打开期间锁背景滚动，Esc 关闭且层级最高
@@ -234,6 +244,34 @@ export default function Home() {
     const timer = setTimeout(() => setPlanFeedback(null), 4000);
     return () => clearTimeout(timer);
   }, [planFeedback]);
+
+  // 打开统计页时静默补采最近 3 天缺采的证据（F-046）：仅辅助预取，失败/云端静默降级，
+  // 每会话只跑一次；手动「检索电脑活动」按钮不受此影响
+  useEffect(() => {
+    if (!hydrated || view !== "stats" || activityAutoCollectRef.current) return;
+    activityAutoCollectRef.current = true;
+    void (async () => {
+      try {
+        const listed = await apiGet<ActivityEvidenceListPayload>("/activities/evidence", 15_000);
+        const dates = (listed.items ?? []).map((item) => item.date);
+        setActivityEvidenceDates(dates);
+        const missing = missingCollectDates(dates, new Date(), 3);
+        if (missing.length === 0) return;
+        const collected = await apiPost<{ items: ActivityCollectItemRaw[] }>(
+          "/activities/collect",
+          { from: missing[0], to: missing[missing.length - 1] },
+          60_000
+        );
+        setActivityCollectItems(collected.items ?? []);
+        setActivityEvidenceDates((prev) => [
+          ...prev,
+          ...(collected.items ?? []).map((item) => item.date),
+        ]);
+      } catch {
+        // 云端后端（无本机数据源）或后端未启动：保持静默，用户仍可手动检索
+      }
+    })();
+  }, [hydrated, view]);
 
 
   const dataRef = useRef<AppData | null>(null);
@@ -877,6 +915,21 @@ export default function Home() {
   // 活动记录（F-045）：导入确认后落库；候选与计划块时间重叠时，用户已确认
   // 用实际记录取代原计划——一次 commitData 同时删块（与手动删块同看板联动语义）、
   // 追加记录，⌘Z 一步全部回退
+  const closeActivityModals = useCallback(() => {
+    setActivityImportOpen(false);
+    setActivityCollectOpen(false);
+  }, []);
+
+  // 检索成功（F-046）：缓存结果供下次直接展示，并记录证据日期更新角标
+  const handleCollected = useCallback((items: ActivityCollectItemRaw[]) => {
+    setActivityCollectItems(items);
+    setActivityEvidenceDates((prev) => {
+      const merged = new Set(prev);
+      for (const item of items) if (item.evidence) merged.add(item.date);
+      return Array.from(merged);
+    });
+  }, []);
+
   const confirmActivities = useCallback(
     (activities: Activity[], deleteBlockIds: string[]) => {
       if (activities.length === 0) return;
@@ -897,6 +950,7 @@ export default function Home() {
         };
       });
       setActivityImportOpen(false);
+      setActivityCollectOpen(false);
       setToastMessage(
         deleteBlockIds.length > 0
           ? `已导入 ${activities.length} 条活动记录，删除 ${deleteBlockIds.length} 个计划块`
@@ -1589,6 +1643,20 @@ export default function Home() {
 
   const days = getWeekDays(weekOffset);
 
+  // 待审天数（F-046）：最近 3 天里已有证据、但当天尚无活动记录的天数，用于按钮角标
+  const activityPendingDays = useMemo(() => {
+    if (activityEvidenceDates.length === 0) return 0;
+    const recordedDates = new Set((data?.activities ?? []).map((activity) => activity.date));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return activityEvidenceDates.filter((dateKey) => {
+      const [y, m, d] = dateKey.split("-").map(Number);
+      const day = new Date(y, (m ?? 1) - 1, d ?? 1);
+      const ageDays = Math.round((today.getTime() - day.getTime()) / 86400000);
+      return ageDays >= 0 && ageDays < 3 && !recordedDates.has(dateKey);
+    }).length;
+  }, [activityEvidenceDates, data?.activities]);
+
   /* 苹果日历导出暂未启用
   const downloadWeekICS = useCallback(() => {
     if (!data) return;
@@ -1933,6 +2001,12 @@ export default function Home() {
           data={data}
           days={days}
           onOpenActivityImport={() => setActivityImportOpen(true)}
+          onOpenActivityCollect={() => {
+            setActivityCollectOpen(true);
+            // 打开时已有自动补采结果则直接进日列表，否则弹窗首屏即为检索界面
+            setActivityImportOpen(false);
+          }}
+          activityPendingDays={activityPendingDays}
         />
       )}
       </main>
@@ -2137,7 +2211,7 @@ export default function Home() {
         />
       )}
 
-      {activityImportOpen && (
+      {(activityImportOpen || activityCollectOpen) && (
         <ActivityImportModal
           existingDedupKeys={
             new Set(
@@ -2146,10 +2220,14 @@ export default function Home() {
                 .filter((key): key is string => Boolean(key))
             )
           }
+          activities={data.activities ?? []}
           timeBlocks={data.timeBlocks}
           aiFields={aiRequestFields(data.settings)}
+          initialMode={activityCollectOpen ? "collect" : "file"}
+          prefetchedItems={activityCollectItems}
+          onCollected={handleCollected}
           onConfirm={confirmActivities}
-          onClose={() => setActivityImportOpen(false)}
+          onClose={closeActivityModals}
         />
       )}
 

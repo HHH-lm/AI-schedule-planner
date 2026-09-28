@@ -62,6 +62,30 @@ function extractDetail(raw: string): string {
   return raw.slice(0, 120);
 }
 
+/** GET 请求（与 apiPost 同一错误语义：超时/连不上/非 2xx 都抛中文 Error） */
+export async function apiGet<T>(path: string, timeoutMs = API_TIMEOUT_MS): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/api/v1${path}`, {
+      method: "GET",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      (error.name === "TimeoutError" || error.name === "AbortError")
+    ) {
+      throw new Error(`后端服务超时（${Math.round(timeoutMs / 1000)} 秒），请稍后重试`);
+    }
+    throw new Error("无法连接后端服务，请确认 FastAPI 后端已启动");
+  }
+  if (!response.ok) {
+    const detail = extractDetail(await response.text().catch(() => ""));
+    throw new Error(detail || `后端服务返回 ${response.status}`);
+  }
+  return (await response.json()) as T;
+}
+
 /**
  * multipart/form-data 上传（音频等二进制）。
  * apiPost 把 Content-Type 硬编码为 JSON 且会 JSON.stringify，无法用于文件上传，

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCheck, ClipboardCopy, ClipboardList, Download, FileText, Hourglass, Timer, TrendingUp } from "lucide-react";
+import { CheckCheck, ClipboardCopy, ClipboardList, Download, FileText, Hourglass, Radar, Timer, TrendingUp } from "lucide-react";
 import type { Activity, AppData, Category } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
 import { CATEGORIES, CATEGORY_ORDER } from "@/lib/categories";
@@ -13,9 +13,19 @@ interface Props {
   data: AppData;
   days: WeekDay[];
   onOpenActivityImport: () => void;
+  /** 打开「检索电脑活动」（F-046，仅本地后端可用） */
+  onOpenActivityCollect: () => void;
+  /** 待审天数（最近窗口里已有证据但未导入的天数），0 时不显示角标 */
+  activityPendingDays?: number;
 }
 
-export default function StatsView({ data, days, onOpenActivityImport }: Props) {
+export default function StatsView({
+  data,
+  days,
+  onOpenActivityImport,
+  onOpenActivityCollect,
+  activityPendingDays = 0,
+}: Props) {
   const [copied, setCopied] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
 
@@ -318,6 +328,20 @@ export default function StatsView({ data, days, onOpenActivityImport }: Props) {
             <h3 className="type-caption-strong text-ink">Obsidian 周报</h3>
           </div>
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onOpenActivityCollect}
+              className="btn-ghost relative"
+              title="检索本机活动记录并导入（需本地运行后端）"
+            >
+              <Radar size={14} />
+              检索电脑活动
+              {activityPendingDays > 0 && (
+                <span className="ml-1 rounded-full bg-[rgba(30,140,90,0.12)] px-1.5 text-[10px] font-medium text-[#146b46]">
+                  {activityPendingDays}
+                </span>
+              )}
+            </button>
             <button
               type="button"
               onClick={onOpenActivityImport}
