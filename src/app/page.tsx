@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type {
   AIMemorySuggestion,
+  Activity,
   AiProviderSetting,
   AppData,
   Category,
@@ -108,6 +109,7 @@ import AuthModal from "@/components/AuthModal";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import ConflictModal from "@/components/ConflictModal";
 import MemoryModal from "@/components/MemoryModal";
+import ActivityImportModal from "@/components/ActivityImportModal";
 import AccountModal from "@/components/AccountModal";
 import { buildObsidianUrl } from "@/lib/obsidian";
 import {
@@ -189,6 +191,7 @@ export default function Home() {
   const [conflicts, setConflicts] = useState<ParsedSchedule[]>([]);
   const [conflictModalOpen, setConflictModalOpen] = useState(false);
   const [memoryModalOpen, setMemoryModalOpen] = useState(false);
+  const [activityImportOpen, setActivityImportOpen] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   // 提示弹窗入弹窗栈（F-036）：打开期间锁背景滚动，Esc 关闭且层级最高
@@ -870,6 +873,38 @@ export default function Home() {
         : prev
     );
   }, [commitData]);
+
+  // 活动记录（F-045）：导入确认后落库；候选与计划块时间重叠时，用户已确认
+  // 用实际记录取代原计划——一次 commitData 同时删块（与手动删块同看板联动语义）、
+  // 追加记录，⌘Z 一步全部回退
+  const confirmActivities = useCallback(
+    (activities: Activity[], deleteBlockIds: string[]) => {
+      if (activities.length === 0) return;
+      commitData((prev) => {
+        if (!prev) return prev;
+        const deleteSet = new Set(deleteBlockIds);
+        const remaining = prev.timeBlocks.filter(
+          (block) => !deleteSet.has(block.id)
+        );
+        const deleted = prev.timeBlocks.filter((block) =>
+          deleteSet.has(block.id)
+        );
+        return {
+          ...prev,
+          timeBlocks: remaining,
+          tasks: syncBlockDeletionToTasks(prev.tasks, remaining, deleted),
+          activities: [...(prev.activities ?? []), ...activities],
+        };
+      });
+      setActivityImportOpen(false);
+      setToastMessage(
+        deleteBlockIds.length > 0
+          ? `已导入 ${activities.length} 条活动记录，删除 ${deleteBlockIds.length} 个计划块`
+          : `已导入 ${activities.length} 条活动记录`
+      );
+    },
+    [commitData]
+  );
 
   const acceptSuggestion = useCallback(
     (suggestion: AIMemorySuggestion) => {
@@ -1825,9 +1860,10 @@ export default function Home() {
               }))}
             />
 
-            <WeekTimeline
-              days={getWeekDays(weekOffset)}
-              blocks={data.timeBlocks}
+        <WeekTimeline
+          days={getWeekDays(weekOffset)}
+          blocks={data.timeBlocks}
+          activities={data.activities ?? []}
               collapsedRanges={data.settings?.timelineCollapsedRanges ?? []}
               onCollapsedRangesChange={saveTimelineCollapsedRanges}
               obsidianVault={data.settings?.obsidianVault}
@@ -1892,7 +1928,13 @@ export default function Home() {
         />
       )}
 
-      {view === "stats" && <StatsView data={data} days={days} />}
+      {view === "stats" && (
+        <StatsView
+          data={data}
+          days={days}
+          onOpenActivityImport={() => setActivityImportOpen(true)}
+        />
+      )}
       </main>
 
       <footer className="site-footer">
@@ -2092,6 +2134,22 @@ export default function Home() {
           onRunAnalysis={runAnalysis}
           isAnalyzing={isAnalyzing}
           onClose={() => setMemoryModalOpen(false)}
+        />
+      )}
+
+      {activityImportOpen && (
+        <ActivityImportModal
+          existingDedupKeys={
+            new Set(
+              (data.activities ?? [])
+                .map((activity) => activity.dedupKey)
+                .filter((key): key is string => Boolean(key))
+            )
+          }
+          timeBlocks={data.timeBlocks}
+          aiFields={aiRequestFields(data.settings)}
+          onConfirm={confirmActivities}
+          onClose={() => setActivityImportOpen(false)}
         />
       )}
 

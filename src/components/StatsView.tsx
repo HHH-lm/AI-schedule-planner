@@ -1,20 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCheck, ClipboardCopy, Download, FileText, Hourglass, Timer, TrendingUp } from "lucide-react";
-import type { AppData } from "@/lib/types";
+import { CheckCheck, ClipboardCopy, ClipboardList, Download, FileText, Hourglass, Timer, TrendingUp } from "lucide-react";
+import type { Activity, AppData, Category } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
-import { CATEGORIES } from "@/lib/categories";
-import { buildWeeklyReport, computeWeekStats } from "@/lib/report";
+import { CATEGORIES, CATEGORY_ORDER } from "@/lib/categories";
+import { buildWeeklyReport, computeWeekStats, activitiesForDay } from "@/lib/report";
 import { isoWeekNumber, minutesToDuration } from "@/lib/date";
 import { blockOverlapsDate, splitBlockByDays } from "@/lib/blockTime";
 
 interface Props {
   data: AppData;
   days: WeekDay[];
+  onOpenActivityImport: () => void;
 }
 
-export default function StatsView({ data, days }: Props) {
+export default function StatsView({ data, days, onOpenActivityImport }: Props) {
   const [copied, setCopied] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
 
@@ -37,6 +38,35 @@ export default function StatsView({ data, days }: Props) {
   const report = useMemo(
     () => buildWeeklyReport(data, days),
     [data, days]
+  );
+
+  const weekActivities = useMemo(
+    () => days.flatMap((day) => activitiesForDay(data, day.key)),
+    [data, days]
+  );
+
+  // 活动记录（实际）按类目聚合：并入顶部统计的「时间投入」与「时间分布」
+  const actualMinutesByCategory = useMemo(() => {
+    const map = {} as Record<Category, number>;
+    for (const activity of weekActivities) {
+      if (activity.start === undefined || activity.end === undefined) continue;
+      map[activity.category] =
+        (map[activity.category] ?? 0) + (activity.end - activity.start);
+    }
+    return map;
+  }, [weekActivities]);
+  const actualTotalMinutes = Object.values(actualMinutesByCategory).reduce(
+    (sum, minutes) => sum + minutes,
+    0
+  );
+  const categoryRows = useMemo(
+    () =>
+      CATEGORY_ORDER.map((category) => ({
+        category,
+        plan: stats.find((stat) => stat.category === category),
+        actual: actualMinutesByCategory[category] ?? 0,
+      })).filter(({ plan, actual }) => plan || actual > 0),
+    [stats, actualMinutesByCategory]
   );
 
   const handleCopy = async () => {
@@ -63,30 +93,40 @@ export default function StatsView({ data, days }: Props) {
 
   const tiles = [
     {
-      label: "本周投入",
+      label: "本周投入（计划）",
       value: minutesToDuration(totalMinutes),
       icon: Timer,
+      hint: undefined as string | undefined,
     },
     {
       label: "完成时长",
       value: `${minutesToDuration(doneMinutes)} · ${completionRate}%`,
       icon: CheckCheck,
+      hint: undefined as string | undefined,
+    },
+    {
+      label: "实际投入",
+      value: minutesToDuration(actualTotalMinutes),
+      icon: ClipboardList,
+      hint: `${weekActivities.length} 条记录` as string | undefined,
     },
     {
       label: "本周时间块",
       value: `${scheduledCount} 个`,
       icon: TrendingUp,
+      hint: undefined as string | undefined,
     },
     {
       label: "待排期",
       value: `${pendingCount} 个`,
       icon: Hourglass,
+      hint: undefined as string | undefined,
     },
   ];
 
   return (
     <div className="flex-1 space-y-4 overflow-y-auto thin-scroll">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
         {tiles.map((tile) => {
           const Icon = tile.icon;
           return (
@@ -103,6 +143,9 @@ export default function StatsView({ data, days }: Props) {
               <div className="mt-2 text-lg font-semibold text-ink">
                 {tile.value}
               </div>
+              {tile.hint && (
+                <div className="mt-0.5 text-xs text-ink-muted-48">{tile.hint}</div>
+              )}
             </div>
           );
         })}
@@ -112,22 +155,31 @@ export default function StatsView({ data, days }: Props) {
         <div className="tool-panel">
           <h3 className="type-caption-strong text-ink">类目时长统计</h3>
           <div className="mt-3 space-y-3">
-            {stats.length === 0 && (
-              <p className="text-sm text-ink-muted-48">本周还没有时间块</p>
+            {categoryRows.length === 0 && (
+              <p className="text-sm text-ink-muted-48">本周还没有时间块或活动记录</p>
             )}
-            {stats.map((stat) => {
-              const meta = CATEGORIES[stat.category];
+            {categoryRows.map(({ category, plan, actual }) => {
+              const meta = CATEGORIES[category];
+              const planMinutes = plan?.minutes ?? 0;
               const ratio =
-                totalMinutes > 0 ? Math.round((stat.minutes / totalMinutes) * 100) : 0;
+                totalMinutes > 0 ? Math.round((planMinutes / totalMinutes) * 100) : 0;
+              const actualRatio = Math.min(
+                100,
+                Math.round((actual / Math.max(totalMinutes, 1)) * 100)
+              );
               return (
-                <div key={stat.category}>
+                <div key={category}>
                   <div className="mb-1 flex items-center justify-between text-sm">
                     <span className="flex items-center gap-1.5 font-semibold text-ink-muted-80">
                       <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
                       {meta.label}
                     </span>
                     <span className="text-ink-muted-48">
-                      {minutesToDuration(stat.minutes)} · {ratio}%
+                      {plan
+                        ? `${minutesToDuration(planMinutes)} · ${ratio}%${
+                            actual > 0 ? ` · 实际 ${minutesToDuration(actual)}` : ""
+                          }`
+                        : `实际 ${minutesToDuration(actual)}`}
                     </span>
                   </div>
                   <div className="h-1.5 overflow-hidden rounded-full bg-[#f0f0f0]">
@@ -136,6 +188,14 @@ export default function StatsView({ data, days }: Props) {
                       style={{ width: `${ratio}%` }}
                     />
                   </div>
+                  {actual > 0 && (
+                    <div className="mt-1 h-1 overflow-hidden rounded-full bg-[#f0f0f0]">
+                      <div
+                        className={`bar-actual h-full rounded-full ${meta.solid}`}
+                        style={{ width: `${actualRatio}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -173,7 +233,12 @@ export default function StatsView({ data, days }: Props) {
       </div>
 
       <div className="tool-panel">
-        <h3 className="type-caption-strong text-ink">本周 24 小时分布</h3>
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="type-caption-strong text-ink">本周 24 小时分布</h3>
+          {weekActivities.length > 0 && (
+            <span className="text-xs text-ink-muted-48">浅色 = 计划 · 深色 = 实际</span>
+          )}
+        </div>
         <div className="mt-4 space-y-2">
           {days.map((day) => {
             const daySegments = data.timeBlocks
@@ -207,6 +272,24 @@ export default function StatsView({ data, days }: Props) {
                       title={`${block.name} ${segment.start / 60}:00`}
                     />
                   ))}
+                  {activitiesForDay(data, day.key)
+                    .filter(
+                      (
+                        activity
+                      ): activity is Activity & { start: number; end: number } =>
+                        activity.start !== undefined && activity.end !== undefined
+                    )
+                    .map((activity) => (
+                      <div
+                        key={activity.id}
+                        className={`absolute top-0 h-full rounded-sm ${CATEGORIES[activity.category].solid} opacity-75`}
+                        style={{
+                          left: `${(activity.start / 1440) * 100}%`,
+                          width: `${Math.max(0.8, ((activity.end - activity.start) / 1440) * 100)}%`,
+                        }}
+                        title={`实际 ${activity.summary}`}
+                      />
+                    ))}
                 </div>
               </div>
             );
@@ -235,6 +318,15 @@ export default function StatsView({ data, days }: Props) {
             <h3 className="type-caption-strong text-ink">Obsidian 周报</h3>
           </div>
           <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onOpenActivityImport}
+              className="btn-ghost"
+              title="把本机采集的工作活动确认后存为记录"
+            >
+              <ClipboardList size={14} />
+              导入活动
+            </button>
             <button
               type="button"
               onClick={handleCopy}

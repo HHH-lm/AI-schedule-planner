@@ -1179,6 +1179,43 @@ textarea.input-rect {
   box-shadow: 0 0 0 2px var(--primary-focus);
 }
 
+/* 实际投入斜纹条（类目时长统计第二行）：底色沿用类别 solid 类 + 斜纹纹理与计划实条区分 */
+.bar-actual {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.55) 0 3px,
+    transparent 3px 7px
+  );
+}
+
+/* 活动记录（实际）chip：直接插入计划时间轴的只读块。
+   虚线边框（取 cat-text-* 的类别色）+ 类别 soft 底色，与实线计划块区分；
+   重叠计划块时靠 DOM 顺序盖在其上、半透明让计划隐约可见 */
+.activity-chip {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1.5px dashed currentColor;
+  border-radius: 8px;
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.25;
+  cursor: default;
+  opacity: 0.92;
+  z-index: 5;
+}
+
+.activity-chip .activity-chip-tag {
+  flex: none;
+  font-size: 9px;
+  font-weight: 600;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
 .resize-handle {
   position: absolute;
   right: 0;

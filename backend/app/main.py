@@ -24,6 +24,7 @@ from app.logging_setup import (
     setup_logging,
 )
 from app.routers import (
+    activities,
     breakdown,
     conflicts,
     health,
@@ -159,5 +160,6 @@ for router in (
     reminders.router,
     match_task.router,
     transcribe.router,
+    activities.router,
 ):
     app.include_router(router, prefix="/api/v1")

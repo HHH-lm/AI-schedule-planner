@@ -11,7 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useModalLayer } from "@/hooks/useModalLayer";
-import type { TimeBlock } from "@/lib/types";
+import type { Activity, TimeBlock } from "@/lib/types";
 import type { WeekDay } from "@/lib/date";
 import { CATEGORIES } from "@/lib/categories";
 import { defaultRemindAtISO, minutesToHHMM } from "@/lib/date";
@@ -73,6 +73,8 @@ interface PendingTouch {
 interface Props {
   days: WeekDay[];
   blocks: TimeBlock[];
+  /** 已确认活动记录（实际）：有时间的直接插入时间轴，与计划块同面板呈现 */
+  activities?: Activity[];
   collapsedRanges: CollapsedRange[];
   onCollapsedRangesChange: (ranges: CollapsedRange[]) => void;
   batchMode: boolean;
@@ -96,6 +98,7 @@ interface Props {
 export default function WeekTimeline({
   days,
   blocks,
+  activities,
   collapsedRanges,
   onCollapsedRangesChange,
   batchMode,
@@ -1067,6 +1070,46 @@ export default function WeekTimeline({
                 </div>
               );
               });
+            })}
+
+            {/* 活动记录（实际）：只读 chip 直接插入时间轴，虚线样式与计划块区分。
+                不绑拖拽；data-time-block 复用空白点击排除，避免误弹新建块 */}
+            {(activities ?? []).map((activity) => {
+              if (activity.start === undefined || activity.end === undefined) {
+                return null;
+              }
+              const dayIndex = days.findIndex(
+                (day) => day.key === activity.date
+              );
+              if (dayIndex < 0) return null;
+              const meta = CATEGORIES[activity.category];
+              const top = (getVisibleOffset(activity.start) / 60) * HOUR_HEIGHT;
+              const height = Math.max(
+                22,
+                ((getVisibleOffset(activity.end) -
+                  getVisibleOffset(activity.start)) /
+                  60) *
+                  HOUR_HEIGHT
+              );
+              return (
+                <div
+                  key={activity.id}
+                  data-time-block
+                  title={`实际记录 ${minutesToHHMM(activity.start)}-${minutesToHHMM(
+                    activity.end
+                  )} · ${activity.summary}`}
+                  className={`activity-chip ${meta.bg} ${meta.text}`}
+                  style={{
+                    left: dayIndex * columnWidth + 5,
+                    width: columnWidth - 10,
+                    top,
+                    height,
+                  }}
+                >
+                  <span className="activity-chip-tag">实际</span>
+                  <span className="truncate">{activity.summary}</span>
+                </div>
+              );
             })}
          </div>
         </div>

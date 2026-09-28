@@ -119,7 +119,7 @@ def test_breakdown_local_fallback() -> None:
 
 
 def test_plan_v2_accepts_custom_weights() -> None:
-    """plan-v2 应接受个性化规划七维权重并正常返回。"""
+    """plan-v2 应接受个性化规划六维权重并正常返回。"""
     response = client.post(
         "/api/v1/plan-v2",
         json={

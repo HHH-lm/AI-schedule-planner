@@ -1,4 +1,4 @@
-import type { AppData, TimeBlock, WeekStat } from "./types";
+import type { Activity, AppData, TimeBlock, WeekStat } from "./types";
 import type { WeekDay } from "./date";
 import { CATEGORIES, CATEGORY_ORDER } from "./categories";
 import { isoWeekNumber, minutesToDuration, minutesToHHMM } from "./date";
@@ -78,6 +78,13 @@ function buildTimeDistributionTable(data: AppData, days: WeekDay[]): string {
   return `| ${header} |\n| ${separator} |\n${rows.map((r) => `| ${r} |`).join("\n")}`;
 }
 
+/** 某一天已确认的活动记录（按开始时间排序，无时间的排最后）——周报/周计划/统计共用 */
+export function activitiesForDay(data: AppData, dayKey: string): Activity[] {
+  return (data.activities ?? [])
+    .filter((activity) => activity.date === dayKey)
+    .sort((a, b) => (a.start ?? 1441) - (b.start ?? 1441));
+}
+
 export function buildWeeklyReport(data: AppData, days: WeekDay[]): string {
   const stats = computeWeekStats(data, days);
   const totalMinutes = stats.reduce((sum, s) => sum + s.minutes, 0);
@@ -105,20 +112,37 @@ export function buildWeeklyReport(data: AppData, days: WeekDay[]): string {
 
   for (let i = 0; i < days.length; i += 1) {
     const dayBlocks = blocksForDay(data, days[i].key);
-    if (dayBlocks.length === 0) continue;
+    const dayActivities = activitiesForDay(data, days[i].key);
+    if (dayBlocks.length === 0 && dayActivities.length === 0) continue;
     lines.push(`## ${WEEKDAY_LABELS[i]} ${days[i].label.split(" ")[1]}`);
     lines.push("");
-    lines.push("| 时间 | 事项 | 类目 | 地点 | 状态 |");
-    lines.push("| --- | --- | --- | --- | --- |");
-    for (const block of dayBlocks) {
-      const location = block.location || "-";
-      const status = block.done ? "完成" : "待办";
-      for (const segment of splitBlockByDays(block)) {
-        if (segment.dateKey !== days[i].key) continue;
-        const endLabel =
-          segment.end === 1440 ? "24:00" : minutesToHHMM(segment.end);
+    if (dayBlocks.length > 0) {
+      lines.push("| 时间 | 事项 | 类目 | 地点 | 状态 |");
+      lines.push("| --- | --- | --- | --- | --- |");
+      for (const block of dayBlocks) {
+        const location = block.location || "-";
+        const status = block.done ? "完成" : "待办";
+        for (const segment of splitBlockByDays(block)) {
+          if (segment.dateKey !== days[i].key) continue;
+          const endLabel =
+            segment.end === 1440 ? "24:00" : minutesToHHMM(segment.end);
+          lines.push(
+            `| ${minutesToHHMM(segment.start)}-${endLabel} | ${block.name} | ${CATEGORIES[block.category].label} | ${location} | ${status} |`
+          );
+        }
+      }
+    }
+    if (dayActivities.length > 0) {
+      if (dayBlocks.length > 0) lines.push("");
+      lines.push("**活动记录（实际）**");
+      lines.push("");
+      for (const activity of dayActivities) {
+        const time =
+          activity.start !== undefined && activity.end !== undefined
+            ? `${minutesToHHMM(activity.start)}-${minutesToHHMM(activity.end)} `
+            : "";
         lines.push(
-          `| ${minutesToHHMM(segment.start)}-${endLabel} | ${block.name} | ${CATEGORIES[block.category].label} | ${location} | ${status} |`
+          `- ${time}[${CATEGORIES[activity.category].label}] ${activity.summary}`
         );
       }
     }

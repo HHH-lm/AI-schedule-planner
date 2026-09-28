@@ -11,6 +11,7 @@
     "test": "vitest run",
     "scan:secrets": "bash scripts/scan-secrets.sh",
     "eval:ai:golden": "cd backend && .venv/bin/python -m app.eval_ai_golden",
+    "collect:activity": "cd backend && .venv/bin/python -m app.activity_collector",
     "clean": "rm -rf .next"
   },
   "dependencies": {

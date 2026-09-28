@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # thinking 模式下思考与正文共享该输出预算：过小会让思考耗尽预算、正文为空（finish_reason=length）
     max_output_tokens: int = 8000
 
+    # 活动证据 JSON 体积上限（统计页「导入今日活动」上传）：元数据级文件远小于该值，
+    # 超限基本说明选错文件或日期区间过长
+    max_activity_evidence_bytes: int = 2 * 1024 * 1024
+
     supabase_url: str | None = None
     supabase_service_role_key: str | None = None
 

@@ -118,4 +118,61 @@ describe("buildWeeklyReport", () => {
     expect(report).toContain("22:00-24:00");
     expect(report).toContain("00:00-08:00");
   });
+
+  it("无活动记录时不出现活动段", () => {
+    const report = buildWeeklyReport(data, days);
+    expect(report).not.toContain("活动记录");
+  });
+
+  it("有确认记录时在对应日的计划表下追加活动段", () => {
+    const withActivities: AppData = {
+      ...data,
+      activities: [
+        {
+          id: "a1",
+          date: "2026-08-03",
+          start: 540,
+          end: 630,
+          summary: "ZCode 会话 ×2（09:00–10:30）：8 次工具调用",
+          category: "work",
+          sources: ["zcode"],
+          confirmedAt: "2026-09-27T12:00:00+08:00",
+        },
+        {
+          id: "a2",
+          date: "2026-08-09",
+          summary: "仓库「demo」提交 2 次：feat: x；fix: y",
+          category: "work",
+          sources: ["git"],
+          confirmedAt: "2026-09-27T12:00:00+08:00",
+        },
+      ],
+    };
+    const report = buildWeeklyReport(withActivities, days);
+    expect(report).toContain("**活动记录（实际）**");
+    expect(report).toContain(
+      "- 09:00-10:30 [工作] ZCode 会话 ×2（09:00–10:30）：8 次工具调用"
+    );
+    // 周日只有活动没有计划块，也应有该日小节与无时间前缀的活动行
+    expect(report).toContain("## 周日 8/9");
+    expect(report).toContain("- [工作] 仓库「demo」提交 2 次：feat: x；fix: y");
+  });
+
+  it("周外活动记录不进入本周报", () => {
+    const withActivities: AppData = {
+      ...data,
+      activities: [
+        {
+          id: "a3",
+          date: "2026-08-20",
+          summary: "下周的活动",
+          category: "work",
+          sources: ["zcode"],
+          confirmedAt: "2026-09-27T12:00:00+08:00",
+        },
+      ],
+    };
+    const report = buildWeeklyReport(withActivities, days);
+    expect(report).not.toContain("下周的活动");
+  });
 });

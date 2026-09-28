@@ -805,7 +805,7 @@ def schedule_tasks(
         understandings: LLM 任务理解 dict（key=任务 title）
         constraint_filters: hard constraint 过滤函数列表（True=允许该时段）
         work_style: 工作方式（分块时长 + 块间休息），如番茄钟 25/5
-        weights: 个性化规划七维权重，缺省使用模块默认值
+        weights: 个性化规划六维权重，缺省使用模块默认值
         day_start: 每日可排起始分钟（默认 00:00）
         day_end: 每日可排结束分钟（默认 24:00，全天可排）
         max_daily_workload: 每日最大工作量（分钟，默认 480=8h）

@@ -9,6 +9,8 @@ export type MemoryCategory =
   | "life-preference"
   | "long-term-constraint";
 export type MemorySource = "manual" | "ai-suggested";
+/** 活动记录的来源：本机采集脚本的三类证据 + 手动补记 */
+export type ActivitySource = "zcode" | "git" | "files" | "manual";
 
 export interface Subtask {
   id: string;
@@ -53,6 +55,27 @@ export interface Memory {
   updatedAt: string;
   source: MemorySource;
   status?: "active" | "archived";
+}
+
+/**
+ * 活动记录（F-045 记录层）：与时间块（计划）独立，「实际做了什么」的口径。
+ * 由本机采集证据经 /activities/digest 归纳为候选、人工确认后落库。
+ */
+export interface Activity {
+  id: string;
+  /** 记录归属日期 YYYY-MM-DD */
+  date: string;
+  /** 本地日内的起止分钟；候选无时间窗（或手动补记）时省略 */
+  start?: number;
+  end?: number;
+  summary: string;
+  category: Category;
+  sources: ActivitySource[];
+  /** 候选稳定指纹：同一证据重复导入时据此识别已导入的记录 */
+  dedupKey?: string;
+  /** 证据摘要（提交信息、工具调用统计等元数据） */
+  evidence?: string;
+  confirmedAt: string;
 }
 
 export interface AIMemorySuggestion {
@@ -110,6 +133,7 @@ export interface AppData {
   settings?: AppSettings;
   memories?: Memory[];
   aiMemorySuggestions?: AIMemorySuggestion[];
+  activities?: Activity[];
 }
 
 export interface ParsedSchedule {

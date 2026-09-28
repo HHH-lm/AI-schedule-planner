@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 Provider = Literal["auto", "openai", "deepseek", "local"]
@@ -316,7 +316,7 @@ class PlanV2Request(BaseModel):
     )
     weights: PlanningWeights | None = Field(
         default=None,
-        description="个性化规划七维权重，缺省使用 SchedulingEngine 默认值",
+        description="个性化规划六维权重，缺省使用 SchedulingEngine 默认值",
     )
     time_preference: TimePreference = Field(
         default="balanced",
@@ -357,4 +357,121 @@ class PlanV2Response(BaseModel):
     blocks: list[PlanV2Block]
     unassigned: list[str] = Field(default_factory=list)
     deferred: list[str] = Field(default_factory=list, description="截止日期超出 DDL 窗口而暂缓排期的任务标题")
+    message: str | None = None
+
+
+# ── 活动证据 → 候选记录（F-045）─────────────────────────────────────────────
+# 证据由本机 activity_collector 产出（元数据级：时间戳/会话 ID/工具名/提交信息/
+# 文件路径，无消息正文或文件内容），前端原样上传，这里只做结构校验。
+
+
+class ActivityToolCount(BaseModel):
+    name: str
+    count: int = 0
+
+
+class ActivitySegment(BaseModel):
+    # 会话内连续活动段（修订 5）：采集器按空闲 > 15 分钟切段；旧证据文件缺省即整段窗口
+    start: str
+    end: str
+
+
+class ActivitySessionEvidence(BaseModel):
+    session_id: str
+    start: str | None = None
+    end: str | None = None
+    tool_calls: int = 0
+    top_tools: list[ActivityToolCount] = Field(default_factory=list)
+    # 内容信号（v2，采集器从 ZCode 会话库提取；旧证据文件缺省即回退纯时间窗模板）
+    title: str | None = None
+    directory: str | None = None
+    files_edited: list[str] = Field(default_factory=list)
+    commands: list[str] = Field(default_factory=list)
+    # 连续活动段（修订 5；缺省/全畸形时回退 start/end 整段窗口）
+    segments: list[ActivitySegment] = Field(default_factory=list)
+
+
+class ActivityZcodeSource(BaseModel):
+    available: bool = True
+    note: str | None = None
+    sessions: list[ActivitySessionEvidence] = Field(default_factory=list)
+
+
+class ActivityGitCommit(BaseModel):
+    hash: str
+    time: str | None = None
+    subject: str = ""
+
+
+class ActivityGitRepo(BaseModel):
+    path: str
+    name: str = ""
+    commits: list[ActivityGitCommit] = Field(default_factory=list)
+
+
+class ActivityGitSource(BaseModel):
+    available: bool = True
+    note: str | None = None
+    repos: list[ActivityGitRepo] = Field(default_factory=list)
+
+
+class ActivityFileChange(BaseModel):
+    path: str
+    mtime: str | None = None
+
+
+class ActivityFilesSource(BaseModel):
+    available: bool = True
+    note: str | None = None
+    truncated: bool = False
+    files: list[ActivityFileChange] = Field(default_factory=list)
+
+
+class ActivityEvidenceSources(BaseModel):
+    zcode: ActivityZcodeSource | None = None
+    git: ActivityGitSource | None = None
+    files: ActivityFilesSource | None = None
+
+
+class ActivityEvidence(BaseModel):
+    # schema 字段为别名：Pydantic BaseModel 自带 schema 属性，字段名用 schema_version
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_version: str = Field(default="activity-evidence/1", alias="schema")
+    date: str
+    generated_at: str | None = None
+    sources: ActivityEvidenceSources = Field(default_factory=ActivityEvidenceSources)
+
+
+class ActivityDigestRequest(BaseModel):
+    evidence: ActivityEvidence
+    # AI 归纳为可选增强：use_ai=False 或未配置 AI 时回退纯规则候选
+    use_ai: bool = True
+    provider: Provider | None = None
+    api_key: str | None = Field(
+        default=None, max_length=200,
+        description="用户自备 API Key（随请求传入，仅在本次调用生命周期内使用，不落日志）",
+    )
+
+
+class ActivityCandidate(BaseModel):
+    # dedup_key 是候选的稳定指纹（来源 + 会话/提交/文件集合 + 时间窗哈希），
+    # 前端用它识别「同一天重复导入」的候选；时间窗入指纹让同一会话拆出的多段不撞键
+    dedup_key: str
+    date: str
+    start: int | None = None
+    end: int | None = None
+    summary: str
+    category: Category = "work"
+    sources: list[str] = Field(default_factory=list)
+    evidence: str | None = None
+    # 会话内容信号（zcode 候选携带，供 AI 归纳与前端展示；其余来源为空）
+    titles: list[str] = Field(default_factory=list)
+    files_edited: list[str] = Field(default_factory=list)
+
+
+class ActivityDigestResponse(BaseModel):
+    source: str
+    used_ai: bool
+    candidates: list[ActivityCandidate] = Field(default_factory=list)
     message: str | None = None
