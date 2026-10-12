@@ -10,7 +10,7 @@ import json
 import os
 import sqlite3
 import subprocess
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -459,3 +459,41 @@ class TestMain:
     def test_rejects_bad_date(self) -> None:
         with pytest.raises(SystemExit):
             collector.main(["--date", "09/27"])
+
+    def test_days_writes_recent_window(self, tmp_path: Path) -> None:
+        # --days 3 含今天：产出 today-2 .. today 三天
+        today = date.today()
+        code = collector.main(
+            [
+                "--days", "3",
+                "--out", str(tmp_path / "out"),
+                "--zcode-db", str(tmp_path / "missing.sqlite"),
+                "--zcode-log-dir", str(tmp_path),
+                "--repo", str(tmp_path),
+                "--dir", str(tmp_path),
+            ]
+        )
+        assert code == 0
+        names = sorted(p.name for p in (tmp_path / "out").iterdir())
+        expected = sorted(
+            f"activity_evidence_{(today - timedelta(days=offset)).isoformat()}.json"
+            for offset in range(3)
+        )
+        assert names == expected
+
+    def test_days_rejects_non_positive(self) -> None:
+        with pytest.raises(SystemExit):
+            collector.main(["--days", "0"])
+
+    def test_days_rejects_over_limit(self) -> None:
+        with pytest.raises(SystemExit):
+            collector.main(["--days", str(collector.MAX_RANGE_DAYS + 1)])
+
+    def test_days_conflicts_with_explicit_dates(self) -> None:
+        with pytest.raises(SystemExit):
+            collector.main(["--days", "3", "--date", "2026-09-25"])
+
+    def test_rejects_future_date(self) -> None:
+        future = (date.today() + timedelta(days=1)).isoformat()
+        with pytest.raises(SystemExit):
+            collector.main(["--date", future])

@@ -1,7 +1,7 @@
 import type { Activity, ActivitySource, Category, TimeBlock } from "./types";
 import { uid } from "./storage";
 import { splitBlockByDays } from "./blockTime";
-import { toDateKey } from "./date";
+import { parseDateKey, toDateKey } from "./date";
 
 /** 后端 /activities/digest 返回的候选（snake_case，与 PlanV2Block 同风格） */
 export interface ActivityCandidateRaw {
@@ -115,6 +115,53 @@ export function buildCollectDayList(
       importedCount: importedByDate.get(item.date) ?? 0,
     }))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+}
+
+/** 检索范围预设（不含自定义）：与后端 collect 的 {from,to} 区间一一对应 */
+export type CollectPreset = "today" | "yesterday-today" | "last-3";
+
+export const COLLECT_PRESETS: { key: CollectPreset; label: string; days: number }[] = [
+  { key: "today", label: "今天", days: 1 },
+  { key: "yesterday-today", label: "昨天 + 今天", days: 2 },
+  { key: "last-3", label: "最近 3 天", days: 3 },
+];
+
+/** 单次检索的日期跨度上限，与后端 MAX_COLLECT_RANGE_DAYS 对齐 */
+export const MAX_COLLECT_RANGE_DAYS = 31;
+
+const DATE_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** 预设区间 → 起止日期键（to 恒为今天，from 往前推 days-1 天） */
+export function presetCollectBounds(
+  preset: CollectPreset,
+  today: Date
+): { from: string; to: string } {
+  const days = COLLECT_PRESETS.find((item) => item.key === preset)?.days ?? 3;
+  const start = new Date(today);
+  start.setDate(start.getDate() - (days - 1));
+  return { from: toDateKey(start), to: toDateKey(today) };
+}
+
+/**
+ * 校验自定义检索区间，规则与后端 /activities/collect 一致：
+ * 起 ≤ 止、止不晚于今天、跨度 ≤ MAX_COLLECT_RANGE_DAYS。
+ * 通过返回 null，否则返回中文提示（供界面直接展示）。
+ */
+export function validateCollectWindow(
+  from: string,
+  to: string,
+  today: Date
+): string | null {
+  if (!DATE_KEY_RE.test(from) || !DATE_KEY_RE.test(to)) return "请选择起止日期";
+  if (from > to) return "起始日期不能晚于结束日期";
+  const todayKeyStr = toDateKey(today);
+  if (to > todayKeyStr) return "不能检索未来日期";
+  const span = Math.round(
+    (parseDateKey(to).getTime() - parseDateKey(from).getTime()) / 86400000
+  ) + 1;
+  if (span > MAX_COLLECT_RANGE_DAYS)
+    return `检索区间过长（上限 ${MAX_COLLECT_RANGE_DAYS} 天）`;
+  return null;
 }
 
 /**

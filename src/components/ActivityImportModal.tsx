@@ -1,25 +1,31 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, type CSSProperties } from "react";
 import { FileUp, Loader2, Radar, X } from "lucide-react";
 import ModalLayer from "@/components/ModalLayer";
 import { CATEGORIES } from "@/lib/categories";
 import { apiPost } from "@/lib/api";
 import {
   buildCollectDayList,
+  COLLECT_PRESETS,
   extractCandidates,
   findPlanConflicts,
   formatCandidateTime,
+  MAX_COLLECT_RANGE_DAYS,
   parseEvidenceFile,
+  presetCollectBounds,
   selectedToActivities,
   summaryTotal,
+  validateCollectWindow,
   type ActivityCandidateView,
   type ActivityCollectItemRaw,
   type ActivityCollectPayload,
   type ActivityDigestPayload,
   type CollectDayView,
+  type CollectPreset,
   type EvidenceSummary,
 } from "@/lib/activityImport";
+import { toDateKey } from "@/lib/date";
 import type { Activity, Category, TimeBlock } from "@/lib/types";
 
 interface Props {
@@ -43,25 +49,27 @@ interface Props {
 
 type Phase = "pick" | "collect" | "collectLoading" | "loading" | "review" | "confirm" | "error";
 
-type CollectRange = "today" | "yesterday-today" | "last-3";
-
-const COLLECT_RANGES: { key: CollectRange; label: string; days: number }[] = [
-  { key: "today", label: "今天", days: 1 },
-  { key: "yesterday-today", label: "昨天 + 今天", days: 2 },
-  { key: "last-3", label: "最近 3 天", days: 3 },
-];
+/** collect 首屏的范围选择：三个预设 + 自定义起止区间 */
+type CollectRange = CollectPreset | "custom";
 
 const COLLECT_TIMEOUT_MS = 60_000;
+const CUSTOM_RANGE_DEFAULT_DAYS = 7;
 
-function toDateKey(day: Date): string {
-  const y = day.getFullYear();
-  const m = String(day.getMonth() + 1).padStart(2, "0");
-  const d = String(day.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
+/** 范围选择项：三个预设 + 自定义；自定义态只切换下方日期行，不改变按钮本身 */
+const COLLECT_RANGE_OPTIONS: { key: CollectRange; label: string }[] = [
+  ...COLLECT_PRESETS.map((preset) => ({ key: preset.key as CollectRange, label: preset.label })),
+  { key: "custom", label: "自定义" },
+];
 
-function rangeBounds(range: CollectRange, today: Date): { from: string; to: string } {
-  const days = COLLECT_RANGES.find((item) => item.key === range)?.days ?? 3;
+/** 选中态：淡蓝底 + 蓝边 + 蓝字（与设置页「截止日期策略」预设组同款） */
+const RANGE_SELECTED_STYLE: CSSProperties = {
+  borderColor: "var(--primary)",
+  backgroundColor: "color-mix(in srgb, var(--primary) 6%, transparent)",
+  color: "var(--primary)",
+};
+
+/** 自定义区间的默认值：最近 N 天（含今天），比预设的 3 天宽一点便于回填 */
+function recentBounds(days: number, today: Date): { from: string; to: string } {
   const start = new Date(today);
   start.setDate(start.getDate() - (days - 1));
   return { from: toDateKey(start), to: toDateKey(today) };
@@ -98,6 +106,10 @@ export default function ActivityImportModal({
   const [error, setError] = useState<string | null>(null);
   const [digestSource, setDigestSource] = useState<string | null>(null);
   const [collectRange, setCollectRange] = useState<CollectRange>("last-3");
+  const [customFrom, setCustomFrom] = useState(
+    () => recentBounds(CUSTOM_RANGE_DEFAULT_DAYS, new Date()).from
+  );
+  const [customTo, setCustomTo] = useState(() => toDateKey(new Date()));
   const [collectItems, setCollectItems] = useState<ActivityCollectItemRaw[]>(
     prefetchedItems ?? []
   );
@@ -122,6 +134,14 @@ export default function ActivityImportModal({
   const conflictBlockIds = useMemo(
     () => Array.from(new Set(conflicts.map((conflict) => conflict.blockId))),
     [conflicts]
+  );
+  // 自定义区间的即时校验：非空即禁止检索（预设恒合法）
+  const customError = useMemo(
+    () =>
+      collectRange === "custom"
+        ? validateCollectWindow(customFrom, customTo, new Date())
+        : null,
+    [collectRange, customFrom, customTo]
   );
 
   const runDigest = async (evidence: Record<string, unknown>, evidenceSummary: EvidenceSummary) => {
@@ -179,8 +199,18 @@ export default function ActivityImportModal({
   const handleCollect = async () => {
     setError(null);
     setCollectNote(null);
+    const today = new Date();
+    const bounds =
+      collectRange === "custom"
+        ? { from: customFrom, to: customTo }
+        : presetCollectBounds(collectRange, today);
+    const windowError = validateCollectWindow(bounds.from, bounds.to, today);
+    if (windowError) {
+      setCollectNote(windowError);
+      return;
+    }
     setPhase("collectLoading");
-    const { from, to } = rangeBounds(collectRange, new Date());
+    const { from, to } = bounds;
     try {
       const payload = await apiPost<ActivityCollectPayload>(
         "/activities/collect",
@@ -313,16 +343,14 @@ export default function ActivityImportModal({
               确认前数据不会离开你的电脑。
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              {COLLECT_RANGES.map((range) => (
+              {COLLECT_RANGE_OPTIONS.map((range) => (
                 <button
                   key={range.key}
                   type="button"
                   onClick={() => setCollectRange(range.key)}
-                  className={
-                    collectRange === range.key
-                      ? "btn-primary-pill px-3 py-1 text-xs"
-                      : "btn-ghost px-3 py-1 text-xs"
-                  }
+                  aria-pressed={collectRange === range.key}
+                  className="chip-btn"
+                  style={collectRange === range.key ? RANGE_SELECTED_STYLE : undefined}
                 >
                   {range.label}
                 </button>
@@ -330,12 +358,41 @@ export default function ActivityImportModal({
               <button
                 type="button"
                 onClick={() => void handleCollect()}
-                className="btn-primary-pill ml-auto px-3 py-1 text-xs"
+                disabled={customError !== null}
+                className="btn-primary-pill btn-sm ml-auto"
               >
                 <Radar size={14} />
                 {dayViews.length > 0 ? "重新检索" : "开始检索"}
               </button>
             </div>
+            {collectRange === "custom" && (
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted-80">
+                  <label className="flex items-center gap-1.5">
+                    起
+                    <input
+                      type="date"
+                      value={customFrom}
+                      max={toDateKey(new Date())}
+                      onChange={(event) => setCustomFrom(event.target.value)}
+                      className="rounded-md border border-hairline bg-surface-pearl px-2 py-1 text-xs text-ink outline-none"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    止
+                    <input
+                      type="date"
+                      value={customTo}
+                      max={toDateKey(new Date())}
+                      onChange={(event) => setCustomTo(event.target.value)}
+                      className="rounded-md border border-hairline bg-surface-pearl px-2 py-1 text-xs text-ink outline-none"
+                    />
+                  </label>
+                  <span className="text-ink-muted-48">最多 {MAX_COLLECT_RANGE_DAYS} 天</span>
+                </div>
+                {customError && <p className="text-xs text-[#b4232a]">{customError}</p>}
+              </div>
+            )}
             {collectNote && (
               <p className="rounded-[8px] bg-[rgba(196,148,20,0.1)] px-3 py-2 text-xs leading-5 text-[#8a6510]">
                 {collectNote}

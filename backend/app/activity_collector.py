@@ -8,7 +8,9 @@
     .venv/bin/python -m app.activity_collector                       # 采集今天
     .venv/bin/python -m app.activity_collector --date 2026-09-25     # 回填任意历史日期
     .venv/bin/python -m app.activity_collector --from 2026-09-21 --to 2026-09-27
+    .venv/bin/python -m app.activity_collector --days 7              # 最近 7 天（含今天）
 可选 --repo / --dir 覆盖默认仓库与扫描目录；--out 指定输出目录。
+显式指定的日期不得晚于今天（与 /activities/collect 端点一致）。
 
 三类证据的可回溯深度不同：git 提交完整历史都在；文件按现存文件的 mtime
 回填；ZCode 会话优先读会话库 db.sqlite（保留约 31 天，带标题/文件/命令），
@@ -430,6 +432,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--date", help="采集日期 YYYY-MM-DD（默认今天）")
     parser.add_argument("--from", dest="from_date", help="区间起 YYYY-MM-DD（与 --to 同用）")
     parser.add_argument("--to", dest="to_date", help="区间止 YYYY-MM-DD（含当日）")
+    parser.add_argument(
+        "--days", type=int, help="最近 N 天（含今天），与界面「检索电脑活动」预设一致"
+    )
     parser.add_argument("--out", default="activity_evidence", help="输出目录（默认 ./activity_evidence）")
     parser.add_argument(
         "--repo", action="append", default=[], help="git 仓库路径（可重复，默认内置三仓库）"
@@ -441,7 +446,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--zcode-db", default=ZCODE_DB_PATH, help="ZCode 会话库 db.sqlite 路径")
     args = parser.parse_args(argv)
 
-    if args.from_date or args.to_date:
+    today = date_cls.today()
+    if args.days is not None:
+        if args.date or args.from_date or args.to_date:
+            raise SystemExit("--days 不能与 --date/--from/--to 同时使用")
+        if args.days < 1:
+            raise SystemExit("--days 至少为 1")
+        if args.days > MAX_RANGE_DAYS:
+            raise SystemExit(f"日期区间过长（上限 {MAX_RANGE_DAYS} 天）")
+        start = today - timedelta(days=args.days - 1)
+        end = today
+        days = [start + timedelta(days=offset) for offset in range(args.days)]
+    elif args.from_date or args.to_date:
         start = _parse_day(args.from_date, "--from")
         end = _parse_day(args.to_date, "--to")
         if start > end:
@@ -452,7 +468,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.date:
         days = [_parse_day(args.date, "--date")]
     else:
-        days = [date_cls.today()]
+        days = [today]
+
+    if days[-1] > today:
+        raise SystemExit("不能检索未来日期")
 
     repos = args.repo or list(DEFAULT_REPOS)
     scan_dirs = args.dir or list(DEFAULT_SCAN_DIRS)

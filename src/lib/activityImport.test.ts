@@ -6,8 +6,10 @@ import {
   formatCandidateTime,
   missingCollectDates,
   parseEvidenceFile,
+  presetCollectBounds,
   selectedToActivities,
   summaryTotal,
+  validateCollectWindow,
   type ActivityCandidateView,
   type ActivityCollectItemRaw,
   type ActivityDigestPayload,
@@ -352,5 +354,71 @@ describe("missingCollectDates", () => {
       "2026-09-30",
       "2026-10-01",
     ]);
+  });
+});
+
+describe("presetCollectBounds", () => {
+  const today = new Date(2026, 9, 13); // 2026-10-13
+
+  it("今天 = 单日窗口", () => {
+    expect(presetCollectBounds("today", today)).toEqual({
+      from: "2026-10-13",
+      to: "2026-10-13",
+    });
+  });
+
+  it("昨天+今天 = 两天窗口", () => {
+    expect(presetCollectBounds("yesterday-today", today)).toEqual({
+      from: "2026-10-12",
+      to: "2026-10-13",
+    });
+  });
+
+  it("最近 3 天 = 含今天共三天", () => {
+    expect(presetCollectBounds("last-3", today)).toEqual({
+      from: "2026-10-11",
+      to: "2026-10-13",
+    });
+  });
+
+  it("跨月回退正确", () => {
+    expect(presetCollectBounds("last-3", new Date(2026, 9, 2))).toEqual({
+      from: "2026-09-30",
+      to: "2026-10-02",
+    });
+  });
+});
+
+describe("validateCollectWindow", () => {
+  const today = new Date(2026, 9, 13); // 2026-10-13
+
+  it("合法区间返回 null", () => {
+    expect(validateCollectWindow("2026-09-28", "2026-10-04", today)).toBeNull();
+  });
+
+  it("单日区间合法", () => {
+    expect(validateCollectWindow("2026-10-13", "2026-10-13", today)).toBeNull();
+  });
+
+  it("恰好 31 天合法、32 天拒绝", () => {
+    expect(validateCollectWindow("2026-09-13", "2026-10-13", today)).toBeNull();
+    expect(validateCollectWindow("2026-09-12", "2026-10-13", today)).toContain("上限 31 天");
+  });
+
+  it("起始晚于结束被拒", () => {
+    expect(validateCollectWindow("2026-10-04", "2026-09-28", today)).toBe(
+      "起始日期不能晚于结束日期"
+    );
+  });
+
+  it("未来日期被拒", () => {
+    expect(validateCollectWindow("2026-10-13", "2026-10-14", today)).toBe(
+      "不能检索未来日期"
+    );
+  });
+
+  it("日期格式非法被拒", () => {
+    expect(validateCollectWindow("", "2026-10-13", today)).toBe("请选择起止日期");
+    expect(validateCollectWindow("2026/10/01", "2026-10-13", today)).toBe("请选择起止日期");
   });
 });
