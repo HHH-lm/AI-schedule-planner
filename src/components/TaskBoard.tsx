@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -36,7 +37,7 @@ import {
   getPastWeekKeys,
   getBoardStart,
   resolveBoardWeekCount,
-  resolveInitialCollapsedWeeks,
+  resolveCollapsedWeeks,
 } from "@/lib/board";
 import {
   blockOverlapsDate,
@@ -59,11 +60,14 @@ import RestoreWeeksModal from "@/components/RestoreWeeksModal";
 
 const EXTEND_THRESHOLD = 480;
 const LS_WEEK_COUNT = "board-week-count";
-const LS_COLLAPSED_WEEKS = "board-collapsed-weeks";
+// 持久化"用户手动展开过的历史周"而非折叠集合本身：折叠集合由"当前历史周"减去
+// "用户展开了哪些"现算，新出现的历史周才会自动回到默认折叠（旧的 board-collapsed-weeks
+// 语义不同，不读取，留作无害孤儿）
+const LS_EXPANDED_WEEKS = "board-expanded-weeks";
 
-function readSavedCollapsedWeeks(): string[] | null {
+function readSavedExpandedWeeks(): string[] | null {
   try {
-    const raw = localStorage.getItem(LS_COLLAPSED_WEEKS);
+    const raw = localStorage.getItem(LS_EXPANDED_WEEKS);
     if (raw === null) return null;
     const parsed: unknown = JSON.parse(raw);
     return Array.isArray(parsed) ? parsed : null;
@@ -174,21 +178,12 @@ export default function TaskBoard({
     }
     return resolveBoardWeekCount(saved);
   });
-  // 过去的周默认折叠；用户的展开/折叠状态持久化，刷新后原样恢复
-  const [collapsedWeeks, setCollapsedWeeks] = useState<Set<string>>(() => {
-    const currentMonday = startOfWeek(new Date());
-    const keys: string[] = [];
-    for (const task of data.tasks) if (task.date) keys.push(task.date);
-    for (const block of data.timeBlocks) keys.push(block.date);
-    const boardStart = getBoardStart(days[0].date, keys.sort()[0]);
-    return new Set(
-      resolveInitialCollapsedWeeks(
-        boardStart,
-        currentMonday,
-        readSavedCollapsedWeeks()
-      )
-    );
-  });
+  // 过去的周默认折叠；用户手动展开过的周持久化，刷新后仍保持展开。
+  // 折叠集合本身不持久化：由"当前历史周"减去"用户展开过的周"现算得出，
+  // 这样新出现的历史周会自动回到默认折叠（曾因持久化空折叠集而永远停在展开态）
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(
+    () => new Set(readSavedExpandedWeeks() ?? [])
+  );
   const [hideConfirmWeek, setHideConfirmWeek] = useState<BoardWeek | null>(
     null
   );
@@ -219,13 +214,13 @@ export default function TaskBoard({
   useEffect(() => {
     try {
       localStorage.setItem(
-        LS_COLLAPSED_WEEKS,
-        JSON.stringify(Array.from(collapsedWeeks))
+        LS_EXPANDED_WEEKS,
+        JSON.stringify(Array.from(expandedWeeks))
       );
     } catch {
       // 存储不可用时静默降级
     }
-  }, [collapsedWeeks]);
+  }, [expandedWeeks]);
 
   const orderedTasks = useMemo(
     () => orderTasks(data.tasks),
@@ -253,21 +248,6 @@ export default function TaskBoard({
   // 更早的历史周以折叠条形式保留在窗口左侧（见下方 weeks useMemo）
   const boardStart = useMemo(() => startOfWeek(days[0].date), [days]);
 
-  // 数据加载完成后一次性校正：挂载时 localStorage 可能晚于首帧写入，这里确保
-  // 历史周默认折叠在首帧也生效（不影响已被持久化覆盖的用户状态语义）
-  const dataStartKey = toDateKey(dataStart);
-  const boardStartKey = toDateKey(boardStart);
-  const collapseInitRef = useRef(readSavedCollapsedWeeks() !== null);
-  useEffect(() => {
-    if (collapseInitRef.current) return;
-    if (dataStartKey >= boardStartKey) return;
-    collapseInitRef.current = true;
-    setCollapsedWeeks((prev) => {
-      if (prev.size > 0) return prev;
-      return new Set(getPastWeekKeys(dataStart, boardStart));
-    });
-  }, [dataStartKey, boardStartKey, dataStart, boardStart]);
-
   // 窗口需要覆盖历史周时，自动把周数扩展到"本周起 4 周"所需的最小长度；
   // 只增不减，用户手动追加的周数不受影响
   useEffect(() => {
@@ -277,6 +257,20 @@ export default function TaskBoard({
   }, [dataStart, boardStart]);
 
   const todayKeyValue = toDateKey(new Date());
+  // 折叠集合现算：当前历史周为默认折叠基准，减去用户手动展开过的周。
+  // 随数据早于本周一时自动扩展，无需一次性校正 effect
+  const collapsedWeeks = useMemo(
+    () =>
+      new Set(
+        resolveCollapsedWeeks(
+          dataStart,
+          boardStart,
+          Array.from(expandedWeeks)
+        )
+      ),
+    [dataStart, boardStart, expandedWeeks]
+  );
+
   const weeks = useMemo<BoardWeek[]>(() => {
     const buildWeek = (start: Date): BoardWeek => ({
       key: toDateKey(start),
@@ -305,6 +299,14 @@ export default function TaskBoard({
     [weeks, hiddenWeeks]
   );
 
+  // 用户主动滚动后不再抢滚动位置：刷新/切视图回到本周一，但会话内一旦自己滚过就尊重用户。
+  // 意图只在真实输入手势（滚轮/触摸/指针按下/方向键）上标记——scrollLeft 赋值同样会派发
+  // scroll 事件，若在 onScroll 里标记会把程序化定位误判成用户滚动，导致定位被永久跳过
+  const userScrolledRef = useRef(false);
+  const markUserScrolled = () => {
+    userScrolledRef.current = true;
+  };
+
   const handleBoardScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
@@ -313,25 +315,37 @@ export default function TaskBoard({
     }
   };
 
-  // 挂载时若有历史折叠周，初始视口定位到本周一（刷新永远回到从本周起的窗口，
-  // 不记住用户滑到多远的未来——窗口本身已持久化，追加的周刷新后仍在）
-  useLayoutEffect(() => {
+  /**
+   * 视口定位到本周一那一列的开头：刷新永远回到从本周起的窗口，不记住用户滑到多远的未来。
+   *
+   * 落点按表头实际渲染宽度累加计算，而不是"历史周数 × 日列宽"——历史周可能被用户展开成
+   * 7 个日列宽（112px 的算术只对折叠窄条成立），按算术推算会把视口停在本周之前的某一周。
+   * 用 offsetWidth 而非 getBoundingClientRect：任务列是 sticky 定位，rect 会被吸附后的
+   * 视口坐标污染。
+   */
+  const scrollToCurrentWeek = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const pastCount = getPastWeekKeys(dataStart, boardStart).length;
-    if (pastCount === 0) return;
-    const dayWidth = parseFloat(
-      getComputedStyle(el).getPropertyValue("--board-day-w")
-    );
-    if (Number.isFinite(dayWidth) && dayWidth > 0) {
-      el.scrollLeft = pastCount * dayWidth;
+    const headers = el.querySelectorAll<HTMLElement>(".board-week-header");
+    const targetKey = toDateKey(boardStart);
+    let offset = 0;
+    for (const header of headers) {
+      if (header.dataset.weekKey === targetKey) break;
+      offset += header.offsetWidth;
     }
-    // 依赖数组刻意为空：只在挂载时定位一次，后续滚动由用户控制
+    if (offset > 0) el.scrollLeft = offset;
+  }, [boardStart]);
+
+  // 挂载时定位一次；数据异步到达（Supabase 远端数据替换本地数据）导致新增历史周时再补一次，
+  // 补定位前会重算已渲染列，故依赖展开状态以免定位点落后于列宽变化
+  useLayoutEffect(() => {
+    if (userScrolledRef.current) return;
+    scrollToCurrentWeek();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [scrollToCurrentWeek, collapsedWeeks, visibleWeeks.length]);
 
   const toggleWeekCollapse = (weekKey: string) => {
-    setCollapsedWeeks((prev) => {
+    setExpandedWeeks((prev) => {
       const next = new Set(prev);
       if (next.has(weekKey)) next.delete(weekKey);
       else next.add(weekKey);
@@ -770,6 +784,9 @@ export default function TaskBoard({
       <div
         ref={scrollRef}
         onScroll={handleBoardScroll}
+        onWheel={markUserScrolled}
+        onTouchMove={markUserScrolled}
+        onKeyDown={markUserScrolled}
         className="board-shell board-scrollbar"
       >
         <div className="min-w-max">
@@ -816,6 +833,7 @@ export default function TaskBoard({
                 <div
                   key={week.key}
                   className="board-week-header"
+                  data-week-key={week.key}
                   style={{
                     width: collapsed
                       ? "var(--board-day-w)"

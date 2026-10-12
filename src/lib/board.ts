@@ -43,24 +43,23 @@ export function getPastWeekKeys(
 }
 
 /**
- * 决定看板挂载时的折叠周集合。
- * saved === null 表示无本地记录（首次使用），默认折叠本周一之前的所有历史周；
- * saved 为数组（含空数组）时完全以用户保存状态为准，仅过滤无效项
- * （非字符串、早于窗口起点、或不早于本周一的未来周——折叠只作用于历史周语义之外的状态也保留，由调用方决定全集）。
+ * 决定看板的折叠周集合。
+ *
+ * 持久化的是"用户手动展开过的周"（savedExpanded）而不是折叠集合本身：
+ * 折叠集合由"当前有哪些历史周"减去"用户展开了哪些"现算得出。因此随着时间推移
+ * 新出现的历史周会自动回到默认折叠态，而用户展开过的周刷新后仍保持展开。
+ * 早于窗口起点或不在当前历史周范围内的失效 key 天然被基准集合过滤，无需额外分支。
  */
-export function resolveInitialCollapsedWeeks(
+export function resolveCollapsedWeeks(
   boardStart: Date,
   currentMonday: Date,
-  saved: string[] | null
+  savedExpanded: string[] | null
 ): string[] {
-  if (saved === null) return getPastWeekKeys(boardStart, currentMonday);
-  const startKey = toMondayKey(boardStart);
-  return Array.from(
-    new Set(
-      saved.filter(
-        (key): key is string => typeof key === "string" && key >= startKey
-      )
-    )
+  const expanded = new Set(
+    (savedExpanded ?? []).filter((key): key is string => typeof key === "string")
+  );
+  return getPastWeekKeys(boardStart, currentMonday).filter(
+    (key) => !expanded.has(key)
   );
 }
 
